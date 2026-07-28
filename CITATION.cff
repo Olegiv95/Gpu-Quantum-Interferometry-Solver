@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use this software in scientific work, please cite it."
+title: "GPU Quantum Interferometry Solver (GQIS)"
+authors:
+  - family-names: "Ivakhnenko"
+    given-names: "Oleh"
+version: "0.1.0"
+date-released: "2026-06-01"
+abstract: "GQIS converts symbolic Lindblad master-equation models into CUDA kernels and runs two-dimensional parameter sweeps for quantum interferometry simulations."
+keywords:
+  - quantum interferometry
+  - Lindblad master equation
+  - CUDA
+  - GPU
+  - SymPy
+  - CuPy
+license: MIT
+repository-code: "https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver"

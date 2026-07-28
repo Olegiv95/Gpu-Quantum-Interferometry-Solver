@@ -1,0 +1,193 @@
+# GQIS API Reference
+
+This file documents the packaged interface in `gqis/solver.py`. Normal
+user code only needs `mesolve_2D`; the other functions expose the symbolic and
+CUDA code-generation stages for inspection or advanced customization.
+
+```python
+from gqis import build_independent_rho, mesolve_2D
+```
+
+The compatibility imports `from gpu_int_tool import mesolve_2D` and
+`from GPU_Int_Tool import mesolve_2D` are retained for older scripts.
+
+## `mesolve_2D`
+
+```python
+mesolve_2D(
+    H, Drive, Col_Ops, mean_operator, tlist,
+    var_arrays=None, const_values=None,
+    kernel_template_file=None, *,
+    RHSreuse=True, runtime_consts=None, keep_symbolic_consts=None,
+    auto_runtime_consts=False, output_mode="mean", fp64=False,
+    pre_expand=True, collect_rho=True, factor_terms=False,
+    cse_batch_size=None, cse_simplify=True,
+    hoist_rho_independent=True, nvrtc_options=(), timings=False,
+    return_timing_info=False, warmup_time=0.0, rho0=None,
+    rho0_var_arrays=None, rho0_values=None, return_time_trace=False,
+    time_trace_every=None, time_trace_samples_per_period=None,
+    solver_samples_per_period=None, Actual_Kernel_Save=False,
+    beep_on_error=False, ignore_non_finite_output=False,
+)
+```
+
+Build and solve a finite-dimensional Lindblad master equation over one or two
+parameter axes. One CUDA thread integrates one parameter combination with
+fixed-step RK4.
+
+### Physical Model
+
+| Parameter | Type | Meaning |
+| --- | --- | --- |
+| `H` | square SymPy matrix | Hamiltonian. Its dimension defines the Hilbert-space dimension `N`. It may contain sweep symbols, constant symbols, and one or more drive placeholder symbols. |
+| `Drive` | SymPy expression or `dict[Symbol, Expr]` | Time-dependent signal. A single expression replaces the conventional `Drive` placeholder. A dictionary maps multiple placeholders used by `H` to separate signals. Expressions may use `t`, sweep parameters, and constants. |
+| `Col_Ops` | sequence of square SymPy matrices | Lindblad collapse operators. Use `[]` for closed-system evolution. Every operator must have the same shape as `H`. |
+| `mean_operator` | square SymPy matrix | Operator whose expectation value is averaged, returned at the final time, or sampled as a trace. It must match `H`. |
+| `tlist` | 1D array | Finite, strictly increasing, uniformly spaced times beginning at zero. `M` samples define exactly `M - 1` RK4 steps through `tlist[-1]`. Requiring zero avoids an additional kernel time-offset argument. |
+
+### Sweeps And Constants
+
+| Parameter | Type/default | Meaning |
+| --- | --- | --- |
+| `var_arrays` | `dict[Symbol, 1D array]` | One or two ordinary sweep axes. Dictionary insertion order maps the first array to result axis X and the second to Y. Values change without changing generated RHS structure. |
+| `const_values` | `dict[Symbol, number]` | Constant substitutions. By default values are folded into generated CUDA code, so changing them requires a different cached RHS. |
+| `runtime_consts` | `dict[Symbol, number]` | Explicit constants uploaded through `Const_arr`. Their values can change while reusing an equivalent compiled RHS. |
+| `keep_symbolic_consts` | iterable, `"all"`, `"auto"`, or `None` | Selects symbols from `const_values` that must remain runtime constants. |
+| `auto_runtime_consts` | `False` | Keep every `const_values` key symbolic at runtime when true. |
+| `rho0_var_arrays` | `dict[Symbol, 1D array]` | Initial-condition-only sweep symbols. They are merged with `var_arrays`; the total remains limited to two axes. |
+| `rho0_values` | numeric array or `None` | Explicit reduced initial states. Shape is `(num_X, N*N-1)` for a one-axis sweep, or `(num_X, num_Y, N*N-1)` for two axes. Cannot be combined with `rho0`. |
+
+### Initial State And Output
+
+| Parameter | Type/default | Meaning |
+| --- | --- | --- |
+| `rho0` | SymPy matrix, reduced expression list, or `None` | Initial density matrix. It may contain sweep or runtime-constant symbols. `None` initializes state `|0><0|`. |
+| `output_mode` | `"mean"` | `"mean"` averages the observable after each post-warmup RK4 step; `"final"` returns its final expectation; `"final_rho"` returns the final reduced real density vector. |
+| `warmup_time` | `0.0` | Initial fraction of time excluded from the time average, in `[0, 1]`. This can suppress transient dependence on the initial state without shortening the simulated trajectory. A value of `1` leaves no averaging window and returns the final expectation value. |
+| `return_time_trace` | `False` | Also return sampled expectation values and their times. Samples are recorded after integration steps, not at `t=0`. |
+| `time_trace_every` | `None` | Store one trace value every specified number of RK4 steps. Mutually exclusive with `time_trace_samples_per_period`. |
+| `time_trace_samples_per_period` | `None` | Requested stored trace density per drive period. Requires `solver_samples_per_period`. |
+| `solver_samples_per_period` | `None` | Number of RK4 integration steps per drive period, used only to convert trace density to a stride. |
+
+### Code Generation And Execution
+
+| Parameter | Type/default | Meaning |
+| --- | --- | --- |
+| `kernel_template_file` | `None` | Uses the canonical CUDA template packaged with GQIS. Supply an explicit path only to test or develop a custom kernel template; relative explicit paths are checked in the current directory and then inside the installed package. |
+| `RHSreuse` | `True` | Reuse an in-memory generated and compiled kernel when model structure and code-generation settings match. |
+| `fp64` | `False` | Use FP64 state, constants, generated math, and output instead of the faster FP32 path. |
+| `pre_expand` | `True` | Expand symbolic RHS expressions before code generation. |
+| `collect_rho` | `True` | Collect RHS terms by reduced density variables. |
+| `factor_terms` | `False` | Factor symbolic terms before common-subexpression elimination. This can reduce operations but increase preparation time. |
+| `cse_batch_size` | `None` | Equations per common-subexpression-elimination batch. `None` performs global CSE; smaller batches can lower CUDA register pressure. |
+| `cse_simplify` | `True` | Simplify expressions during CSE emission. |
+| `hoist_rho_independent` | `True` | Move state-independent expressions to per-thread static or per-RK-stage drive calculations. |
+| `nvrtc_options` | empty tuple | Additional options passed to `cupy.RawKernel`. A string or iterable of strings is accepted. |
+| `Actual_Kernel_Save` | `False` | `True` saves `<caller>_Kernel.cu`; a string saves to that explicit path. Generated kernels are debugging artifacts and are ignored by the repository. |
+
+### Diagnostics
+
+| Parameter | Type/default | Meaning |
+| --- | --- | --- |
+| `timings` | `False` | Print symbolic/codegen/compile stage time, GPU kernel time, total call time, and cache hit/miss. |
+| `return_timing_info` | `False` | Include a dictionary with `rhs_stage_s`, `gpu_kernel_s`, `total_s`, and `cached_rhs`. |
+| `beep_on_error` | `False` | Play a best-effort notification before raising for non-finite output. |
+| `ignore_non_finite_output` | `False` | Return NaN/Inf output with a warning instead of raising. Intended for diagnosis, not production data. |
+
+### Returns
+
+Without optional trace/timing values, the result is a NumPy array:
+
+- `output_mode="mean"` or `"final"`: complex shape `(num_X, num_Y)`.
+- `output_mode="final_rho"`: real shape `(num_X, num_Y, N*N-1)`.
+- A one-axis sweep retains a singleton Y dimension.
+
+With `return_time_trace=True`, the return is
+`(result, trace, trace_t)`, where `trace` has complex shape
+`(num_X, num_Y, num_trace)`. With `return_timing_info=True`, `timing_info` is
+appended to that tuple; without a trace the return is `(result, timing_info)`.
+
+## Density-Matrix Helpers
+
+### `build_independent_rho(N)`
+
+Input: Hilbert-space dimension `N`.
+
+Output: `(rho, metadata)`. `rho` is an `N x N` Hermitian, trace-one SymPy
+matrix built from `N*N-1` real symbols. `metadata` contains `N`, `rho_syms`,
+`num_diag`, `M`, and `vec_len`.
+
+Reduced-vector order is:
+
+1. Diagonal populations `rho[0,0]` through `rho[N-2,N-2]`.
+2. Real and imaginary parts of each upper-triangular coherence in row-major order.
+
+The last population is reconstructed from unit trace.
+
+### `rho_matrix_to_independent_exprs(rho0)`
+
+Input: a square SymPy density matrix, or an iterable already containing
+`N*N-1` reduced expressions.
+
+Output: a simplified expression list in the exact ordering used by
+`build_independent_rho`. Raises `ValueError` for a nonsquare matrix or invalid
+reduced-vector length.
+
+## Symbolic Code-Generation Helpers
+
+These functions are advanced interfaces. Their signatures may evolve before a
+stable 1.0 release.
+
+### `generate_unrolled_drho(...)`
+
+Inputs: `N`, `H`, a default `Drive_symbol`, `Col_Ops`, `mean_operator`, optional
+`drive_expr`, runtime constant symbols, and the same symbolic optimization
+controls exposed by `mesolve_2D`.
+
+Output: `(static_lines, drive_lines, drive_alias_lines, drho_lines, mean_line,
+final_line, static_syms, drive_syms, hoisted_syms)`. These CUDA fragments and
+symbol lists are inserted into the template by `mesolve_2D`.
+
+### `cse_emit_c_lines(drho_exprs, rho_syms, *, batch_size=None, do_simplify=True, hoist_rho_independent=False, return_hoist=False)`
+
+Inputs: reduced RHS expressions, reduced state symbols, CSE batch size,
+simplification switch, and hoisting switches.
+
+Output: CUDA assignment lines. If `return_hoist=True`, returns
+`(hoisted_substitutions, lines)`.
+
+### `emit_drive_code(drive_map, *, array_name="Drive_arr", inline_single_use_funcs=True)`
+
+Inputs: placeholder-to-expression mapping, target CUDA array name, and a switch
+that permits one-use math functions to remain inline.
+
+Output: `(drive_lines, alias_lines, drive_symbols)`. `alias_lines` is retained
+for compatibility and is currently empty.
+
+### `tidy_c_lines(lines)`
+
+Input: generated C/CUDA lines.
+
+Output: cleaned lines using common FP32 CUDA math forms such as `sinf`, `cosf`,
+and `sqrtf`, with trivial arithmetic removed.
+
+### `my_ccode(expr)` and `MyCPrinter`
+
+`my_ccode` takes one SymPy expression and returns CUDA-compatible C text.
+`MyCPrinter` is the underlying SymPy C99 printer; its `_print_Float(expr)`
+method emits an explicit FP32 literal.
+
+## File And Notification Helpers
+
+These underscore-prefixed functions are implementation details, not stable
+public API:
+
+- `_resolve_kernel_template_file(kernel_template_file)` returns the canonical packaged template for `None`, resolves an explicit path otherwise, and raises `FileNotFoundError` when no matching template exists.
+- `_resolve_generated_kernel_path(actual_kernel_save)` returns the absolute generated-kernel output path.
+- `_save_generated_kernel_file(actual_kernel_save, kernel_code)` writes requested CUDA source and returns its path, or returns `None` when disabled.
+- `_play_notification_beep(kind)` emits a best-effort error or completion sound and returns `None`.
+
+`mesolve_2D` also uses nested private helpers for expression iteration, runtime
+constant derivation, cache-key construction, constant-index compaction, and
+host-to-device conversion. They are intentionally local because they depend on
+the current solve call and are not callable package APIs.

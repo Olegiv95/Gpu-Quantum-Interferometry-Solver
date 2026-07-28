@@ -1,0 +1,26 @@
+numpy>=1.24
+sympy>=1.11
+matplotlib>=3.7
+
+# Choose the CuPy package matching your CUDA runtime.
+# For CUDA 12.x:
+cupy-cuda12x>=13
+# For CUDA 11.x, replace the line above with:
+# cupy-cuda11x>=13,<14
+
+# For CUDA 13.x, replace the CUDA 12 line with:
+# cupy-cuda13x>=14
+
+# Optional, needed only for QuTiP CPU reference benchmarks:
+# qutip>=5.0
+
+# Optional, needed only for python_ode_cpu adaptive CPU benchmarks:
+# scipy>=1.10
+
+# Optional development and publication checks:
+# pytest>=8
+# build>=1
+
+# External programs used by optional features:
+# - FFmpeg for MP4 animation export
+# - Julia plus DifferentialEquations, DiffEqGPU, CUDA, and StaticArrays

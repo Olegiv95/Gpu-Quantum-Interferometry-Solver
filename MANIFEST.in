@@ -1,0 +1,19 @@
+include README.md
+include .gitignore
+include GQIS_API.md
+include GitHub_metadata_files_tutorial.md
+include LICENSE
+include CITATION.cff
+include requirements.txt
+include Benchmark_01_two_level_basic_julia_gpu.jl
+include Benchmark_01_full_benchmark.csv
+include Benchmark_01_full_benchmark.png
+include Benchmark_02_full_benchmark.csv
+include Benchmark_02_full_benchmark.png
+include Example_*.py
+include Benchmark_*.py
+include check_environment.py
+recursive-include gqis *.cu
+recursive-include tests *.py
+recursive-include .github *.yml
+global-exclude __pycache__ *.py[cod]

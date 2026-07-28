@@ -1,0 +1,50 @@
+# Python caches and build artifacts
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local editor/project state
+.vscode/
+.idea/
+
+# Generated solver/debug outputs
+*_Kernel.cu
+!gqis/N_Level_Kernel.cu
+*_timings_*.txt
+
+# Large generated scientific outputs
+*.dat
+*.mp4
+*.avi
+*.mov
+*.gif
+
+# Generated run directories. Keep selected benchmark CSV/PNG files in the repo.
+# PNG and CSV are deliberately not ignored globally so documentation/reference
+# results can be committed; place disposable runs under outputs/.
+outputs/
+animations/
+
+# Local reports and drafts
+Report/
+Reports/
+*.docx
+*.pptx
+
+# OS files
+.DS_Store
+Thumbs.db
