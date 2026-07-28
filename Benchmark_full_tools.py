@@ -108,6 +108,7 @@ def collect_equipment_info() -> dict[str, str]:
     """Best-effort hardware/software metadata for saved benchmark baselines."""
     cpu = _windows_cpu_name() or platform.processor() or platform.uname().processor or "unknown CPU"
     gpu = "unknown GPU"
+    gpu_vram_gb = ""
     cuda_runtime = ""
 
     try:
@@ -119,7 +120,7 @@ def collect_equipment_info() -> dict[str, str]:
         gpu = name.decode("utf-8", errors="replace") if isinstance(name, bytes) else str(name)
         total_mem_gb = props.get("totalGlobalMem", 0) / (1024**3)
         if total_mem_gb > 0:
-            gpu = f"{gpu} ({total_mem_gb:.1f} GB)"
+            gpu_vram_gb = f"{total_mem_gb:.2f}"
         version = cp.cuda.runtime.runtimeGetVersion()
         cuda_runtime = f"{version // 1000}.{(version % 1000) // 10}"
     except Exception as exc:
@@ -132,6 +133,8 @@ def collect_equipment_info() -> dict[str, str]:
         "os": _os_display_name(),
         "python": sys.version.split()[0],
     }
+    if gpu_vram_gb:
+        metadata["gpu_vram_gb"] = gpu_vram_gb
     if cuda_runtime:
         metadata["cuda_runtime"] = cuda_runtime
     return metadata
@@ -140,7 +143,16 @@ def collect_equipment_info() -> dict[str, str]:
 def format_equipment_label(metadata: dict[str, str] | None) -> str:
     if not metadata:
         return ""
-    return f"CPU: {metadata.get('cpu', 'unknown')} | GPU: {metadata.get('gpu', 'unknown')}"
+    label = f"CPU: {metadata.get('cpu', 'unknown')} | GPU: {metadata.get('gpu', 'unknown')}"
+    vram = metadata.get("gpu_vram_gb")
+    return f"{label} | VRAM: {vram} GB" if vram else label
+
+
+def print_equipment_info(metadata: dict[str, str] | None = None) -> dict[str, str]:
+    """Print benchmark hardware and return the metadata used."""
+    metadata = metadata or collect_equipment_info()
+    print(f"Benchmark equipment: {format_equipment_label(metadata)}")
+    return metadata
 
 
 def save_benchmark_csv(rows: list[dict], path: Path, *, metadata: dict[str, str] | None = None) -> None:

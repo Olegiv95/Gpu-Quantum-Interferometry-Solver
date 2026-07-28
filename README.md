@@ -123,6 +123,11 @@ Members with access to the private GitHub repository can install the current
 pip install "gpu-quantum-interferometry-solver[cuda12,examples] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@main"
 ```
 
+Research-group members should follow
+[RESEARCH_GROUP_SMOKE_TEST.md](RESEARCH_GROUP_SMOKE_TEST.md) for complete
+clean-environment installation, private GitHub authentication, CUDA selection,
+smoke-test, update, and environment-deactivation commands.
+
 Optional external programs are FFmpeg for MP4 export and Julia with `DifferentialEquations`, `DiffEqGPU`, `CUDA`, and `StaticArrays` for Julia GPU comparisons. `requirements.txt` provides a CUDA 12-oriented non-package installation list.
 
 Dependency roles and minimum versions are:

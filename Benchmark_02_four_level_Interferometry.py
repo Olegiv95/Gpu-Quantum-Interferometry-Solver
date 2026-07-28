@@ -28,6 +28,7 @@ from Benchmark_full_tools import (
     extrapolate_loglog,
     parse_solver_list,
     plot_benchmark,
+    print_equipment_info,
     save_benchmark_csv,
 )
 from gqis import build_independent_rho, mesolve_2D
@@ -775,7 +776,7 @@ def run_full_benchmark(
     metadata = collect_equipment_info()
     if np.isfinite(gpu_first_rhs_stage_s):
         metadata["gpu_first_rhs_stage_s"] = f"{gpu_first_rhs_stage_s:.9g}"
-    print(f"Benchmark equipment: CPU={metadata.get('cpu', 'unknown')} | GPU={metadata.get('gpu', 'unknown')}")
+    print_equipment_info(metadata)
     save_benchmark_csv(rows, out_csv, metadata=metadata)
     reference_lines = []
     if np.isfinite(gpu_first_rhs_stage_s):
@@ -955,6 +956,8 @@ def main() -> None:
         active_solvers = selected_solvers(mode, solver, solver_a, solver_b)
         if mode == "full_benchmark":
             active_solvers = set(parse_solver_list(args.full_solvers, SOLVER_NAMES))
+        else:
+            print_equipment_info()
         if "python_cpu" in active_solvers and python_cpu_num_t_divider > 1:
             print(
                 "Warning: python_cpu uses fixed-step RK4, not an adaptive solver. "

@@ -35,6 +35,7 @@ from Benchmark_full_tools import (
     extrapolate_loglog,
     format_equipment_label,
     parse_solver_list,
+    print_equipment_info,
     save_benchmark_csv,
 )
 from gqis import mesolve_2D
@@ -951,7 +952,7 @@ def run_full_benchmark(base_cfg: BenchConfig, args: argparse.Namespace, solvers:
     metadata = collect_equipment_info()
     if np.isfinite(gpu_first_rhs_stage_s):
         metadata["gpu_first_rhs_stage_s"] = f"{gpu_first_rhs_stage_s:.9g}"
-    print(f"Benchmark equipment: CPU={metadata.get('cpu', 'unknown')} | GPU={metadata.get('gpu', 'unknown')}")
+    print_equipment_info(metadata)
     save_benchmark_csv(rows, out_csv, metadata=metadata)
     reference_lines = []
     if np.isfinite(gpu_first_rhs_stage_s):
@@ -1176,6 +1177,8 @@ def main() -> None:
 
     cfg = make_config(args)
     solvers = selected_solvers(mode, args)
+    if mode != "full_benchmark":
+        print_equipment_info()
 
     if "python_cpu" in solvers and args.python_cpu_spp_divider > 1:
         print(
