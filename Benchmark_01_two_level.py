@@ -1294,8 +1294,8 @@ def user_settings() -> dict:
         "plot_layout": "windows",  # "windows" or "panel"
         # Full-benchmark sweep limits.
         "bench_min_side_size": 16,  # smallest square-grid side dimension for benchmark
-        "bench_max_side_size": 16384 * 2,  # biggest square-grid side dimension for benchmark
-        "bench_solver_time_limit": 100.0*4,  # terminate calculation above this duration in seconds
+        "bench_max_side_size": 16384 * 1,  # biggest square-grid side dimension for benchmark
+        "bench_solver_time_limit": 100.0*2,  # terminate calculation above this duration in seconds
         "Output_filename": "Benchmark_01_full_benchmark",  # base filename for CSV and PNG output
     }
 

@@ -1087,8 +1087,8 @@ def user_settings() -> dict:
         "qutip_output_density_divider": adaptive_cpu_output_density_divider,
         # Full-benchmark sweep limits.
         "bench_min_side_size": 16,  # smallest square-grid side dimension for benchmark
-        "bench_max_side_size": 8192 * 4,  # biggest square-grid side dimension for benchmark
-        "bench_solver_time_limit": 200.0 * 4,  # terminate calculation above this duration in seconds
+        "bench_max_side_size": 8192 * 2,  # biggest square-grid side dimension for benchmark
+        "bench_solver_time_limit": 200.0,  # terminate calculation above this duration in seconds
         "Output_filename": "Benchmark_02_full_benchmark",  # base filename for CSV and PNG output
     }
 
