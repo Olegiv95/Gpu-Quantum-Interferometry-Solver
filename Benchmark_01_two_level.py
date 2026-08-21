@@ -787,8 +787,6 @@ def normalize_mode_and_solver(args: argparse.Namespace) -> tuple[str, str]:
             mode, solver = "single", token
         else:
             mode = token
-    if mode in {"full", "full-benchmark"}:
-        mode = "full_benchmark"
     return mode, solver
 
 
@@ -980,8 +978,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("mode_or_solver", nargs="?",
                         help="single/all/diff/full_benchmark or a solver name")
     parser.add_argument("--mode",
-                        choices=["single", "all", "diff", "full_benchmark", "full",
-                                 "full-benchmark"], default=None)
+                        choices=["single", "all", "diff", "full_benchmark"], default=None)
     parser.add_argument("--solver", "--solver-a", dest="solver", choices=SOLVERS, default=None,
                         help="solver for single mode or first solver for diff mode")
     parser.add_argument("--solver-b", choices=SOLVERS, default=None)

@@ -758,8 +758,6 @@ def run_full_benchmark(cfg: FourCfg, *, julia_cmd: str, solvers: tuple[str, ...]
 
 def normalize_mode_solver(mode: str, solver: str) -> tuple[str, str]:
     """Accept common shorthand: mode='qutip_cpu' means single qutip_cpu run."""
-    if mode in {"full", "full-benchmark", "full_benchmark"}:
-        return "full_benchmark", solver
     if mode in SOLVER_NAMES:
         print(f"Interpreting mode='{mode}' as mode='single', solver='{mode}'.")
         return "single", mode
@@ -779,8 +777,9 @@ def selected_solvers(mode: str, solver: str, solver_b: str) -> set[str]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Four-level interferometry benchmark.")
     parser.add_argument("mode_or_solver", nargs="?",
-                        help="optional shorthand: single/all/diff or a solver name")
-    parser.add_argument("--mode", default=None, help="single, all, diff, or solver shorthand")
+                        help="single/all/diff/full_benchmark or a solver name")
+    parser.add_argument("--mode", choices=["single", "all", "diff", "full_benchmark"],
+                        default=None)
     parser.add_argument("--solver", "--solver-a", dest="solver",
                         choices=sorted(SOLVER_NAMES), default=None,
                         help="solver for single mode or first solver for diff mode")
@@ -827,7 +826,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-progress", action="store_true",
                         help="disable CPU column progress display")
     parser.add_argument("--full-solvers", default=None,
-                        help="comma-separated solvers for full-benchmark mode")
+                        help="comma-separated solvers for full_benchmark mode")
     parser.add_argument("--bench-min-side-size", "--full-min-side", dest="bench_min_side_size",
                         type=int, default=None,
                         help="smallest square-grid side dimension for benchmark")

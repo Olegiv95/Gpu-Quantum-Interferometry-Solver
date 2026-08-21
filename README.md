@@ -226,10 +226,18 @@ order; each displayed or saved frame currently runs its GPU calculation.
 
 ## Benchmarks
 
-Benchmark scripts:
+Benchmark models:
 
-- `Benchmark_01_two_level.py`: two-level GPU, fixed-step Python CPU, adaptive SciPy CPU, QuTiP CPU, and Julia GPU comparison.
-- `Benchmark_02_four_level_Interferometry.py`: four-level GPU, fixed-step Python CPU, adaptive SciPy CPU, QuTiP CPU, and Julia GPU comparison.
+- `Benchmark_01_two_level.py`: driven qubit.
+- `Benchmark_02_four_level_Interferometry.py`: coupled qubit-resonator system.
+
+Available solvers for either benchmark:
+
+- `gpu`: GQIS fixed-step RK4 on CUDA.
+- `python_cpu`: fixed-step Python RK4.
+- `python_ode_cpu`: adaptive SciPy RK45 on CPU.
+- `qutip_cpu`: adaptive QuTiP solver on CPU.
+- `julia_gpu`: Julia DifferentialEquations/DiffEqGPU solver.
 
 Both scripts use the same benchmark modes:
 
@@ -240,89 +248,45 @@ Both scripts use the same benchmark modes:
 | `all` | none | Attempts every backend and skips unavailable optional backends with a console message. It displays maps but does not calculate pairwise errors. |
 | `full_benchmark` | `--full-solvers` | Measures timing versus square-grid size, terminates points that exceed the time limit, extrapolates larger points, and saves CSV/PNG results. It does not compare numerical output maps. |
 
-`full` and `full-benchmark` are aliases for `full_benchmark`. A solver name may
-also be supplied as the positional argument, for example
-`python Benchmark_01_two_level.py qutip_cpu`; this is shorthand for `single`
-mode. Command-line options override the values in `user_settings()` near the
-bottom of each benchmark. Run either script with `--help` for all options.
-
-Run a single GPU benchmark:
+Run either benchmark with its default settings:
 
 ```bash
-python Benchmark_01_two_level.py --mode single --solver gpu --nx 512 --ny 512 --no-plot --timings
-python Benchmark_02_four_level_Interferometry.py --mode single --solver gpu --nx 256 --ny 256 --no-plot --timings
+python Benchmark_01_two_level.py
+python Benchmark_02_four_level_Interferometry.py
 ```
 
-Use `diff` mode to run any two available backends on the same parameter grid.
-For numerical validation, the recommended comparison is GQIS against adaptive
-QuTiP with divider `1` so both backends receive the full requested time grid:
+Run one GQIS-versus-QuTiP comparison:
 
 ```bash
-python Benchmark_01_two_level.py --mode diff --solver gpu --solver-b qutip_cpu --detuning-points 16 --amplitude-points 16 --qutip-output-density-divider 1 --timings
-python Benchmark_02_four_level_Interferometry.py --mode diff --solver gpu --solver-b qutip_cpu --nx 16 --ny 16 --qutip-cpu-num-t-divider 1 --timings
+python Benchmark_02_four_level_Interferometry.py --mode diff --solver gpu --solver-b qutip_cpu
 ```
-
-Each command displays both interferograms and their difference and prints the
-mean-square deviation (`MSE`), root-mean-square deviation (`RMS`), maximum
-absolute difference, and solver timings. Increase
-`--solver-steps-per-period` until the GPU-versus-QuTiP error is converged; the GQIS
-backend uses fixed-step RK4, while QuTiP chooses adaptive internal steps.
-
-Both native Python CPU backends remain available. Substitute `python_cpu` for a
-same-grid fixed-step RK4 comparison, or `python_ode_cpu` for the adaptive SciPy
-`solve_ivp` comparison. Thus `--solver` and `--solver-b` may be any two of
-`gpu`, `python_cpu`, `python_ode_cpu`, `qutip_cpu`, and `julia_gpu`.
-
-Run a full timing sweep and save CSV/PNG output:
-
-```bash
-python Benchmark_01_two_level.py --mode full_benchmark --bench-max-side-size 8192 --bench-solver-time-limit 300 --no-plot
-python Benchmark_02_four_level_Interferometry.py --mode full_benchmark --bench-max-side-size 8192 --bench-solver-time-limit 300 --no-plot
-```
-
-To include the adaptive SciPy backend, add `python_ode_cpu` to `--full-solvers`:
-
-```bash
-python Benchmark_01_two_level.py --mode full_benchmark --full-solvers gpu,python_ode_cpu,qutip_cpu,julia_gpu --bench-max-side-size 8192 --no-plot
-python Benchmark_02_four_level_Interferometry.py --mode full_benchmark --full-solvers gpu,python_ode_cpu,qutip_cpu,julia_gpu --bench-max-side-size 8192 --no-plot
-```
-
-Solver inclusion is user-selectable. Use `--solver` in `single` mode,
-`--solver` and `--solver-b` in `diff` mode, or `--full-solvers` in
-`full_benchmark` mode. Mode `all` runs every available backend. The default full
-performance sweep includes `gpu`, `qutip_cpu`, and `julia_gpu`; QuTiP is the
-primary CPU performance and numerical reference, while `python_cpu` is retained
-as a transparent fixed-step implementation reference.
 
 Full benchmark mode measures powers-of-two square grids. If a solver exceeds
 `--bench-solver-time-limit`, that process is terminated before the next measurement.
-To avoid launching a point that is very likely to time out, the benchmark starts
-extrapolating when the latest measured time exceeds half the limit and the last
-two measured points have a time ratio greater than `0.9 * 4 = 3.6`. There is no
-upper bound on this ratio.
-Larger points are extrapolated from the last measured point using the log-log slope
-between the last two valid measurements, with `log10(time)` versus
-`log10(number of simulations)`. In generated plots, measured points use circles
-and extrapolated points use squares with the same color.
-
-In `full_benchmark` mode, `--no-plot` suppresses the interactive Matplotlib
-window but still saves the PNG figure and CSV table.
+Larger grids are extrapolated from recent measured scaling. In generated plots,
+measured points use circles and extrapolated points use squares with the same color.
 
 The generated CSV files include the hardware, software, physical-model,
 time-grid, precision, CPU-divider, sweep-limit, and timing metadata needed to
 reproduce the benchmark configuration.
 
-## Current Benchmark Results
+## Benchmark Results
 
 On the reference RTX 3080, GQIS approaches linear scaling with the number of
 simulations once fixed launch overhead no longer dominates. The largest
 measured `32768 x 32768` runs evaluate `1.07 x 10^9` parameter sets, with
-10,240 RK4 steps per trajectory, in about 104 s for the 2-level model and 421 s
-for the 4-level model. Direct QuTiP calculations at this resolution are
-estimated to require `6.0 x 10^6` s and `9.3 x 10^6` s, or about two and four
-months of continuous CPU computation. Those large-grid CPU times are therefore
-extrapolated from measured smaller grids. The resulting estimated GQIS speedups
-are about `5.7 x 10^4` and `2.2 x 10^4` for these benchmark configurations.
+10,240 RK4 steps per trajectory, in about 1 minute 44 seconds for the 2-level
+model and 7 minutes 1 second for the 4-level model. Direct QuTiP calculations
+at this resolution are estimated to require about 69 days (2 months and 9 days)
+and 108 days (3 months
+and 18 days), respectively. Those large-grid CPU times are therefore
+extrapolated from measured smaller grids.
+
+Across the approximately linear large-grid region from `4096 x 4096` through
+`32768 x 32768`, the average point-by-point speedups are about 69,000 times over
+QuTiP and 22 times over Julia for the 2-level model, and 24,000 times over QuTiP
+and 38 times over Julia for the 4-level model. These averages include
+extrapolated values after a reference solver exceeds its practical time limit.
 Reaching resolutions that are impractical with a CPU reference is the primary
 motivation for GQIS.
 
