@@ -8,7 +8,7 @@ parameter point per GPU thread.
 
 The main target is quantum interferometry: dense grids of low-dimensional open-system simulations where a CPU loop over parameter points becomes the bottleneck. The solver is not hard-coded for a two-level system. You provide the Hamiltonian matrix, collapse operators, observable, drive expression, and optional initial density matrix. In principle this can represent any finite-dimensional Lindblad model that fits in GPU memory and has equations small enough for CUDA compilation.
 
-> **Status:** GQIS 0.1.0 is alpha research software. The CUDA backend uses
+> **Status:** GQIS 0.1.0 is alpha stage research software. The CUDA backend uses
 > fixed-step fourth-order Runge-Kutta (RK4) integration on the user-supplied
 > time grid. Verify time-step convergence by repeating calculations with
 > progressively smaller steps. For important results, compare against a trusted
