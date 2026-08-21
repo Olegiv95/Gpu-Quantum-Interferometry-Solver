@@ -1,42 +1,53 @@
-# timestamp_local,2026-07-17T18:10:44
+# timestamp_local,2026-08-20T17:18:37
 # cpu,11th Gen Intel(R) Core(TM) i9-11900K @ 3.50GHz
-# gpu,NVIDIA GeForce RTX 3080 (10.0 GB)
-# os,"Windows 11 Home (25H2, build 26200.8655)"
+# gpu,NVIDIA GeForce RTX 3080
+# os,"Windows 11 Home (25H2, build 26200.9168)"
 # python,3.11.7
-# cuda_runtime,12.0
-# gpu_first_rhs_stage_s,0.241946459
+# numpy,2.4.6
+# gqis,0.1.0
+# sympy,1.14.0
+# matplotlib,3.11.1
+# scipy,1.16.1
+# qutip,5.2.0
+# cupy,14.1.1
+# gpu_vram_gb,10.00
+# cuda_runtime,12.9
+# gpu_first_rhs_stage_s,0.246771812
 
 side_dimension,number_of_simulations,solver,time_s,prep_s,calc_s,status
-16,256,gpu,0.00629687309,,,measured
-32,1024,gpu,0.00591635704,,,measured
-64,4096,gpu,0.0060031414,,,measured
-128,16384,gpu,0.00600838661,,,measured
-256,65536,gpu,0.0119652748,,,measured
-512,262144,gpu,0.0314593315,,,measured
-1024,1048576,gpu,0.113026857,,,measured
-2048,4194304,gpu,0.37399745,,,measured
-4096,16777216,gpu,1.47657466,,,measured
-8192,67108864,gpu,6.05711412,,,measured
-16384,268435456,gpu,23.8501961,,,measured
-16,256,qutip_cpu,7.16994214,,,measured
-32,1024,qutip_cpu,13.4296527,,,measured
-64,4096,qutip_cpu,39.1802363,,,measured
-128,16384,qutip_cpu,135.802811,,,measured
-256,65536,qutip_cpu,470.706798,,,extrapolated
-512,262144,qutip_cpu,1631.51916,,,extrapolated
-1024,1048576,qutip_cpu,5655.01666,,,extrapolated
-2048,4194304,qutip_cpu,19600.8813,,,extrapolated
-4096,16777216,qutip_cpu,67938.7118,,,extrapolated
-8192,67108864,qutip_cpu,235482.706,,,extrapolated
-16384,268435456,qutip_cpu,816207.773,,,extrapolated
-16,256,julia_gpu,9.04737711,,,measured
-32,1024,julia_gpu,8.51900387,,,measured
-64,4096,julia_gpu,8.71042156,,,measured
-128,16384,julia_gpu,8.48578906,,,measured
-256,65536,julia_gpu,9.49669409,,,measured
-512,262144,julia_gpu,13.9001946,,,measured
-1024,1048576,julia_gpu,27.2736199,,,measured
-2048,4194304,julia_gpu,78.9387951,,,measured
-4096,16777216,julia_gpu,287.799029,,,measured
-8192,67108864,julia_gpu,1049.27217,,,extrapolated
-16384,268435456,julia_gpu,3825.48925,,,extrapolated
+16,256,gpu,0.00410747528,,,measured
+32,1024,gpu,0.00399899483,,,measured
+64,4096,gpu,0.00399947166,,,measured
+128,16384,gpu,0.00599980354,,,measured
+256,65536,gpu,0.0100018978,,,measured
+512,262144,gpu,0.0289971828,,,measured
+1024,1048576,gpu,0.101011753,,,measured
+2048,4194304,gpu,0.367999792,,,measured
+4096,16777216,gpu,1.45735574,,,measured
+8192,67108864,gpu,5.82352161,,,measured
+16384,268435456,gpu,22.8693056,,,measured
+32768,1073741824,gpu,104.29636,,,measured
+16,256,qutip_cpu,6.78204679,,,measured
+32,1024,qutip_cpu,13.4935064,,,measured
+64,4096,qutip_cpu,38.5976455,,,measured
+128,16384,qutip_cpu,145.669281,,,measured
+256,65536,qutip_cpu,549.762531,,,extrapolated
+512,262144,qutip_cpu,2074.82895,,,extrapolated
+1024,1048576,qutip_cpu,7830.49941,,,extrapolated
+2048,4194304,qutip_cpu,29552.6631,,,extrapolated
+4096,16777216,qutip_cpu,111533.103,,,extrapolated
+8192,67108864,qutip_cpu,420931.035,,,extrapolated
+16384,268435456,qutip_cpu,1588612.99,,,extrapolated
+32768,1073741824,qutip_cpu,5995498.12,,,extrapolated
+16,256,julia_gpu,8.75585461,,,measured
+32,1024,julia_gpu,8.42992091,,,measured
+64,4096,julia_gpu,7.72865081,,,measured
+128,16384,julia_gpu,8.11102223,,,measured
+256,65536,julia_gpu,7.68946171,,,measured
+512,262144,julia_gpu,9.45999002,,,measured
+1024,1048576,julia_gpu,12.4441938,,,measured
+2048,4194304,julia_gpu,14.8668585,,,measured
+4096,16777216,julia_gpu,26.8419883,,,measured
+8192,67108864,julia_gpu,121.175427,,,measured
+16384,268435456,julia_gpu,547.034146,,,extrapolated
+32768,1073741824,julia_gpu,2469.53003,,,extrapolated

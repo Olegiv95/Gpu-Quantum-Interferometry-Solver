@@ -5,7 +5,7 @@ user code only needs `mesolve_2D`; the other functions expose the symbolic and
 CUDA code-generation stages for inspection or advanced customization.
 
 ```python
-from gqis import build_independent_rho, mesolve_2D
+from gqis import build_independent_rho, build_reduced_lindblad_rhs, mesolve_2D
 ```
 
 The compatibility imports `from gpu_int_tool import mesolve_2D` and
@@ -43,7 +43,7 @@ fixed-step RK4.
 | `Drive` | SymPy expression or `dict[Symbol, Expr]` | Time-dependent signal. A single expression replaces the conventional `Drive` placeholder. A dictionary maps multiple placeholders used by `H` to separate signals. Expressions may use `t`, sweep parameters, and constants. |
 | `Col_Ops` | sequence of square SymPy matrices | Lindblad collapse operators. Use `[]` for closed-system evolution. Every operator must have the same shape as `H`. |
 | `mean_operator` | square SymPy matrix | Operator whose expectation value is averaged, returned at the final time, or sampled as a trace. It must match `H`. |
-| `tlist` | 1D array | Finite, strictly increasing, uniformly spaced times beginning at zero. `M` samples define exactly `M - 1` RK4 steps through `tlist[-1]`. Requiring zero avoids an additional kernel time-offset argument. |
+| `tlist` | 1D array | Finite, strictly increasing, uniformly spaced times beginning at zero. `M` samples define exactly `M - 1` solver steps through `tlist[-1]`. Requiring zero avoids an additional kernel time-offset argument. The current CUDA backend uses fixed-step RK4. |
 
 ### Sweeps And Constants
 
@@ -62,12 +62,12 @@ fixed-step RK4.
 | Parameter | Type/default | Meaning |
 | --- | --- | --- |
 | `rho0` | SymPy matrix, reduced expression list, or `None` | Initial density matrix. It may contain sweep or runtime-constant symbols. `None` initializes state `|0><0|`. |
-| `output_mode` | `"mean"` | `"mean"` averages the observable after each post-warmup RK4 step; `"final"` returns its final expectation; `"final_rho"` returns the final reduced real density vector. |
+| `output_mode` | `"mean"` | `"mean"` averages the observable after each post-warmup solver step; `"final"` returns its final expectation; `"final_rho"` returns the final reduced real density vector. |
 | `warmup_time` | `0.0` | Initial fraction of time excluded from the time average, in `[0, 1]`. This can suppress transient dependence on the initial state without shortening the simulated trajectory. A value of `1` leaves no averaging window and returns the final expectation value. |
 | `return_time_trace` | `False` | Also return sampled expectation values and their times. Samples are recorded after integration steps, not at `t=0`. |
-| `time_trace_every` | `None` | Store one trace value every specified number of RK4 steps. Mutually exclusive with `time_trace_samples_per_period`. |
+| `time_trace_every` | `None` | Store one trace value every specified number of solver steps. Mutually exclusive with `time_trace_samples_per_period`. |
 | `time_trace_samples_per_period` | `None` | Requested stored trace density per drive period. Requires `solver_samples_per_period`. |
-| `solver_samples_per_period` | `None` | Number of RK4 integration steps per drive period, used only to convert trace density to a stride. |
+| `solver_samples_per_period` | `None` | Number of solver integration steps per drive period, used only to convert trace density to a stride. |
 
 ### Code Generation And Execution
 
@@ -123,6 +123,17 @@ Reduced-vector order is:
 2. Real and imaginary parts of each upper-triangular coherence in row-major order.
 
 The last population is reconstructed from unit trace.
+
+### `build_reduced_lindblad_rhs(N, H, Col_Ops, mean_operator, *, pre_expand=False, collect_rho=False, factor_terms=False)`
+
+Inputs: Hilbert-space dimension, symbolic Hamiltonian, collapse operators,
+observable operator, and optional symbolic simplification controls.
+
+Output: `(drho_eqs, mean_re, mean_im, metadata)`. `drho_eqs` contains the
+`N*N-1` real Lindblad ODE expressions in the ordering defined above. `mean_re`
+and `mean_im` are the expectation-value components. CUDA generation and the
+benchmark Julia/CPU backends use this same function so their density-matrix
+equations cannot diverge through separately maintained symbolic derivations.
 
 ### `rho_matrix_to_independent_exprs(rho0)`
 

@@ -158,7 +158,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "gpu-quantum-interferometry-solver"
+name = "gqis"
 version = "0.1.0"
 description = "GPU Quantum Interferometry Solver for massive parameter sweeps of finite-dimensional Lindblad systems."
 readme = "README.md"
@@ -219,7 +219,7 @@ authors:
   - family-names: "Ivakhnenko"
     given-names: "Oleh"
 version: "0.1.0"
-date-released: "2026-06-01"
+date-released: "2026-08-21"
 ```
 
 Later, if you publish a paper or Zenodo DOI, add:
@@ -267,8 +267,12 @@ For the first GitHub release of GQIS, prepare:
 Gpu-Quantum-Interferometry-Solver/
   README.md
   GQIS_API.md
+  INSTALLATION_AND_SMOKE_TEST.md
+  CONTRIBUTING.md
+  CHANGELOG.md
   LICENSE
   .gitignore
+  .gitattributes
   requirements.txt
   pyproject.toml
   MANIFEST.in
@@ -284,9 +288,15 @@ Gpu-Quantum-Interferometry-Solver/
   Example_02_four_level_interferogram.py
   Example_03_two_level_animation.py
   Example_04_four_level_animation.py
+  Example_05_initial_condition_sweep_gate_fidelity.py
   Benchmark_01_two_level.py
   Benchmark_01_two_level_basic_julia_gpu.jl
   Benchmark_02_four_level_Interferometry.py
+  Benchmark_full_tools.py
+  check_environment.py
+  .github/
+    workflows/
+      ci.yml
 ```
 
 `pyproject.toml` is now active: it builds the installable package and declares

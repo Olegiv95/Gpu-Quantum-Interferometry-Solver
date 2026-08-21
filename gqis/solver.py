@@ -113,14 +113,16 @@ def _resolve_kernel_template_file(kernel_template_file):
         FileNotFoundError: If the template cannot be found.
     """
 
-    packaged_template = os.path.join(os.path.dirname(os.path.abspath(__file__)), "N_Level_Kernel.cu")
+    packaged_template = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     "N_Level_Kernel.cu")
     if kernel_template_file is None:
         if os.path.exists(packaged_template):
             return packaged_template
         raise FileNotFoundError(f"Packaged CUDA kernel template was not found: {packaged_template}")
     if os.path.exists(kernel_template_file):
         return kernel_template_file
-    module_candidate = os.path.join(os.path.dirname(os.path.abspath(__file__)), kernel_template_file)
+    module_candidate = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    kernel_template_file)
     if os.path.exists(module_candidate):
         return module_candidate
     raise FileNotFoundError(f"CUDA kernel template was not found: {kernel_template_file}")
@@ -186,6 +188,7 @@ def build_independent_rho(N):
         return i * N - (i * (i + 1)) // 2 + (j - i - 1)
 
     base = num_diag
+
     def upper_elem(i, j):
         """Return complex upper-triangular element from real/imag symbols."""
         u = upper_index(i, j)
@@ -201,13 +204,7 @@ def build_independent_rho(N):
             return sp.conjugate(upper_elem(j, i))
 
     rho = sp.Matrix(N, N, rho_elem)
-    meta = {
-        "N": N,
-        "rho_syms": rho_syms,
-        "num_diag": num_diag,
-        "M": M,
-        "vec_len": vec_len,
-    }
+    meta = {"N": N, "rho_syms": rho_syms, "num_diag": num_diag, "M": M, "vec_len": vec_len}
     return rho, meta
 
 
@@ -248,22 +245,83 @@ def rho_matrix_to_independent_exprs(rho0):
     return [sp.simplify(sp.sympify(expr)) for expr in exprs]
 
 
-def generate_unrolled_drho(
-    N,
-    H,
-    Drive_symbol,
-    Col_Ops,
-    mean_operator,
-    drive_expr=None,
-    *,
-    runtime_const_syms=(),
-    pre_expand=False,
-    collect_rho=False,
-    factor_terms=False,
-    cse_batch_size=1,
-    cse_simplify=False,
-    hoist_rho_independent=True,
-):
+def build_reduced_lindblad_rhs(N, H, Col_Ops, mean_operator, *, pre_expand=False,
+                                collect_rho=False, factor_terms=False):
+    """Build the symbolic Lindblad RHS used by every GQIS backend.
+
+    The density matrix is reduced to ``N*N - 1`` real variables by enforcing
+    Hermiticity and unit trace. Keeping this derivation in one function ensures
+    that CUDA, Julia, and CPU reference backends solve the same physical ODE.
+
+    Args:
+        N: Hilbert-space dimension.
+        H: ``N x N`` symbolic Hamiltonian.
+        Col_Ops: Iterable of ``N x N`` collapse operators.
+        mean_operator: ``N x N`` operator whose expectation value is evaluated.
+        pre_expand: Expand matrix and reduced RHS expressions before simplification.
+        collect_rho: Collect each reduced RHS expression by state variables.
+        factor_terms: Factor symbolic terms before returning the expressions.
+
+    Returns:
+        ``(drho_eqs, mean_re, mean_im, meta)`` where ``drho_eqs`` contains the
+        ``N*N - 1`` real ODE expressions, ``mean_re`` and ``mean_im`` are the
+        real and imaginary parts of the expectation value, and ``meta`` is the
+        metadata returned by :func:`build_independent_rho`.
+    """
+    rho, meta = build_independent_rho(N)
+
+    mean_val = sp.simplify(sp.Trace(mean_operator * rho))
+    mean_re_expr = sp.simplify(sp.re(mean_val))
+    mean_im_expr = sp.simplify(sp.im(mean_val))
+
+    comm = -sp.I * (H * rho - rho * H)
+    lind = sp.zeros(N)
+    for L in Col_Ops:
+        Ld = L.H
+        LdL = Ld * L
+        lind += L * rho * Ld - sp.Float(0.5) * (LdL * rho + rho * LdL)
+
+    drho_full = comm + lind
+    if pre_expand:
+        drho_full = sp.expand(drho_full)
+    if factor_terms:
+        drho_full = sp.factor_terms(drho_full, clear=True)
+
+    # build_independent_rho already writes the final diagonal element in terms
+    # of the first N - 1 populations. This explicit substitution also handles
+    # expressions that SymPy has retained in an equivalent unreduced form.
+    last_population = 1 - sum(rho[j, j] for j in range(N - 1))
+    drho_full = drho_full.subs(rho[N - 1, N - 1], last_population)
+    if pre_expand:
+        drho_full = sp.expand(drho_full)
+    if factor_terms:
+        drho_full = sp.factor_terms(drho_full, clear=True)
+
+    drho_eqs = []
+    for i in range(N - 1):
+        expr = sp.re(drho_full[i, i])
+        drho_eqs.append(sp.expand(expr) if pre_expand else expr)
+    for i in range(N):
+        for j in range(i + 1, N):
+            re_ij = sp.re(drho_full[i, j])
+            im_ij = sp.im(drho_full[i, j])
+            drho_eqs.append(sp.expand(re_ij) if pre_expand else re_ij)
+            drho_eqs.append(sp.expand(im_ij) if pre_expand else im_ij)
+
+    drho_eqs = [sp.simplify(sp.expand(expr)) if pre_expand else sp.simplify(expr)
+                for expr in drho_eqs]
+    if factor_terms:
+        drho_eqs = [sp.factor_terms(expr, clear=True) for expr in drho_eqs]
+    if collect_rho:
+        drho_eqs = [sp.collect(expr, meta["rho_syms"]) for expr in drho_eqs]
+
+    return drho_eqs, mean_re_expr, mean_im_expr, meta
+
+
+def generate_unrolled_drho(N, H, Drive_symbol, Col_Ops, mean_operator, drive_expr=None, *,
+                           runtime_const_syms=(), pre_expand=False, collect_rho=False,
+                           factor_terms=False, cse_batch_size=1, cse_simplify=False,
+                           hoist_rho_independent=True):
     """Generate CUDA code fragments for a symbolic Lindblad model.
 
     Args:
@@ -292,63 +350,17 @@ def generate_unrolled_drho(
         mean_line, final_line, static_syms, drive_syms, hoisted_syms)``. These
         strings are inserted into the CUDA template by ``mesolve_2D``.
     """
-    rho, meta = build_independent_rho(N)
+    drho_eqs, mean_re_expr, mean_im_expr, meta = build_reduced_lindblad_rhs(
+        N, H, Col_Ops, mean_operator, pre_expand=pre_expand, collect_rho=collect_rho,
+        factor_terms=factor_terms)
     rho_sym_names = {str(s) for s in meta["rho_syms"]}
     param_sym_names = {"ParX", "ParY"}
     runtime_const_names = {str(s) for s in (runtime_const_syms or ())}
 
-    # H is expected to be expressed symbolically using Drive_symbol (not expanded)
-    mean_val = sp.simplify(sp.Trace(mean_operator * rho))
-    mean_re_expr = sp.simplify(sp.re(mean_val))
-    mean_im_expr = sp.simplify(sp.im(mean_val))
-
-    comm = -sp.I * (H * rho - rho * H)
-
-    lind = sp.zeros(N)
-    for L in Col_Ops:
-        Ld = L.H
-        LdL = Ld * L
-        lind += (L * rho * Ld) - sp.Float(0.5) * (LdL * rho + rho * LdL)
-
-    drho_full = comm + lind
-    if pre_expand:
-        drho_full = sp.expand(drho_full)
-    if factor_terms:
-        drho_full = sp.factor_terms(drho_full, clear=True)
-
-    # Replace last diagonal explicitly: rho[N-1,N-1] -> 1 - sum(...)
-    # (Doing this in a loop is redundant and can blow up expression sizes.)
-    drho_full = drho_full.subs(rho[N - 1, N - 1], 1 - sum([rho[j, j] for j in range(N - 1)]))
-    if pre_expand:
-        drho_full = sp.expand(drho_full)
-    if factor_terms:
-        drho_full = sp.factor_terms(drho_full, clear=True)
-    # Extract independent equations
-    drho_eqs = []
-    for i in range(N - 1):
-        expr = sp.re(drho_full[i, i])
-        drho_eqs.append(sp.expand(expr) if pre_expand else expr)
-    for i in range(N):
-        for j in range(i + 1, N):
-            re_ij = sp.re(drho_full[i, j])
-            im_ij = sp.im(drho_full[i, j])
-            drho_eqs.append(sp.expand(re_ij) if pre_expand else re_ij)
-            drho_eqs.append(sp.expand(im_ij) if pre_expand else im_ij)
-
-    drho_eqs = [sp.simplify(sp.expand(e)) if pre_expand else sp.simplify(e) for e in drho_eqs]
-    if factor_terms:
-        drho_eqs = [sp.factor_terms(e, clear=True) for e in drho_eqs]
-    if collect_rho:
-        drho_eqs = [sp.collect(e, meta["rho_syms"]) for e in drho_eqs]
-
-    hoisted_subs, drho_lines = cse_emit_c_lines(
-        drho_eqs,
-        meta["rho_syms"],
-        batch_size=cse_batch_size,
-        do_simplify=cse_simplify,
-        hoist_rho_independent=hoist_rho_independent,
-        return_hoist=True,
-    )
+    hoisted_subs, drho_lines = cse_emit_c_lines(drho_eqs, meta["rho_syms"],
+                                                batch_size=cse_batch_size, do_simplify=cse_simplify,
+                                                hoist_rho_independent=hoist_rho_independent,
+                                                return_hoist=True)
     # Drive expressions can be a single Expr (mapped to Drive_symbol) or a dict of Symbol->Expr.
     drive_map = {}
     if drive_expr is not None:
@@ -387,7 +399,7 @@ def generate_unrolled_drho(
                 expr_code = pat.sub(repl, expr_code)
 
             expr_sym_names = {str(sym) for sym in expr.free_symbols}
-            # Const-only hoists become inline substitutions (Const_arr-based), not Drive_arr entries.
+            # Const-only hoists become inline Const_arr substitutions, not Drive_arr entries.
             if (not expr_sym_names) or expr_sym_names.issubset(const_local_names):
                 name_to_repl[str(s)] = f"({expr_code})"
                 const_local_names.add(str(s))
@@ -416,13 +428,15 @@ def generate_unrolled_drho(
 
     # Hoist static-only subexpressions from the result calculation too, so static basis
     # readout does not recompute sqrt/div terms every time step.
-    mean_subs, mean_exprs = sp.cse([mean_re_expr, mean_im_expr], symbols=sp.numbered_symbols("mean_tmp"))
+    mean_subs, mean_exprs = sp.cse([mean_re_expr, mean_im_expr],
+                                   symbols=sp.numbered_symbols("mean_tmp"))
     next_static_idx = len(static_syms)
     for s, expr in mean_subs:
         expr_sym_names = {str(sym) for sym in expr.free_symbols}
         if expr_sym_names & rho_sym_names:
             mean_exprs = [sp.simplify(e.subs(s, expr)) for e in mean_exprs]
-        elif expr_sym_names and expr_sym_names.issubset(const_local_names | param_sym_names | static_sym_names):
+        elif expr_sym_names and expr_sym_names.issubset(const_local_names | param_sym_names
+                                                        | static_sym_names):
             expr_code = my_ccode(expr)
             for name, repl in name_to_repl.items():
                 pat = re.compile(r"(?<![0-9A-Za-z_])" + re.escape(name) + r"(?![0-9A-Za-z_])")
@@ -477,18 +491,13 @@ def generate_unrolled_drho(
     static_lines = tidy_c_lines(static_lines) if static_lines else []
     drive_lines = tidy_c_lines(drive_lines) if drive_lines else []
     drho_lines = tidy_c_lines(drho_lines) if drho_lines else []
-    return static_lines, drive_lines, drive_alias_lines, drho_lines, mean_line, final_line, static_syms, drive_syms, hoisted_syms
+    return (static_lines, drive_lines, drive_alias_lines, drho_lines, mean_line, final_line,
+            static_syms, drive_syms, hoisted_syms,
+            )
 
 
-def cse_emit_c_lines(
-    drho_exprs,
-    rho_syms,
-    *,
-    batch_size=None,
-    do_simplify=True,
-    hoist_rho_independent=False,
-    return_hoist=False,
-):
+def cse_emit_c_lines(drho_exprs, rho_syms, *, batch_size=None, do_simplify=True,
+                     hoist_rho_independent=False, return_hoist=False):
     """Emit CUDA C lines for the reduced RHS vector.
 
     Args:
@@ -537,13 +546,11 @@ def cse_emit_c_lines(
 
     def _emit_block(exprs, base_i, batch_id):
         """Emit one batched CSE block for a slice of RHS expressions."""
-        cse_subs, cse_exprs = sp.cse(
-            exprs,
+        cse_subs, cse_exprs = sp.cse(exprs,
             # Unique prefix per batch avoids name collisions if caller enables hoisting.
-            symbols=sp.numbered_symbols(prefix=f"t{batch_id}_"),
-            ignore=set(rho_syms),
-        )
-        hoist_subs, keep_subs = _partition_subs(cse_subs) if hoist_rho_independent else ([], cse_subs)
+            symbols=sp.numbered_symbols(prefix=f"t{batch_id}_"), ignore=set(rho_syms))
+        hoist_subs, keep_subs = (_partition_subs(cse_subs) if hoist_rho_independent else
+                                 ([], cse_subs))
         block_lines = []
         # Scope temporaries so the compiler can drop them sooner.
         block_lines.append("{")
@@ -556,12 +563,10 @@ def cse_emit_c_lines(
 
     if batch_size is None:
         # Preserve historical behavior: one global CSE pass for all equations.
-        cse_subs, cse_exprs = sp.cse(
-            drho_exprs,
-            symbols=sp.numbered_symbols(prefix="t"),
-            ignore=set(rho_syms),
-        )
-        hoist_subs, keep_subs = _partition_subs(cse_subs) if hoist_rho_independent else ([], cse_subs)
+        cse_subs, cse_exprs = sp.cse(drho_exprs, symbols=sp.numbered_symbols(prefix="t"),
+                                     ignore=set(rho_syms))
+        hoist_subs, keep_subs = (_partition_subs(cse_subs) if hoist_rho_independent else
+                                 ([], cse_subs))
         lines = []
         for s, expr in keep_subs:
             lines.append(f"float {s} = {my_ccode(_maybe_simplify(expr))};")
@@ -670,43 +675,17 @@ def emit_drive_code(drive_map, *, array_name="Drive_arr", inline_single_use_func
     return drive_lines, [], syms
 
 
-def mesolve_2D(
-    H,
-    Drive,
-    Col_Ops,
-    mean_operator,
-    tlist,
-    var_arrays=None,
-    const_values=None,
-    kernel_template_file=None,
-    *,
-    RHSreuse=True,
-    runtime_consts=None,
-    keep_symbolic_consts=None,
-    auto_runtime_consts=False,
-    output_mode="mean",
-    fp64=False,
-    pre_expand=True,
-    collect_rho=True,
-    factor_terms=False,
-    cse_batch_size=None,
-    cse_simplify=True,
-    hoist_rho_independent=True,
-    nvrtc_options=(),
-    timings=False,
-    return_timing_info=False,
-    warmup_time=0.0,
-    rho0=None,
-    rho0_var_arrays=None,
-    rho0_values=None,
-    return_time_trace=False,
-    time_trace_every=None,
-    time_trace_samples_per_period=None,
-    solver_samples_per_period=None,
-    Actual_Kernel_Save=False,
-    beep_on_error=False,
-    ignore_non_finite_output=False,
-):
+def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
+               var_arrays=None, const_values=None, kernel_template_file=None, *,
+               RHSreuse=True, runtime_consts=None, keep_symbolic_consts=None,
+               auto_runtime_consts=False, output_mode="mean", fp64=False,
+               pre_expand=True, collect_rho=True, factor_terms=False,
+               cse_batch_size=None, cse_simplify=True, hoist_rho_independent=True,
+               nvrtc_options=(), timings=False, return_timing_info=False, warmup_time=0.0,
+               rho0=None, rho0_var_arrays=None, rho0_values=None,
+               return_time_trace=False, time_trace_every=None,
+               time_trace_samples_per_period=None, solver_samples_per_period=None,
+               Actual_Kernel_Save=False, beep_on_error=False, ignore_non_finite_output=False):
     """
     Solve a Lindblad master equation over a 2D parameter sweep on GPU.
 
@@ -766,7 +745,8 @@ def mesolve_2D(
     """
     valid_output_modes = {"mean", "final", "final_rho"}
     if output_mode not in valid_output_modes:
-        raise ValueError(f"Unsupported output_mode '{output_mode}'. Use one of: {sorted(valid_output_modes)}")
+        raise ValueError(f"Unsupported output_mode '{output_mode}'. "
+                         f"Use one of: {sorted(valid_output_modes)}")
     kernel_template_file = _resolve_kernel_template_file(kernel_template_file)
 
     scalar_type = "double" if fp64 else "float"
@@ -792,17 +772,19 @@ def mesolve_2D(
         rho0_exprs = rho_matrix_to_independent_exprs(rho0)
         if len(rho0_exprs) != N * N - 1:
             raise ValueError("rho0 does not match Hamiltonian size.")
-    
+
     for L in Col_Ops:
         if L.shape != (N, N):
-            raise ValueError(f"Collapse operator dimension {L.shape} does not match H {N,N}")
+            raise ValueError(f"Collapse operator dimension {L.shape} does not match H {N, N}")
     if mean_operator.shape != (N, N):
-        raise ValueError(f"Mean operator dimension {mean_operator.shape} does not match H {N,N}")
-    
+        raise ValueError(f"Mean operator dimension {mean_operator.shape} does not match H {N, N}")
+
     if len(var_arrays) == 0:
-        raise ValueError("var_arrays or rho0_var_arrays must contain at least one sweep array (ParX).")
+        raise ValueError("var_arrays or rho0_var_arrays must contain at least one sweep array "
+                         "(ParX).")
     if len(var_arrays) > 2:
-        raise ValueError("Only 2 total sweep arrays are supported across var_arrays and rho0_var_arrays.")
+        raise ValueError("Only 2 total sweep arrays are supported across var_arrays and "
+                         "rho0_var_arrays.")
 
     if tlist is None:
         raise ValueError("tlist is required for RK4 integration.")
@@ -816,13 +798,17 @@ def mesolve_2D(
     time_diffs = np.diff(tlist_host)
     if np.any(time_diffs <= 0.0):
         raise ValueError("tlist must be strictly increasing.")
-    input_float_dtype = tlist_input.dtype if np.issubdtype(tlist_input.dtype, np.floating) else np.dtype(np.float64)
-    storage_tolerance = 8.0 * np.finfo(input_float_dtype).eps * max(1.0, float(np.max(np.abs(tlist_host))))
+    input_float_dtype = (tlist_input.dtype
+                         if np.issubdtype(tlist_input.dtype, np.floating) else np.dtype(np.float64))
+    storage_tolerance = (8.0 * np.finfo(input_float_dtype).eps *
+                         max(1.0, float(np.max(np.abs(tlist_host)))))
     uniform_dt_host = float((tlist_host[-1] - tlist_host[0]) / (num_t_host - 1))
     if not np.isclose(tlist_host[0], 0.0, rtol=0.0, atol=storage_tolerance):
-        raise ValueError("tlist must begin at zero; the CUDA kernel derives stage times from the step index.")
+        raise ValueError("tlist must begin at zero; the CUDA kernel derives stage times from the "
+                         "step index.")
     if not np.allclose(time_diffs, uniform_dt_host, rtol=1.0e-6, atol=storage_tolerance):
-        raise ValueError("tlist must be uniformly spaced because the GPU RK4 kernel uses one fixed dt.")
+        raise ValueError("tlist must be uniformly spaced because the GPU RK4 kernel uses one "
+                         "fixed dt.")
     # A list of N sample times defines N - 1 integration intervals.  Passing N
     # to the kernel advanced the state one step beyond tlist[-1].
     num_steps_host = num_t_host - 1
@@ -838,11 +824,13 @@ def mesolve_2D(
         raise ValueError("Use either time_trace_every or time_trace_samples_per_period, not both.")
     if time_trace_samples_per_period is not None:
         if solver_samples_per_period is None:
-            raise ValueError("solver_samples_per_period is required when time_trace_samples_per_period is used.")
+            raise ValueError("solver_samples_per_period is required when "
+                             "time_trace_samples_per_period is used.")
         solver_spp = int(solver_samples_per_period)
         trace_spp = int(time_trace_samples_per_period)
         if solver_spp <= 0 or trace_spp <= 0:
-            raise ValueError("solver_samples_per_period and time_trace_samples_per_period must be positive.")
+            raise ValueError("solver_samples_per_period and time_trace_samples_per_period must be "
+                             "positive.")
         time_trace_stride_host = max(1, int(round(solver_spp / trace_spp)))
     elif time_trace_every is not None:
         time_trace_stride_host = int(time_trace_every)
@@ -850,14 +838,18 @@ def mesolve_2D(
             raise ValueError("time_trace_every must be a positive integer.")
     else:
         time_trace_stride_host = 1
-    num_time_trace_host = int(np.ceil(num_steps_host / time_trace_stride_host)) if return_time_trace else 0
+    num_time_trace_host = (int(np.ceil(num_steps_host /
+                                       time_trace_stride_host)) if return_time_trace else 0)
 
     effective_output_mode = output_mode
     if output_mode == "mean" and warmup_steps_host >= num_steps_host:
         # No measurement window left: return final observable instead.
         effective_output_mode = "final"
 
-    subs = {sym: sp.Symbol(name, real=True) for sym, name in zip(var_arrays.keys(), ["ParX", "ParY"])}
+    subs = {
+        sym: sp.Symbol(name, real=True)
+        for sym, name in zip(var_arrays.keys(), ["ParX", "ParY"])
+    }
     H = H.subs(subs)
     if isinstance(Drive, dict):
         Drive = {sym: sp.sympify(expr).subs(subs) for sym, expr in Drive.items()}
@@ -941,7 +933,7 @@ def mesolve_2D(
                 fs = sub.free_symbols
                 if fs and fs.issubset(base_syms):
                     cands[sp.srepr(sub)] = sub
-        # Keep all non-trivial const-only expressions so compile-time work is moved out of the kernel.
+        # Keep non-trivial const-only expressions to move work out of the kernel.
         selected = [x for x in cands.values() if x.count_ops() > 0]
         selected.sort(key=lambda x: (x.count_ops(), sp.srepr(x)), reverse=True)
         return selected
@@ -958,7 +950,8 @@ def mesolve_2D(
                 name = f"{expr.base}__rsqrt"
             elif expr.exp == -1:
                 name = f"{expr.base}__inv"
-        elif expr.func in (sp.sin, sp.cos, sp.tan, sp.exp, sp.log) and len(expr.args) == 1 and expr.args[0].is_Symbol:
+        elif (expr.func in (sp.sin, sp.cos, sp.tan, sp.exp, sp.log) and len(expr.args) == 1
+              and expr.args[0].is_Symbol):
             name = f"{expr.args[0]}__{expr.func.__name__}"
         if not name:
             name = f"ConstExpr_{idx}"
@@ -971,7 +964,8 @@ def mesolve_2D(
         return sp.Symbol(name, real=True)
 
     used_names = {str(s) for s in base_runtime_syms}
-    derived_const_syms = [_derived_symbol(expr, i, used_names) for i, expr in enumerate(derived_const_exprs)]
+    derived_const_syms = [_derived_symbol(expr, i, used_names)
+                          for i, expr in enumerate(derived_const_exprs)]
     if derived_const_exprs:
         repl_map = {expr: sym for expr, sym in zip(derived_const_exprs, derived_const_syms)}
         H = H.xreplace(repl_map)
@@ -1007,6 +1001,7 @@ def mesolve_2D(
 
     # Generate symbolic drho C code with variable parameters replaced
     Drive_Symb = sp.Symbol("Drive", real=True)
+
     # Kernel cache key (avoid RHS regeneration/compilation if ODE is unchanged)
     def _expr_key(x):
         """Return a stable symbolic serialization for cache keys."""
@@ -1018,11 +1013,13 @@ def mesolve_2D(
             return tuple((str(k), sp.srepr(v)) for k, v in drv.items())
         return sp.srepr(drv)
 
-    def _collect_used_const_indices(init_lines_in, static_lines_in, drive_lines_in, drho_lines_in, mean_line_in, final_line_in):
+    def _collect_used_const_indices(init_lines_in, static_lines_in, drive_lines_in, drho_lines_in,
+                                    mean_line_in, final_line_in):
         """Return Const_arr indices that are actually referenced by generated code."""
         pat = re.compile(r"Const_arr\[(\d+)\]")
         used = set()
-        for s in list(init_lines_in) + list(static_lines_in) + list(drive_lines_in) + list(drho_lines_in) + [mean_line_in, final_line_in]:
+        for s in (list(init_lines_in) + list(static_lines_in) + list(drive_lines_in) +
+                  list(drho_lines_in) + [mean_line_in, final_line_in]):
             if not s:
                 continue
             for m in pat.finditer(s):
@@ -1033,33 +1030,24 @@ def mesolve_2D(
         """Rewrite Const_arr indices after unused constants have been removed."""
         if not s:
             return s
-        return re.sub(r"Const_arr\[(\d+)\]", lambda m: f"Const_arr[{idx_map.get(int(m.group(1)), int(m.group(1)))}]", s)
+        return re.sub(r"Const_arr\[(\d+)\]",
+                      lambda m: f"Const_arr[{idx_map.get(int(m.group(1)), int(m.group(1)))}]", s)
 
     # Include template path/mtime and codegen knobs in the cache key so reuse is safe.
-    template_mtime = os.path.getmtime(kernel_template_file) if os.path.exists(kernel_template_file) else None
+    template_mtime = (os.path.getmtime(kernel_template_file)
+                      if os.path.exists(kernel_template_file) else None)
     cache_key = (
-        "rhs_v3",
-        N,
-        _expr_key(H),
-        _drive_key(Drive),
-        tuple(_expr_key(L) for L in Col_Ops),
+        "rhs_v3", N,
+        _expr_key(H), _drive_key(Drive), tuple(_expr_key(L) for L in Col_Ops),
         _expr_key(mean_operator),
-        tuple((str(k), float(v)) for k, v in sorted(const_values_eff.items(), key=lambda kv: str(kv[0]))),
+        tuple((str(k), float(v)) for k, v in
+              sorted(const_values_eff.items(), key=lambda kv: str(kv[0]))),
         tuple(str(s) for s in runtime_const_syms),
         tuple(sp.srepr(expr) for expr in rho0_exprs) if rho0_exprs is not None else None,
-        bool(uses_rho0_values),
-        effective_output_mode,
-        warmup_steps_host,
-        bool(fp64),
-        pre_expand,
-        collect_rho,
-        factor_terms,
-        cse_batch_size,
-        cse_simplify,
-        hoist_rho_independent,
-        return_time_trace,
-        kernel_template_file,
-        template_mtime,
+        bool(uses_rho0_values), effective_output_mode, warmup_steps_host, bool(fp64),
+        pre_expand, collect_rho, factor_terms, cse_batch_size, cse_simplify,
+        hoist_rho_independent, return_time_trace,
+        kernel_template_file, template_mtime,
         tuple(nvrtc_options) if not isinstance(nvrtc_options, str) else (nvrtc_options,),
     )
 
@@ -1073,21 +1061,13 @@ def mesolve_2D(
     used_const_indices = None
     if cached is None:
         # 1) Symbolic codegen -> kernel source patching -> NVRTC compilation.
-        static_lines, drive_lines, _drive_alias_lines, drho_lines, mean_line, final_line, static_syms, drive_syms, hoisted_syms = generate_unrolled_drho(
-            N,
-            H,
-            Drive_Symb,
-            Col_Ops,
-            mean_operator,
-            Drive,
-            runtime_const_syms=runtime_const_syms,
-            pre_expand=pre_expand,
-            collect_rho=collect_rho,
-            factor_terms=factor_terms,
-            cse_batch_size=cse_batch_size,
-            cse_simplify=cse_simplify,
-            hoist_rho_independent=hoist_rho_independent,
-        )
+        (static_lines, drive_lines, _drive_alias_lines, drho_lines, mean_line, final_line,
+         static_syms, drive_syms, hoisted_syms,
+         ) = generate_unrolled_drho(N, H, Drive_Symb, Col_Ops, mean_operator, Drive,
+                                    runtime_const_syms=runtime_const_syms, pre_expand=pre_expand,
+                                    collect_rho=collect_rho, factor_terms=factor_terms,
+                                    cse_batch_size=cse_batch_size, cse_simplify=cse_simplify,
+                                    hoist_rho_independent=hoist_rho_independent)
         if uses_rho0_values:
             init_lines = [f"rho[{i}] = Rho0_arr[result_idx * N + {i}];" for i in range(N * N - 1)]
         elif rho0_exprs is None:
@@ -1102,7 +1082,8 @@ def mesolve_2D(
                 repl = f"Const_arr[{idx}]"
                 init_lines = [pat.sub(repl, line) for line in init_lines]
             init_lines = tidy_c_lines(init_lines)
-            used_const_indices = _collect_used_const_indices(init_lines, static_lines, drive_lines, drho_lines, mean_line, final_line)
+            used_const_indices = _collect_used_const_indices(init_lines, static_lines, drive_lines,
+                                                             drho_lines, mean_line, final_line)
             if used_const_indices:
                 full_idx = list(range(len(runtime_const_syms)))
                 if used_const_indices != full_idx:
@@ -1115,23 +1096,28 @@ def mesolve_2D(
                     final_line = _remap_const_indices(final_line, idx_map)
         else:
             init_lines = tidy_c_lines(init_lines)
-        
+
         # Read CUDA kernel template
         with open(kernel_template_file) as f:
             template_text = f.read()
             src = Template(template_text)
         has_const_arg_marker = "#CONST_ARG_DECL#" in template_text
         if runtime_const_syms and not has_const_arg_marker:
-            raise ValueError("Kernel template is missing #CONST_ARG_DECL# but runtime constants are enabled. Use N_Level_Kernel.cu template.")
-        static_code = "\n    ".join(static_lines) if static_lines else "/* no thread-static terms */"
+            raise ValueError("Kernel template is missing #CONST_ARG_DECL# but runtime constants "
+                             "are enabled. Use N_Level_Kernel.cu template.")
+        static_code = ("\n    ".join(static_lines)
+                       if static_lines else "/* no thread-static terms */")
         drho_code = "\n    ".join(drho_lines)
         drives_code = "\n    ".join(drive_lines) if drive_lines else "/* no drives */"
         num_statics = max(1, len(static_syms))
         num_drives = max(1, len(drive_syms) + len(hoisted_syms))  # Drive_arr[0] exists if used
-        kernel_code = src.substitute(N_DECL=str(N*N-1), NUM_STATICS_DECL=str(num_statics), NUM_DRIVES_DECL=str(num_drives))
-        const_arg_decl = f"    const {scalar_type}* __restrict__ Const_arr,\n" if has_const_arg_marker else ""
+        kernel_code = src.substitute(N_DECL=str(N * N - 1), NUM_STATICS_DECL=str(num_statics),
+                                     NUM_DRIVES_DECL=str(num_drives))
+        const_arg_decl = (f"    const {scalar_type}* __restrict__ Const_arr,\n"
+                          if has_const_arg_marker else "")
         kernel_code = kernel_code.replace("#CONST_ARG_DECL#", const_arg_decl)
-        rho0_arg_decl = f"    const {scalar_type}* __restrict__ Rho0_arr,\n" if uses_rho0_values else ""
+        rho0_arg_decl = (f"    const {scalar_type}* __restrict__ Rho0_arr,\n"
+                         if uses_rho0_values else "")
         kernel_code = kernel_code.replace("#RHO0_ARG_DECL#", rho0_arg_decl)
         kernel_code = kernel_code.replace("#INIT_RHO#", "\n            ".join(init_lines))
         kernel_code = kernel_code.replace("#INSERT_STATICS#", static_code)
@@ -1144,31 +1130,39 @@ def mesolve_2D(
         if effective_output_mode == "final":
             mean_line_out = ""
             final_line_out = final_line_kernel
-            results_line = "results[result_idx].x = avg.x;\n            results[result_idx].y = avg.y;"
+            results_line = (
+                "results[result_idx].x = avg.x;\n            results[result_idx].y = avg.y;")
         elif effective_output_mode == "final_rho":
             mean_line_out = ""
             final_line_out = ""
-            results_line = "for (int i = 0; i < N; ++i) {\n                results[result_idx * N + i] = rho[i];\n            }"
+            results_line = ("for (int i = 0; i < N; ++i) {\n"
+                            "                results[result_idx * N + i] = rho[i];\n"
+                            "            }")
         else:
             if warmup_steps_host > 0:
                 mean_line_out = f"if (step >= warmup_steps) {{ {mean_line_kernel} }}"
             else:
                 mean_line_out = mean_line_kernel
             final_line_out = ""
-            results_line = f"const {scalar_type} inv_t = ({scalar_type})1.0f / ({scalar_type})(num_steps - warmup_steps);\n            results[result_idx].x = avg.x * inv_t;\n            results[result_idx].y = avg.y * inv_t;"
+            results_line = (f"const {scalar_type} inv_t = ({scalar_type})1.0f / "
+                            f"({scalar_type})(num_steps - warmup_steps);\n"
+                            "            results[result_idx].x = avg.x * inv_t;\n"
+                            "            results[result_idx].y = avg.y * inv_t;")
         if return_time_trace:
-            trace_obs_line = final_line_kernel.replace("avg.x", "time_trace_results[trace_offset].x")
+            trace_obs_line = final_line_kernel.replace("avg.x",
+                                                       "time_trace_results[trace_offset].x")
             trace_obs_line = trace_obs_line.replace("avg.y", "time_trace_results[trace_offset].y")
             trace_line_out = (
                 "if ((step % time_trace_stride) == 0) {\n"
                 "                    const int trace_idx = step / time_trace_stride;\n"
                 "                    if (trace_idx < num_time_trace) {\n"
-                "                        const int trace_offset = result_idx * num_time_trace + trace_idx;\n"
+                "                        const int trace_offset = result_idx * "
+                "num_time_trace + trace_idx;\n"
                 f"                        {trace_obs_line}\n"
                 "                    }\n"
-                "                }"
-            )
-            mean_line_out = f"{mean_line_out}\n                {trace_line_out}" if mean_line_out else trace_line_out
+                "                }")
+            mean_line_out = (f"{mean_line_out}\n                {trace_line_out}"
+                             if mean_line_out else trace_line_out)
         kernel_code = kernel_code.replace("#MEAN_LINE#", mean_line_out)
         kernel_code = kernel_code.replace("#FINAL_LINE#", final_line_out)
         kernel_code = kernel_code.replace("#RESULTS_LINE#", results_line)
@@ -1181,19 +1175,13 @@ def mesolve_2D(
             result_arg_decl = f"    {complex_type}* __restrict__ results"
             result_arg_comment = " // averaged/final observable"
         if return_time_trace:
-            result_arg_decl += (
-                f",\n    {complex_type}* __restrict__ time_trace_results,"
-                "\n    const int time_trace_stride,"
-                "\n    const int num_time_trace"
-            )
+            result_arg_decl += (f",\n    {complex_type}* __restrict__ time_trace_results,"
+                                "\n    const int time_trace_stride,"
+                                "\n    const int num_time_trace")
         else:
             result_arg_decl += result_arg_comment
-        kernel_code_new = re.sub(
-            r'^\s*float2\*\s*__restrict__\s*results[^\n]*$',
-            result_arg_decl,
-            kernel_code,
-            flags=re.MULTILINE,
-        )
+        kernel_code_new = re.sub(r"^\s*float2\*\s*__restrict__\s*results[^\n]*$", result_arg_decl,
+                                 kernel_code, flags=re.MULTILINE)
         if kernel_code_new == kernel_code:
             raise ValueError("Kernel template result argument line was not found.")
         kernel_code = kernel_code_new
@@ -1208,25 +1196,22 @@ def mesolve_2D(
             kernel_code = kernel_code.replace("cosf(", "cos(")
             kernel_code = kernel_code.replace("expf(", "exp(")
             kernel_code = kernel_code.replace("logf(", "log(")
-            kernel_code = re.sub(
-                r'(?<![A-Za-z0-9_])((?:\d+\.\d*|\d+|\.\d+)(?:[eE][+\-]?\d+)?)[fF]\b',
-                r'\1',
-                kernel_code,
-            )
-            kernel_code = re.sub(r'\bfloat\b', 'double', kernel_code)
+            kernel_code = re.sub(r"(?<![A-Za-z0-9_])"
+                                 r"((?:\d+\.\d*|\d+|\.\d+)(?:[eE][+\-]?\d+)?)[fF]\b",
+                                 r"\1", kernel_code)
+            kernel_code = re.sub(r"\bfloat\b", "double", kernel_code)
         saved_kernel_path = _save_generated_kernel_file(Actual_Kernel_Save, kernel_code)
         # Compile kernel
         if isinstance(nvrtc_options, str):
-            nvrtc_options = (nvrtc_options,)
-        time_evolution_kernel = cp.RawKernel(kernel_code, "time_evolution_kernel", options=tuple(nvrtc_options))
-        cached = {
-            "kernel": time_evolution_kernel,
-            "uses_const_arr_arg": has_const_arg_marker,
-            "uses_rho0_arr_arg": uses_rho0_values,
-            "uses_time_trace": return_time_trace,
-            "used_const_indices": tuple(used_const_indices or []),
-            "kernel_code": kernel_code,
-        }
+            nvrtc_options = (nvrtc_options, )
+        time_evolution_kernel = cp.RawKernel(kernel_code, "time_evolution_kernel",
+                                             options=tuple(nvrtc_options))
+        cached = {"kernel": time_evolution_kernel,
+                  "uses_const_arr_arg": has_const_arg_marker,
+                  "uses_rho0_arr_arg": uses_rho0_values,
+                  "uses_time_trace": return_time_trace,
+                  "used_const_indices": tuple(used_const_indices or []),
+                  "kernel_code": kernel_code}
         if RHSreuse:
             _KERNEL_CACHE[cache_key] = cached
     else:
@@ -1234,7 +1219,8 @@ def mesolve_2D(
         cache_status = "hit"
         time_evolution_kernel = cached["kernel"]
         if Actual_Kernel_Save and cached.get("kernel_code"):
-            saved_kernel_path = _save_generated_kernel_file(Actual_Kernel_Save, cached["kernel_code"])
+            saved_kernel_path = _save_generated_kernel_file(Actual_Kernel_Save,
+                                                            cached["kernel_code"])
         cached_used = cached.get("used_const_indices", None)
         if cached_used is None:
             used_const_indices = list(range(len(runtime_const_vals)))
@@ -1247,8 +1233,10 @@ def mesolve_2D(
     def to_device(x):
         """Convert a host array to a CuPy array with the selected scalar dtype."""
         return x if isinstance(x, cp.ndarray) else cp.asarray(x, dtype=scalar_dtype)
+
     ParX_list = to_device(next(iter(var_arrays.values())))
-    ParY_list = to_device(list(var_arrays.values())[1]) if len(var_arrays) > 1 else cp.zeros(1, dtype=scalar_dtype)
+    ParY_list = (to_device(list(var_arrays.values())[1]) if len(var_arrays) > 1 else
+                 cp.zeros(1, dtype=scalar_dtype))
     num_X, num_Y = int(len(ParX_list)), int(len(ParY_list))
     rho0_arr = None
     if uses_rho0_values:
@@ -1257,20 +1245,16 @@ def mesolve_2D(
         if rho0_np.shape == (num_X, nred) and num_Y == 1:
             rho0_np = rho0_np.reshape(num_X, 1, nred)
         if rho0_np.shape != (num_X, num_Y, nred):
-            raise ValueError(
-                f"rho0_values must have shape ({num_X}, {num_Y}, {nred}) "
-                f"or ({num_X}, {nred}) when num_Y=1; got {rho0_np.shape}."
-            )
+            raise ValueError(f"rho0_values must have shape ({num_X}, {num_Y}, {nred}) "
+                             f"or ({num_X}, {nred}) when num_Y=1; got {rho0_np.shape}.")
         rho0_arr = cp.asarray(rho0_np.reshape(num_X * num_Y, nred), dtype=scalar_dtype)
     # Allocate output
     if effective_output_mode == "final_rho":
         results = cp.zeros((num_X, num_Y, N * N - 1), dtype=scalar_dtype)
     else:
         results = cp.zeros((num_X, num_Y), dtype=complex_dtype)
-    time_trace_results = (
-        cp.zeros((num_X, num_Y, num_time_trace_host), dtype=complex_dtype)
-        if return_time_trace else None
-    )
+    time_trace_results = (cp.zeros((num_X, num_Y, num_time_trace_host), dtype=complex_dtype)
+                          if return_time_trace else None)
 
     # Grid/block
     block_dim = (16, 8)
@@ -1279,7 +1263,7 @@ def mesolve_2D(
     Cudt = scalar_dtype(uniform_dt_host)
     num_steps = num_steps_host
     warmup_steps = np.int32(warmup_steps_host)
-    
+
     # Launch kernel
     runtime_const_vals_eff = runtime_const_vals
     if used_const_indices is not None:
@@ -1305,7 +1289,8 @@ def mesolve_2D(
         kernel_args.append(rho0_arr)
     kernel_args.append(results)
     if cached.get("uses_time_trace", False):
-        kernel_args.extend([time_trace_results, np.int32(time_trace_stride_host), np.int32(num_time_trace_host)])
+        kernel_args.extend([time_trace_results, np.int32(time_trace_stride_host),
+                            np.int32(num_time_trace_host)])
     time_evolution_kernel(grid_dim, block_dim, tuple(kernel_args))
 
     if collect_timings:
@@ -1317,39 +1302,31 @@ def mesolve_2D(
     time_trace_np = cp.asnumpy(time_trace_results) if return_time_trace else None
     if not np.all(np.isfinite(results_np)):
         if ignore_non_finite_output:
-            print("mesolve_2D warning: non-finite values detected in output; returning raw data because ignore_non_finite_output=True.")
+            print("mesolve_2D warning: non-finite values detected in output; returning raw data "
+                  "because ignore_non_finite_output=True.")
         else:
             if beep_on_error:
                 _play_notification_beep("error")
-            raise RuntimeError(
-                "Non-finite values detected in mesolve_2D output. "
-                "Try reducing dt (increase time samples) or check model parameters/RHS."
-            )
+            raise RuntimeError("Non-finite values detected in mesolve_2D output. Try reducing dt "
+                               "(increase time samples) or check model parameters/RHS.")
     if return_time_trace and not np.all(np.isfinite(time_trace_np)):
         if ignore_non_finite_output:
-            print("mesolve_2D warning: non-finite values detected in time trace; returning raw trace because ignore_non_finite_output=True.")
+            print("mesolve_2D warning: non-finite values detected in time trace; returning raw "
+                  "trace because ignore_non_finite_output=True.")
         else:
             if beep_on_error:
                 _play_notification_beep("error")
-            raise RuntimeError(
-                "Non-finite values detected in mesolve_2D time trace. "
-                "Try reducing dt (increase time samples) or check model parameters/RHS."
-            )
+            raise RuntimeError("Non-finite values detected in mesolve_2D time trace. Try reducing "
+                               "dt (increase time samples) or check model parameters/RHS.")
 
     timing_info = None
     if collect_timings:
         total_time = time.time() - total_start
-        timing_info = {
-            "rhs_stage_s": rhs_stage_time,
-            "gpu_kernel_s": gpu_kernel_time,
-            "total_s": total_time,
-            "cached_rhs": cache_status,
-        }
+        timing_info = {"rhs_stage_s": rhs_stage_time, "gpu_kernel_s": gpu_kernel_time,
+                       "total_s": total_time, "cached_rhs": cache_status}
     if timings:
-        print(
-            f"mesolve_2D timings: rhs_stage={rhs_stage_time:.3f}s "
-            f"gpu_kernel={gpu_kernel_time:.3f}s total={total_time:.3f}s cachedRHS={cache_status}"
-        )
+        print(f"mesolve_2D timings: rhs_stage={rhs_stage_time:.3f}s "
+              f"gpu_kernel={gpu_kernel_time:.3f}s total={total_time:.3f}s cachedRHS={cache_status}")
     if saved_kernel_path:
         print(f"Generated kernel saved to: {saved_kernel_path}")
     if return_time_trace:

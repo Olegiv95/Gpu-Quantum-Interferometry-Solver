@@ -4,15 +4,41 @@ from __future__ import annotations
 
 import csv
 from datetime import datetime
+import importlib.metadata
 import os
 from pathlib import Path
 import platform
+import subprocess
 import sys
 
 import matplotlib.pyplot as plt
 from matplotlib.transforms import blended_transform_factory
 from matplotlib.ticker import FormatStrFormatter
 import numpy as np
+from sympy.printing.julia import JuliaCodePrinter
+
+
+class _JuliaFloat32Printer(JuliaCodePrinter):
+    """Emit Julia floating-point literals that remain in FP32 arithmetic."""
+
+    def _print_Float(self, expr):
+        text = super()._print_Float(expr)
+        if "e" in text.lower():
+            mantissa, exponent = text.lower().split("e", 1)
+            return f"{mantissa}f{int(exponent)}"
+        return f"{text}f0"
+
+
+_JULIA_FLOAT32_PRINTER = _JuliaFloat32Printer()
+
+
+def sympy_to_julia_fp32(expr) -> str:
+    """Print a scalar SymPy expression as scalar Julia Float32 code."""
+    code = _JULIA_FLOAT32_PRINTER.doprint(expr)
+    for broadcast_op, scalar_op in ((".^", "^"), (".*", "*"), ("./", "/"),
+                                    (".+", "+"), (".-", "-")):
+        code = code.replace(broadcast_op, scalar_op)
+    return code
 
 
 def benchmark_sides(min_side: int, max_side: int) -> list[int]:
@@ -37,21 +63,51 @@ def parse_solver_list(text: str, valid_solvers: set[str]) -> tuple[str, ...]:
     return solvers
 
 
-def extrapolate_loglog(history: list[tuple[int, float]], side: int) -> float:
-    """Continue the last log10(time) vs log10(number of simulations) slope."""
-    valid = [(float(s) ** 2, float(t)) for s, t in history if s > 0 and np.isfinite(t) and t > 0.0]
+def extrapolate_loglog(history: list[tuple[int, float]], side: int, *, slope_points: int = 2) -> float:
+    """Continue an averaged recent log-log slope from the last measured point."""
+    valid = [(float(s)**2, float(t)) for s, t in history if s > 0 and np.isfinite(t) and t > 0.0]
     if not valid:
         return np.nan
+    n0, t0 = valid[-1]
     if len(valid) == 1:
-        n0, t0 = valid[-1]
         slope = 1.0  # fallback: time proportional to number of simulations
     else:
-        n1, t1 = valid[-2]
-        n0, t0 = valid[-1]
-        dx = np.log10(n0) - np.log10(n1)
-        slope = 1.0 if dx == 0.0 else (np.log10(t0) - np.log10(t1)) / dx
-    n = float(side) ** 2
-    return 10.0 ** (np.log10(t0) + slope * (np.log10(n) - np.log10(n0)))
+        recent = valid[-max(2, int(slope_points)):]
+        log_n = np.log10([point[0] for point in recent])
+        log_t = np.log10([point[1] for point in recent])
+        dx = np.diff(log_n)
+        segment_slopes = np.divide(np.diff(log_t), dx, out=np.full_like(dx, np.nan), where=dx != 0.0)
+        finite_slopes = segment_slopes[np.isfinite(segment_slopes)]
+        slope = float(np.mean(finite_slopes)) if finite_slopes.size else 1.0
+    n = float(side)**2
+    return 10.0**(np.log10(t0) + slope * (np.log10(n) - np.log10(n0)))
+
+
+def should_extrapolate_next(history: list[tuple[int, float]], time_limit: float, *,
+                            threshold_fraction: float = 0.5) -> bool:
+    """Skip the next side doubling when the last timing ratio exceeds 90% of fourfold."""
+    if len(history) < 2 or time_limit <= 0.0:
+        return False
+    (side_a, time_a), (side_b, time_b) = history[-2:]
+    if time_b <= threshold_fraction * time_limit:
+        return False
+    if side_a <= 0 or time_a <= 0.0 or side_b != 2 * side_a or not np.isfinite(time_b):
+        return False
+    time_growth = time_b / time_a
+    return time_growth > 0.9 * 4.0
+
+
+def terminate_process_tree(proc, timeout_s: float = 5.0) -> None:
+    """Terminate a benchmark worker and all child processes it launched."""
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True,
+                       text=True, check=False)
+    else:
+        proc.terminate()
+    proc.join(timeout_s)
+    if proc.is_alive():
+        proc.kill()
+        proc.join()
 
 
 def _windows_cpu_name() -> str:
@@ -60,7 +116,8 @@ def _windows_cpu_name() -> str:
     try:
         import winreg
 
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as key:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as key:
             value, _ = winreg.QueryValueEx(key, "ProcessorNameString")
         return str(value).strip()
     except Exception:
@@ -110,10 +167,12 @@ def collect_equipment_info() -> dict[str, str]:
     gpu = "unknown GPU"
     gpu_vram_gb = ""
     cuda_runtime = ""
+    cupy_version = ""
 
     try:
         import cupy as cp
 
+        cupy_version = cp.__version__
         device_id = cp.cuda.runtime.getDevice()
         props = cp.cuda.runtime.getDeviceProperties(device_id)
         name = props.get("name", b"")
@@ -126,13 +185,22 @@ def collect_equipment_info() -> dict[str, str]:
     except Exception as exc:
         gpu = f"unavailable ({type(exc).__name__})"
 
-    metadata = {
-        "timestamp_local": datetime.now().isoformat(timespec="seconds"),
-        "cpu": cpu,
-        "gpu": gpu,
-        "os": _os_display_name(),
-        "python": sys.version.split()[0],
-    }
+    metadata = {"timestamp_local": datetime.now().isoformat(timespec="seconds"),
+                "cpu": cpu, "gpu": gpu, "os": _os_display_name(),
+                "python": sys.version.split()[0], "numpy": np.__version__}
+    try:
+        from gqis import __version__ as gqis_version
+
+        metadata["gqis"] = gqis_version
+    except ImportError:
+        pass
+    for distribution in ("sympy", "matplotlib", "scipy", "qutip"):
+        try:
+            metadata[distribution] = importlib.metadata.version(distribution)
+        except importlib.metadata.PackageNotFoundError:
+            pass
+    if cupy_version:
+        metadata["cupy"] = cupy_version
     if gpu_vram_gb:
         metadata["gpu_vram_gb"] = gpu_vram_gb
     if cuda_runtime:
@@ -155,8 +223,11 @@ def print_equipment_info(metadata: dict[str, str] | None = None) -> dict[str, st
     return metadata
 
 
-def save_benchmark_csv(rows: list[dict], path: Path, *, metadata: dict[str, str] | None = None) -> None:
-    columns = ("side_dimension", "number_of_simulations", "solver", "time_s", "prep_s", "calc_s", "status")
+def save_benchmark_csv(rows: list[dict], path: Path, *,
+                       metadata: dict[str, str] | None = None) -> None:
+    columns = ("side_dimension", "number_of_simulations", "solver", "time_s", "prep_s", "calc_s",
+               "status",
+               )
     with path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f, lineterminator="\n")
         if metadata:
@@ -168,7 +239,8 @@ def save_benchmark_csv(rows: list[dict], path: Path, *, metadata: dict[str, str]
             parts = []
             for col in columns:
                 val = row.get(col, np.nan)
-                parts.append("" if isinstance(val, float) and not np.isfinite(val) else f"{val:.9g}" if isinstance(val, float) else str(val))
+                parts.append("" if isinstance(val, float) and not np.isfinite(val) else
+                             f"{val:.9g}" if isinstance(val, float) else str(val))
             writer.writerow(parts)
     print(f"Saved full benchmark table: {path}")
 
@@ -183,13 +255,9 @@ def _fmt_time(value: float) -> str:
     return f"{value:.2E}"
 
 
-TIME_REFERENCE_MARKS = (
-    (60.0, "1 minute"),
-    (3600.0, "1 hour"),
-    (86400.0, "1 day"),
-    (604800.0, "1 week"),
-    (2592000.0, "1 month"),
-)
+TIME_REFERENCE_MARKS = ((60.0, "1 minute"), (3600.0, "1 hour"), (86400.0, "1 day"),
+                        (604800.0, "1 week"), (2592000.0, "1 month"),
+                        )
 
 
 def add_time_reference_marks(ax: plt.Axes) -> None:
@@ -202,29 +270,15 @@ def add_time_reference_marks(ax: plt.Axes) -> None:
     for seconds, label in TIME_REFERENCE_MARKS:
         if ymin < seconds < ymax:
             ax.axhline(seconds, color="0.88", linewidth=0.9, zorder=0)
-            ax.text(
-                0.012,
-                seconds,
-                label,
-                transform=transform,
-                va="center",
-                ha="left",
-                fontsize=9,
-                color="0.25",
-                bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.75, "pad": 1.5},
-            )
+            ax.text(0.012, seconds, label, transform=transform, va="center", ha="left", fontsize=9,
+                    color="0.25",
+                    bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.75,
+                          "pad": 1.5})
 
 
-def plot_benchmark(
-    rows: list[dict],
-    solvers: tuple[str, ...],
-    out_png: Path,
-    *,
-    title: str,
-    show: bool,
-    metadata: dict[str, str] | None = None,
-    reference_lines: list[dict] | None = None,
-) -> None:
+def plot_benchmark(rows: list[dict], solvers: tuple[str, ...], out_png: Path, *, title: str,
+                   show: bool, metadata: dict[str, str] | None = None,
+                   reference_lines: list[dict] | None = None) -> None:
     """Plot log-time scaling; extrapolated data use same color with square markers."""
     sides = sorted({int(r["side_dimension"]) for r in rows})
     fig = plt.figure(figsize=(11, 8.5))
@@ -243,14 +297,9 @@ def plot_benchmark(
         line = None
         if measured:
             plotted_any = True
-            (line,) = ax.plot(
-                [r["side_dimension"] for r in measured],
-                [r["time_s"] for r in measured],
-                marker="o",
-                linewidth=2.0,
-                markersize=4,
-                label=solver,
-            )
+            (line, ) = ax.plot([r["side_dimension"] for r in measured],
+                               [r["time_s"] for r in measured], marker="o", linewidth=2.0,
+                               markersize=4, label=solver)
             legend_handles.append(line)
         if extrapolated:
             plotted_any = True
@@ -260,19 +309,13 @@ def plot_benchmark(
             if measured:
                 dashed_x = [measured[-1]["side_dimension"], *ex_x]
                 dashed_y = [measured[-1]["time_s"], *ex_y]
-                ax.plot(dashed_x, dashed_y, linestyle="--", linewidth=2.0, color=color, label="_nolegend_")
-                ax.plot(ex_x, ex_y, linestyle="None", marker="s", markersize=5, color=color, label="_nolegend_")
+                ax.plot(dashed_x, dashed_y, linestyle="--", linewidth=2.0, color=color,
+                        label="_nolegend_")
+                ax.plot(ex_x, ex_y, linestyle="None", marker="s", markersize=5, color=color,
+                        label="_nolegend_")
                 continue
-            ax.plot(
-                ex_x,
-                ex_y,
-                marker="s",
-                linestyle="--",
-                linewidth=2.0,
-                markersize=5,
-                color=color,
-                label=f"{solver} extrapolated" if line is None else None,
-            )
+            ax.plot(ex_x, ex_y, marker="s", linestyle="--", linewidth=2.0, markersize=5,
+                    color=color, label=f"{solver} extrapolated" if line is None else None)
 
     ax.set_xscale("log", base=2)
     ax.set_yscale("log")
@@ -289,39 +332,34 @@ def plot_benchmark(
         y = float(ref.get("y", np.nan))
         if not np.isfinite(y) or y <= 0.0:
             continue
-        ref_line = ax.axhline(
-            y,
-            color=ref.get("color", "0.25"),
-            linestyle=ref.get("linestyle", ":"),
-            linewidth=float(ref.get("linewidth", 1.6)),
-            label=str(ref.get("label", "reference")),
-        )
+        ref_line = ax.axhline(y, color=ref.get("color",
+                                               "0.25"), linestyle=ref.get("linestyle", ":"),
+                              linewidth=float(ref.get("linewidth", 1.6)),
+                              label=str(ref.get("label", "reference")))
         legend_handles.append(ref_line)
 
     add_time_reference_marks(ax)
 
     ax_tbl = fig.add_subplot(gs[1])
     ax_tbl.axis("off")
-    col_labels = ["Simulations"] + [f"{s*s:.2E}" for s in sides]
+    col_labels = ["Simulations"] + [f"{s * s:.2E}" for s in sides]
     table_rows = []
     for solver in solvers:
         row = [solver]
         for side in sides:
-            match = next((r for r in rows if r["solver"] == solver and int(r["side_dimension"]) == side), None)
+            match = next((r for r in rows
+                          if r["solver"] == solver and int(r["side_dimension"]) == side), None)
             row.append(_fmt_time(match["time_s"]) if match else "")
         table_rows.append(row)
     if table_rows:
-        table = ax_tbl.table(cellText=table_rows, colLabels=col_labels, loc="center", cellLoc="center")
+        table = ax_tbl.table(cellText=table_rows, colLabels=col_labels, loc="center",
+                             cellLoc="center")
         table.auto_set_font_size(False)
         table.set_fontsize(8)
         table.scale(1, 1.55)
     if plotted_any and legend_handles:
-        fig.legend(
-            handles=legend_handles,
-            loc="lower center",
-            bbox_to_anchor=(0.5, 0.015),
-            ncol=min(4, max(1, len(legend_handles))),
-        )
+        fig.legend(handles=legend_handles, loc="lower center", bbox_to_anchor=(0.5, 0.015),
+                   ncol=min(4, max(1, len(legend_handles))))
     fig.subplots_adjust(left=0.08, right=0.98, top=0.92, bottom=0.11)
 
     fig.savefig(out_png, dpi=160, bbox_inches="tight")

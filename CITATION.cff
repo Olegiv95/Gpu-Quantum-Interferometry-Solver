@@ -5,7 +5,7 @@ authors:
   - family-names: "Ivakhnenko"
     given-names: "Oleh"
 version: "0.1.0"
-date-released: "2026-06-01"
+date-released: "2026-08-21"
 abstract: "GQIS converts symbolic Lindblad master-equation models into CUDA kernels and runs two-dimensional parameter sweeps for quantum interferometry simulations."
 keywords:
   - quantum interferometry

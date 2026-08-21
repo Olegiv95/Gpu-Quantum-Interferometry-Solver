@@ -66,7 +66,7 @@ The solver is not limited to the included two- and four-level examples. A user s
 
 `mesolve_2D` constructs the Lindblad equation, reduces the Hermitian trace-one density matrix to `N*N - 1` independent real variables, generates CUDA expressions for the RHS and observable, inserts them into the packaged CUDA template, compiles with NVRTC, and launches one independent trajectory per GPU thread. The practical system dimension is limited by generated-code size, register pressure, compilation resources, and GPU memory rather than by a hard-coded two-level model.
 
-Output modes include a time-averaged observable, a final observable, the final reduced density matrix, and an optional sampled observable trace. See [GQIS_API.md](GQIS_API.md) for every argument and helper function.
+Output modes include a time-averaged observable, a final observable, the final reduced density matrix, and an optional sampled observable trace. See the [GQIS API reference](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md) for every argument and helper function.
 
 ## Units And Basis Conventions
 
@@ -88,56 +88,75 @@ in the model.
 
 Core requirements are Python 3.10 or newer, NumPy, SymPy, an NVIDIA CUDA-capable GPU, and exactly one CuPy distribution matching the CUDA major version. Pip cannot detect the CUDA major version and choose a CuPy wheel interactively, so CUDA support is provided through explicit extras.
 
-For the tested CUDA 12 configuration, install the package and plotting examples with:
+After the public package is uploaded to PyPI, install the tested CUDA 12
+configuration and plotting examples with:
 
 ```bash
-pip install ".[cuda12,examples]"
+pip install "gqis[cuda12,examples]"
 ```
 
-Use `cuda11` with CuPy 13 for CUDA 11, or `cuda13` for CUDA 13. Do not install multiple `cupy`, `cupy-cuda11x`, `cupy-cuda12x`, or `cupy-cuda13x` distributions in the same environment.
+The PyPI distribution and Python import package are both named `gqis`:
+
+```python
+from gqis import mesolve_2D
+```
+
+Use `cuda11` with CuPy 13 for CUDA 11, or `cuda13` for CUDA 13. Do not install multiple `cupy`, `cupy-cuda11x`, `cupy-cuda12x`, or `cupy-cuda13x` distributions in the same environment. CUDA 11 and CUDA 13 package extras are provided but were not tested on the CUDA 12 reference workstation for version 0.1.0.
 
 Install benchmark dependencies:
 
 ```bash
-pip install ".[cuda12,examples,benchmarks]"
+pip install "gqis[cuda12,examples,benchmarks]"
 ```
 
-Install all CUDA 12 development, benchmark, and test dependencies:
+Before the PyPI upload, or when an exact source revision is required, install
+the tagged public GitHub release directly:
+
+```bash
+pip install "gqis[cuda12,examples] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.1.0"
+```
+
+From a local repository clone, use `.` as the package source:
+
+```bash
+pip install ".[cuda12,examples]"
+pip install ".[cuda12,examples,benchmarks]"
+pip install -e ".[cuda12,examples]"
+```
+
+The first two local commands create standalone installations. Editable mode is
+intended only for package development because it remains linked to the source
+folder. Install all CUDA 12 development, benchmark, and test dependencies with:
 
 ```bash
 pip install -e ".[all-cuda12]"
 ```
 
-The first two commands create standalone installations that do not depend on
-the source folder remaining in place. Use editable mode only while developing
-the package:
-
-```bash
-pip install -e ".[cuda12,examples]"
-```
-
-Members with access to the private GitHub repository can install the current
-`main` branch directly when GitHub authentication is configured:
-
-```bash
-pip install "gpu-quantum-interferometry-solver[cuda12,examples] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@main"
-```
-
-Research-group members should follow
-[RESEARCH_GROUP_SMOKE_TEST.md](RESEARCH_GROUP_SMOKE_TEST.md) for complete
-clean-environment installation, private GitHub authentication, CUDA selection,
-smoke-test, update, and environment-deactivation commands.
+See the [installation and GPU smoke-test guide](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/INSTALLATION_AND_SMOKE_TEST.md) for clean Conda and `venv` instructions, CUDA selection, hardware reporting, update commands, and environment deactivation.
 
 Optional external programs are FFmpeg for MP4 export and Julia with `DifferentialEquations`, `DiffEqGPU`, `CUDA`, and `StaticArrays` for Julia GPU comparisons. `requirements.txt` provides a CUDA 12-oriented non-package installation list.
 
-Dependency roles and minimum versions are:
+Declared requirements use minimum compatible versions so pip does not reject an
+older version unnecessarily. The exact versions below are the version 0.1.0
+local test environment; versions outside this tested set may work, but should be
+validated with `gqis-check --smoke` and the benchmark `diff` mode.
 
-- NumPy 1.24 and SymPy 1.11 are core model/code-generation dependencies.
-- Exactly one compatible CuPy package is the required CUDA runtime interface: `cupy-cuda11x>=13,<14`, `cupy-cuda12x>=13`, or `cupy-cuda13x>=14`.
-- Matplotlib 3.7 is optional for examples, plots, and animations; FFmpeg is an optional external executable for MP4 output.
-- SciPy 1.10 and QuTiP 5.0 are optional adaptive/reference CPU benchmark backends.
-- Julia and its `DifferentialEquations`, `DiffEqGPU`, `CUDA`, and `StaticArrays` packages are optional for the Julia comparison backend.
-- pytest 8 and build 1 are optional test and distribution-build tools. Setuptools 77 or newer and wheel are installed automatically in an isolated package build.
+| Dependency | Declared requirement | Locally tested version |
+| --- | --- | --- |
+| Python | `>=3.10` | 3.11.7 |
+| NumPy | `>=1.24` | 2.4.6 |
+| SymPy | `>=1.11` | 1.14.0 |
+| CuPy/CUDA | CUDA-specific extra | `cupy-cuda12x` 14.1.1, CUDA runtime 12.9 |
+| Matplotlib | `>=3.7` (examples) | 3.11.1 |
+| SciPy | `>=1.10` (benchmarks) | 1.16.1 |
+| QuTiP | `>=5.0` (benchmarks) | 5.2.0 |
+| pytest | `>=8` (tests) | 8.4.2 |
+| build | `>=1` (release builds) | 1.5.0 |
+| Ruff | `==0.16.2` (development) | 0.16.2 |
+| Julia | external optional backend | 1.10.2 |
+
+FFmpeg is an optional external executable for MP4 output. The Julia comparison
+also requires `DifferentialEquations`, `DiffEqGPU`, `CUDA`, and `StaticArrays`.
 
 CuPy cannot be one unconditional dependency because its binary package name is
 CUDA-major-specific. Pip does not prompt for or reliably detect that choice
@@ -194,25 +213,28 @@ Run the optional CUDA numerical smoke test as well:
 pytest
 ```
 
-The GitHub Actions workflow builds the source distribution and wheel and runs
-the non-GPU tests. Numerical convergence against QuTiP should still be checked
-before publishing scientific results or changing the CUDA integration core.
+The GitHub Actions workflow currently tests Python 3.11, builds the source
+distribution and wheel, and runs the non-GPU tests. Python 3.10 remains the
+declared minimum but is outside the current release test matrix. Numerical
+convergence against QuTiP should still be checked before publishing scientific
+results or changing the CUDA integration core.
 
 ## Tested Local Environment
 
 The reference benchmark files were produced on an RTX 3080 workstation. The environment checker reports the exact machine metadata and the full benchmark CSV files store it at the top of the file.
 
-Example tested environment:
+Version 0.1.0 local test environment:
 
 ```text
 Python: 3.11.7
-OS: Windows 11 Home (25H2, build 26200.8655)
+OS: Windows 11 Home (25H2, build 26200.9168)
 CPU: 11th Gen Intel(R) Core(TM) i9-11900K @ 3.50GHz
 GPU: NVIDIA GeForce RTX 3080, compute capability 8.6, memory 10.00 GB
-NumPy: 1.26.4
-SymPy: 1.12
-Matplotlib: 3.8.0
-CuPy: 13.0.0
+NumPy: 2.4.6
+SymPy: 1.14.0
+Matplotlib: 3.11.1
+CuPy: 14.1.1 (cupy-cuda12x; CUDA runtime 12.9)
+SciPy: 1.16.1
 QuTiP: 5.2.0
 Julia: 1.10.2
 ```
@@ -259,9 +281,20 @@ Run the initial-state sweep and gate-fidelity tutorial:
 python Example_05_initial_condition_sweep_gate_fidelity.py
 ```
 
-Tutorial examples use visible GPU-sized grids by default. If your GPU is smaller or you want a first smoke run, reduce the grid in the `user_settings()` block near the bottom of each script.
+Tutorial examples use visible GPU-sized grids by default. If your GPU is smaller
+or you want a first smoke run, reduce the grid in the `user_settings()` block
+near the bottom of each script. Examples 01-04 use `simulation_periods` and
+`solver_steps_per_period`; Example 05 uses `solver_steps` because each selected
+gate has its own duration. A time grid with `N` integration intervals contains
+`N + 1` samples, including both `t=0` and the requested final time, and the
+current GQIS CUDA backend therefore executes `len(tlist) - 1` fixed-step RK4
+updates. `averaging_skip_fraction` is the initial fraction of simulated time
+excluded only from a time-averaged output.
 
-Time-grid settings specify RK4 integration steps. A simulation with `num_steps` intervals constructs `num_steps + 1` time samples so that both `t=0` and the requested final time are represented. GQIS executes `len(tlist) - 1` RK4 steps.
+In animation examples, `forward_frame_count` sets the number of calculated
+forward frames, while `animated_parameter_values` is the corresponding array of
+physical parameter values. `pingpong` playback appends those values in reverse
+order; each displayed or saved frame currently runs its GPU calculation.
 
 ## Benchmarks
 
@@ -270,6 +303,21 @@ Benchmark scripts:
 - `Benchmark_01_two_level.py`: two-level GPU, fixed-step Python CPU, adaptive SciPy CPU, QuTiP CPU, and Julia GPU comparison.
 - `Benchmark_02_four_level_Interferometry.py`: four-level GPU, fixed-step Python CPU, adaptive SciPy CPU, QuTiP CPU, and Julia GPU comparison.
 
+Both scripts use the same benchmark modes:
+
+| Mode | Solver selection | Result |
+| --- | --- | --- |
+| `single` | `--solver` | Runs and optionally plots one backend. |
+| `diff` | `--solver`, `--solver-b` | Runs two backends, prints both timings plus MSE, RMS, and maximum absolute differences, and optionally plots both maps and their difference. |
+| `all` | none | Attempts every backend and skips unavailable optional backends with a console message. It displays maps but does not calculate pairwise errors. |
+| `full_benchmark` | `--full-solvers` | Measures timing versus square-grid size, terminates points that exceed the time limit, extrapolates larger points, and saves CSV/PNG results. It does not compare numerical output maps. |
+
+`full` and `full-benchmark` are aliases for `full_benchmark`. A solver name may
+also be supplied as the positional argument, for example
+`python Benchmark_01_two_level.py qutip_cpu`; this is shorthand for `single`
+mode. Command-line options override the values in `user_settings()` near the
+bottom of each benchmark. Run either script with `--help` for all options.
+
 Run a single GPU benchmark:
 
 ```bash
@@ -277,45 +325,82 @@ python Benchmark_01_two_level.py --mode single --solver gpu --nx 512 --ny 512 --
 python Benchmark_02_four_level_Interferometry.py --mode single --solver gpu --nx 256 --ny 256 --no-plot --timings
 ```
 
+Use `diff` mode to run any two available backends on the same parameter grid.
+For numerical validation, the recommended comparison is GQIS against adaptive
+QuTiP with divider `1` so both backends receive the full requested time grid:
+
+```bash
+python Benchmark_01_two_level.py --mode diff --solver gpu --solver-b qutip_cpu --detuning-points 16 --amplitude-points 16 --qutip-output-density-divider 1 --timings
+python Benchmark_02_four_level_Interferometry.py --mode diff --solver gpu --solver-b qutip_cpu --nx 16 --ny 16 --qutip-cpu-num-t-divider 1 --timings
+```
+
+Each command displays both interferograms and their difference and prints the
+mean-square deviation (`MSE`), root-mean-square deviation (`RMS`), maximum
+absolute difference, and solver timings. Increase
+`--solver-steps-per-period` until the GPU-versus-QuTiP error is converged; the GQIS
+backend uses fixed-step RK4, while QuTiP chooses adaptive internal steps.
+
+Both native Python CPU backends remain available. Substitute `python_cpu` for a
+same-grid fixed-step RK4 comparison, or `python_ode_cpu` for the adaptive SciPy
+`solve_ivp` comparison. Thus `--solver` and `--solver-b` may be any two of
+`gpu`, `python_cpu`, `python_ode_cpu`, `qutip_cpu`, and `julia_gpu`.
+
 Run a full timing sweep and save CSV/PNG output:
 
 ```bash
-python Benchmark_01_two_level.py --mode full_benchmark --full-max-side 8192 --full-time-limit 300 --no-plot
-python Benchmark_02_four_level_Interferometry.py --mode full_benchmark --full-max-side 8192 --full-time-limit 300 --no-plot
+python Benchmark_01_two_level.py --mode full_benchmark --bench-max-side-size 8192 --bench-solver-time-limit 300 --no-plot
+python Benchmark_02_four_level_Interferometry.py --mode full_benchmark --bench-max-side-size 8192 --bench-solver-time-limit 300 --no-plot
 ```
 
 To include the adaptive SciPy backend, add `python_ode_cpu` to `--full-solvers`:
 
 ```bash
-python Benchmark_01_two_level.py --mode full_benchmark --full-solvers gpu,python_ode_cpu,qutip_cpu,julia_gpu --full-max-side 8192 --no-plot
-python Benchmark_02_four_level_Interferometry.py --mode full_benchmark --full-solvers gpu,python_ode_cpu,qutip_cpu,julia_gpu --full-max-side 8192 --no-plot
+python Benchmark_01_two_level.py --mode full_benchmark --full-solvers gpu,python_ode_cpu,qutip_cpu,julia_gpu --bench-max-side-size 8192 --no-plot
+python Benchmark_02_four_level_Interferometry.py --mode full_benchmark --full-solvers gpu,python_ode_cpu,qutip_cpu,julia_gpu --bench-max-side-size 8192 --no-plot
 ```
 
 Solver inclusion is user-selectable. Use `--solver` in `single` mode,
-`--solver-a` and `--solver-b` in `diff` mode, or `--full-solvers` in
-`full_benchmark` mode. Available names are `gpu`, `python_cpu`,
-`python_ode_cpu`, `qutip_cpu`, and `julia_gpu`. Mode `all` runs every available
-backend.
+`--solver` and `--solver-b` in `diff` mode, or `--full-solvers` in
+`full_benchmark` mode. Mode `all` runs every available backend. The default full
+performance sweep includes `gpu`, `qutip_cpu`, and `julia_gpu`; QuTiP is the
+primary CPU performance and numerical reference, while `python_cpu` is retained
+as a transparent fixed-step implementation reference.
 
-Full benchmark mode measures powers-of-two square grids. If a solver exceeds `--full-time-limit`, that process is terminated before the next measurement. Larger points for that solver are then extrapolated linearly in log-log coordinates, using `log10(time)` versus `log10(number of simulations)`. In generated plots, measured points use circles and extrapolated points use squares with the same color.
+Full benchmark mode measures powers-of-two square grids. If a solver exceeds
+`--bench-solver-time-limit`, that process is terminated before the next measurement.
+To avoid launching a point that is very likely to time out, the benchmark starts
+extrapolating when the latest measured time exceeds half the limit and the last
+two measured points have a time ratio greater than `0.9 * 4 = 3.6`. There is no
+upper bound on this ratio.
+Larger points are extrapolated from the last measured point using the log-log slope
+between the last two valid measurements, with `log10(time)` versus
+`log10(number of simulations)`. In generated plots, measured points use circles
+and extrapolated points use squares with the same color.
 
-The generated CSV files include CPU, GPU, OS, Python, CUDA runtime, and GPU first-RHS/codegen timing metadata.
+In `full_benchmark` mode, `--no-plot` suppresses the interactive Matplotlib
+window but still saves the PNG figure and CSV table.
+
+The generated CSV files include CPU, GPU, VRAM, OS, Python, GQIS and numerical-package versions, CUDA runtime, and GPU first-RHS/codegen timing metadata.
 
 ## Current Benchmark Results
 
-Reference results are generated files rather than manually duplicated README tables. The CSV files are authoritative: they include machine metadata, measured/extrapolated status, preparation time, and calculation time. Regenerate them after solver changes before citing performance.
+Reference results are generated files rather than manually duplicated README
+tables. The CSV files are authoritative: they include machine metadata,
+measured/extrapolated status, total time, and separate preparation/calculation
+times when a backend reports them. Regenerate them after solver changes before
+citing performance.
 
 ### Two-Level Reference
 
-[Timing data (CSV)](Benchmark_01_full_benchmark.csv) | [Figure file (PNG)](Benchmark_01_full_benchmark.png)
+[Timing data (CSV)](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/Benchmark_01_full_benchmark.csv) | [Figure file (PNG)](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/Benchmark_01_full_benchmark.png)
 
-![Two-level full benchmark](Benchmark_01_full_benchmark.png)
+![Two-level full benchmark](https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Benchmark_01_full_benchmark.png)
 
 ### Four-Level Reference
 
-[Timing data (CSV)](Benchmark_02_full_benchmark.csv) | [Figure file (PNG)](Benchmark_02_full_benchmark.png)
+[Timing data (CSV)](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/Benchmark_02_full_benchmark.csv) | [Figure file (PNG)](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/Benchmark_02_full_benchmark.png)
 
-![Four-level full benchmark](Benchmark_02_full_benchmark.png)
+![Four-level full benchmark](https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Benchmark_02_full_benchmark.png)
 
 ## Solver Fairness Notes
 
@@ -325,14 +410,14 @@ Reference results are generated files rather than manually duplicated README tab
 - `qutip_cpu` uses QuTiP `mesolve`, which is adaptive internally, but the requested output/coefficient time list still comes from the benchmark settings.
 - The fixed-step `python_cpu` divider defaults to `1`, giving it the same RK4 integration-step density as the GPU solver. Its independent divider can be increased only for a deliberately coarser fixed-step comparison.
 - The adaptive `python_ode_cpu` and `qutip_cpu` dividers default to `10`. They reduce the requested output/coefficient time grid, while the solvers choose internal adaptive steps. Use divider `1` when validating all backends on the same requested time grid.
-- A time list with `M` samples defines `M - 1` integration intervals. Averaged observables use the post-step states and exclude the initial state at `t=0`; all fixed-step backends follow the same convention.
-- The Julia benchmark path is useful as an external GPU comparison, but the current helper can include process startup and compilation/codegen overhead. The benchmark plots include a horizontal GPU first-RHS/codegen line to make that overhead visible.
+- A time list with `M` samples defines `M - 1` integration intervals. GQIS and the fixed-step Python RK4 backend average post-step observable samples and exclude the initial state at `t=0`.
+- The Julia benchmark path receives the exact trace- and Hermiticity-reduced density-matrix RHS produced by the same `build_reduced_lindblad_rhs` function used by GQIS. Julia adds one accumulator equation to integrate the observable continuously, whereas GQIS forms a post-step sample average; this output calculation can differ slightly on a coarse grid even though the physical density-matrix ODE is identical. The generated scalar Julia RHS uses Float32 literals and global common-subexpression elimination. Julia `prep` is Python/SymPy equation generation, while Julia `calc` is the synchronized `solve` interval and includes first-solve Julia/GPU compilation. Run with `--timings` to also display the complete Julia subprocess duration.
 
 For publication-quality comparisons, report:
 
 - hardware and software versions
 - grid size and number of simulations
-- number of drive periods and samples per period
+- simulated duration in drive periods and solver steps per period
 - CPU divider values
 - precision
 - preparation/RHS/codegen time
@@ -346,6 +431,10 @@ For publication-quality comparisons, report:
 - `gqis/__init__.py`: public package interface.
 - `gpu_int_tool/` and `GPU_Int_Tool.py`: backward-compatible import shims.
 - `GQIS_API.md`: complete function, parameter, and return-value reference.
+- `INSTALLATION_AND_SMOKE_TEST.md`: isolated installation and CUDA verification guide.
+- [CONTRIBUTING.md](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/CONTRIBUTING.md): issue reports, development setup, scientific validation, and pull-request requirements.
+- [CHANGELOG.md](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/CHANGELOG.md): concise user-facing history of significant changes by release.
+- `.gitattributes`: cross-platform source line-ending policy.
 - `Benchmark_full_tools.py`: shared full-benchmark plotting, extrapolation, and metadata helpers.
 - `Example_01_two_level_basic.py`: basic two-level interferogram.
 - `Example_02_four_level_interferogram.py`: four-level interferogram.
@@ -360,10 +449,15 @@ For publication-quality comparisons, report:
 - `Benchmark_01_full_benchmark.csv` and `Benchmark_02_full_benchmark.csv`: saved reference timing tables.
 - `Benchmark_01_full_benchmark.png` and `Benchmark_02_full_benchmark.png`: saved reference timing figures.
 
+## Contributing
+
+Bug reports, validation results from other GPUs, documentation corrections, and
+focused code contributions are welcome. See [CONTRIBUTING.md](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/CONTRIBUTING.md) before opening an issue or pull request.
+
 ## Citation
 
-If you use this software in scientific work, cite the repository metadata from `CITATION.cff`. After a paper or Zenodo archive is available, add the DOI to `CITATION.cff` and cite the archived release for reproducibility.
+If you use this software in scientific work, cite the repository metadata from [CITATION.cff](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/CITATION.cff). After a paper or Zenodo archive is available, add the DOI to `CITATION.cff` and cite the archived release for reproducibility.
 
 ## License
 
-This project is released under the MIT License. See `LICENSE`.
+This project is released under the [MIT License](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/LICENSE).

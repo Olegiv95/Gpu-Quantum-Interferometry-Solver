@@ -1,10 +1,13 @@
-numpy>=1.24
-sympy>=1.11
-matplotlib>=3.7
+# Minimum compatible versions are kept permissive. The exact environment used
+# for the current release test is recorded below; other versions may work but
+# are outside the current local test matrix.
+numpy>=1.24                 # Tested: 2.4.6
+sympy>=1.11                 # Tested: 1.14.0
+matplotlib>=3.7             # Tested: 3.11.1
 
 # Choose the CuPy package matching your CUDA runtime.
 # For CUDA 12.x:
-cupy-cuda12x>=13
+cupy-cuda12x>=13            # Tested: 14.1.1 with CUDA runtime 12.9
 # For CUDA 11.x, replace the line above with:
 # cupy-cuda11x>=13,<14
 
@@ -12,15 +15,16 @@ cupy-cuda12x>=13
 # cupy-cuda13x>=14
 
 # Optional, needed only for QuTiP CPU reference benchmarks:
-# qutip>=5.0
+# qutip>=5.0                # Tested: 5.2.0
 
 # Optional, needed only for python_ode_cpu adaptive CPU benchmarks:
-# scipy>=1.10
+# scipy>=1.10               # Tested: 1.16.1
 
 # Optional development and publication checks:
-# pytest>=8
-# build>=1
+# pytest>=8                 # Tested: 8.4.2
+# build>=1                  # Tested: 1.5.0
+# ruff==0.16.2              # Tested and pinned linter version
 
 # External programs used by optional features:
 # - FFmpeg for MP4 animation export
-# - Julia plus DifferentialEquations, DiffEqGPU, CUDA, and StaticArrays
+# - Julia 1.10.2 plus DifferentialEquations, DiffEqGPU, CUDA, and StaticArrays

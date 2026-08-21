@@ -2,7 +2,6 @@ import numpy as np
 import pytest
 import sympy as sp
 
-
 cp = pytest.importorskip("cupy")
 
 
@@ -23,14 +22,7 @@ def test_pi_rotation_reaches_requested_final_time():
     rho0 = sp.Matrix([[1, 0], [0, 0]])
     tlist = np.linspace(0.0, np.pi, 101, dtype=np.float32)
 
-    final_rho = mesolve_2D(
-        hamiltonian,
-        sp.Integer(0),
-        [],
-        sp.eye(2),
-        tlist,
-        var_arrays={dummy: np.array([0.0], dtype=np.float32)},
-        rho0=rho0,
-        output_mode="final_rho",
-    )
+    final_rho = mesolve_2D(hamiltonian, sp.Integer(0), [], sp.eye(2), tlist,
+                           var_arrays={dummy: np.array([0.0], dtype=np.float32)}, rho0=rho0,
+                           output_mode="final_rho")
     assert abs(float(final_rho[0, 0, 0])) < 2.0e-5

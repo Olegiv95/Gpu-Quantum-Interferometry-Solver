@@ -14,19 +14,16 @@ import shutil
 import subprocess
 import sys
 
-
-REQUIRED_PACKAGES = (
-    ("numpy", "1.24", "core"),
-    ("sympy", "1.11", "core"),
-    ("cupy", "13", "CUDA backend"),
-)
-OPTIONAL_PACKAGES = (
-    ("matplotlib", "3.7", "examples and plots"),
-    ("scipy", "1.10", "adaptive CPU benchmarks"),
-    ("qutip", "5.0", "reference CPU benchmarks"),
-    ("pytest", "8", "maintainer tests; not required to run the solver"),
-    ("build", "1", "maintainer wheel/source builds; not required to run the solver"),
-)
+REQUIRED_PACKAGES = (("numpy", "1.24", "core"), ("sympy", "1.11", "core"), ("cupy", "13",
+                                                                            "CUDA backend"),
+                     )
+OPTIONAL_PACKAGES = (("matplotlib", "3.7", "examples and plots"),
+                     ("scipy", "1.10", "adaptive CPU benchmarks"), ("qutip", "5.0",
+                                                                    "reference CPU benchmarks"),
+                     ("pytest", "8", "maintainer tests; not required to run the solver"),
+                     ("build", "1",
+                      "maintainer wheel/source builds; not required to run the solver"),
+                     ("ruff", "0.16.2", "maintainer lint checks; not required to run the solver"))
 CUPY_DISTRIBUTIONS = ("cupy", "cupy-cuda11x", "cupy-cuda12x", "cupy-cuda13x")
 JULIA_PACKAGES = ("DifferentialEquations", "DiffEqGPU", "CUDA", "StaticArrays")
 
@@ -45,22 +42,13 @@ def _read_windows_registry_value(path: str, name: str) -> str:
 
 
 def windows_display_version() -> str:
-    product = _read_windows_registry_value(
-        r"SOFTWARE\Microsoft\Windows NT\CurrentVersion",
-        "ProductName",
-    )
-    display = _read_windows_registry_value(
-        r"SOFTWARE\Microsoft\Windows NT\CurrentVersion",
-        "DisplayVersion",
-    )
-    build = _read_windows_registry_value(
-        r"SOFTWARE\Microsoft\Windows NT\CurrentVersion",
-        "CurrentBuildNumber",
-    )
-    ubr = _read_windows_registry_value(
-        r"SOFTWARE\Microsoft\Windows NT\CurrentVersion",
-        "UBR",
-    )
+    product = _read_windows_registry_value(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion",
+                                           "ProductName")
+    display = _read_windows_registry_value(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion",
+                                           "DisplayVersion")
+    build = _read_windows_registry_value(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion",
+                                         "CurrentBuildNumber")
+    ubr = _read_windows_registry_value(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion", "UBR", )
 
     # Some upgraded systems keep a Windows 10 ProductName even on Windows 11.
     if product.startswith("Windows 10") and build.isdigit() and int(build) >= 22000:
@@ -77,15 +65,9 @@ def windows_display_version() -> str:
 
 
 def cpu_name() -> str:
-    return (
-        _read_windows_registry_value(
-            r"HARDWARE\DESCRIPTION\System\CentralProcessor\0",
-            "ProcessorNameString",
-        )
-        or platform.processor()
-        or platform.uname().processor
-        or "unknown CPU"
-    )
+    return (_read_windows_registry_value(r"HARDWARE\DESCRIPTION\System\CentralProcessor\0",
+                                         "ProcessorNameString") or platform.processor()
+            or platform.uname().processor or "unknown CPU")
 
 
 def import_status(module_name: str) -> tuple[bool, str]:
@@ -94,11 +76,17 @@ def import_status(module_name: str) -> tuple[bool, str]:
     except Exception as exc:
         return False, f"MISSING ({type(exc).__name__}: {exc})"
     version = getattr(module, "__version__", "unknown")
+    if version == "unknown":
+        try:
+            version = importlib.metadata.version(module_name)
+        except importlib.metadata.PackageNotFoundError:
+            return False, "MISSING (distribution metadata not found)"
     return True, str(version)
 
 
 def version_at_least(version: str, minimum: str) -> bool:
     """Compare the numeric release components needed by this checker."""
+
     def numeric_parts(value: str) -> tuple[int, ...]:
         match = re.match(r"\s*(\d+(?:\.\d+)*)", value)
         return tuple(int(part) for part in match.group(1).split(".")) if match else ()
@@ -106,7 +94,8 @@ def version_at_least(version: str, minimum: str) -> bool:
     current = numeric_parts(version)
     required = numeric_parts(minimum)
     width = max(len(current), len(required))
-    return bool(current) and current + (0,) * (width - len(current)) >= required + (0,) * (width - len(required))
+    return bool(current) and current + (0, ) * (width - len(current)) >= required + (0, ) * (
+        width - len(required))
 
 
 def installed_cupy_distributions() -> list[str]:
@@ -125,17 +114,25 @@ def print_installation_report() -> None:
     try:
         package = importlib.import_module("gqis")
         package_path = os.path.abspath(package.__file__)
-        distribution = importlib.metadata.distribution("gpu-quantum-interferometry-solver")
+        try:
+            distribution = importlib.metadata.distribution("gqis")
+        except importlib.metadata.PackageNotFoundError:
+            # Support editable installations created before the public package rename.
+            distribution = importlib.metadata.distribution("gpu-quantum-interferometry-solver")
         direct_url_text = distribution.read_text("direct_url.json")
         direct_url = json.loads(direct_url_text) if direct_url_text else {}
         site_roots = [os.path.abspath(path) for path in site.getsitepackages()]
         site_roots.append(os.path.abspath(site.getusersitepackages()))
-        package_in_site = any(
-            os.path.commonpath([os.path.normcase(package_path), os.path.normcase(root)]) == os.path.normcase(root)
-            for root in site_roots
-        )
-        editable = bool(direct_url.get("dir_info", {}).get("editable")) or not package_in_site
-        install_mode = "editable source link" if editable else "standalone/non-editable installation"
+        package_in_site = any(os.path.commonpath([os.path.normcase(package_path),
+                                                  os.path.normcase(root)]) == os.path.normcase(root)
+                              for root in site_roots)
+        editable = bool(direct_url.get("dir_info", {}).get("editable"))
+        if editable:
+            install_mode = "editable source link"
+        elif package_in_site:
+            install_mode = "standalone/non-editable installation"
+        else:
+            install_mode = "source/custom-path import (not site-packages)"
         print(f"Package mode: {install_mode}")
         print(f"Package path: {package_path}")
     except Exception as exc:
@@ -163,7 +160,8 @@ def print_package_report() -> bool:
         print(f"{name:>12s}: {status} (optional: {purpose})")
 
     cupy_distributions = installed_cupy_distributions()
-    print(f"{'CuPy wheel':>12s}: {', '.join(cupy_distributions) if cupy_distributions else 'not detected'}")
+    print(f"{'CuPy wheel':>12s}: "
+          f"{', '.join(cupy_distributions) if cupy_distributions else 'not detected'}")
     if len(cupy_distributions) > 1:
         print("CuPy wheel check: WARNING multiple CuPy distributions can conflict.")
         ok_all = False
@@ -174,19 +172,18 @@ def print_package_report() -> bool:
 def print_external_report(*, check_julia_packages: bool) -> None:
     """Report optional FFmpeg and Julia executables and Julia packages."""
     ffmpeg = shutil.which("ffmpeg")
-    ffmpeg_candidates = [
-        os.environ.get("IMAGEIO_FFMPEG_EXE", ""),
-        os.path.join(os.environ.get("SystemDrive", "C:"), os.sep, "ffmpeg", "bin", "ffmpeg.exe"),
-        os.path.join(sys.prefix, "Library", "bin", "ffmpeg.exe"),
-    ]
-    ffmpeg_outside_path = next((path for path in ffmpeg_candidates if path and os.path.isfile(path)), None)
+    ffmpeg_candidates = [os.environ.get("IMAGEIO_FFMPEG_EXE", ""),
+                         os.path.join(os.environ.get("SystemDrive", "C:"), os.sep,
+                            "ffmpeg", "bin", "ffmpeg.exe"),
+                         os.path.join(sys.prefix, "Library", "bin", "ffmpeg.exe")]
+    ffmpeg_outside_path = next((path for path in ffmpeg_candidates
+                                if path and os.path.isfile(path)), None)
     if ffmpeg:
         ffmpeg_status = f"{ffmpeg} (optional: MP4 export)"
     elif ffmpeg_outside_path:
         ffmpeg_status = (
             f"{ffmpeg_outside_path} (installed outside PATH; add "
-            f"{os.path.dirname(ffmpeg_outside_path)} to PATH for Matplotlib MP4 export)"
-        )
+            f"{os.path.dirname(ffmpeg_outside_path)} to PATH for Matplotlib MP4 export)")
     else:
         ffmpeg_status = "not found (optional: MP4 export)"
     print(f"{'ffmpeg':>12s}: {ffmpeg_status}")
@@ -194,8 +191,10 @@ def print_external_report(*, check_julia_packages: bool) -> None:
     julia = shutil.which("julia")
     if julia:
         try:
-            proc = subprocess.run([julia, "--version"], capture_output=True, text=True, timeout=10, check=False)
-            julia_status = proc.stdout.strip() if proc.returncode == 0 else f"found but not runnable: {julia}"
+            proc = subprocess.run([julia, "--version"], capture_output=True, text=True, timeout=10,
+                                  check=False)
+            julia_status = (proc.stdout.strip()
+                            if proc.returncode == 0 else f"found but not runnable: {julia}")
         except Exception as exc:
             julia_status = f"found but not runnable: {type(exc).__name__}: {exc}"
     else:
@@ -208,13 +207,8 @@ def print_external_report(*, check_julia_packages: bool) -> None:
     else:
         expression = "using " + ", ".join(JULIA_PACKAGES) + '; println("PASS")'
         try:
-            proc = subprocess.run(
-                [julia, "--startup-file=no", "-e", expression],
-                capture_output=True,
-                text=True,
-                timeout=60,
-                check=False,
-            )
+            proc = subprocess.run([julia, "--startup-file=no", "-e", expression],
+                                  capture_output=True, text=True, timeout=60, check=False)
             status = "PASS" if proc.returncode == 0 else (proc.stderr.strip() or "FAILED")
         except Exception as exc:
             status = f"FAILED ({type(exc).__name__}: {exc})"
@@ -236,10 +230,8 @@ def print_cuda_report() -> bool:
         def format_cuda_version(value: int) -> str:
             return f"{value // 1000}.{(value % 1000) // 10}"
 
-        print(
-            f"CUDA runtime: {format_cuda_version(runtime_version)}; "
-            f"driver API: {format_cuda_version(driver_version)}"
-        )
+        print(f"CUDA runtime: {format_cuda_version(runtime_version)}; "
+              f"driver API: {format_cuda_version(driver_version)}")
         device_count = cp.cuda.runtime.getDeviceCount()
         print(f"CUDA devices: {device_count}")
         for idx in range(device_count):
@@ -248,7 +240,8 @@ def print_cuda_report() -> bool:
             major = props["major"]
             minor = props["minor"]
             total_mem_gb = props["totalGlobalMem"] / (1024**3)
-            print(f"  [{idx}] {name}, compute capability {major}.{minor}, memory {total_mem_gb:.2f} GB")
+            print(f"  [{idx}] {name}, compute capability {major}.{minor}, "
+                  f"memory {total_mem_gb:.2f} GB")
         cupy_major = int(str(cp.__version__).split(".", 1)[0])
         runtime_major = runtime_version // 1000
         if runtime_major >= 13 and cupy_major < 14:
@@ -287,16 +280,10 @@ def run_smoke_test() -> bool:
         A_list = np.linspace(0.0, 0.5, 4, dtype=np.float32)
         tlist = np.linspace(0.0, 2.0, 32, dtype=np.float32)
 
-        out = mesolve_2D(
-            H,
-            drive_expr,
-            col_ops,
-            mean_op,
-            tlist,
-            var_arrays={eps: eps_list, A: A_list},
-            const_values={Delta: 1.0, gamma1_s: 0.01, gamma2_s: 0.01},
-            timings=True,
-        )
+        out = mesolve_2D(H, drive_expr, col_ops, mean_op, tlist,
+                         var_arrays={eps: eps_list, A: A_list},
+                         const_values={Delta: 1.0, gamma1_s: 0.01, gamma2_s: 0.01},
+                         timings=True)
         arr = np.asarray(out)
         if arr.shape != (len(eps_list), len(A_list)):
             print(f"Smoke test: FAILED unexpected shape {arr.shape}")
@@ -314,18 +301,15 @@ def run_smoke_test() -> bool:
 def run_bounded_smoke_test(timeout: float) -> bool:
     """Run the CUDA/NVRTC smoke test in a child process with a hard timeout."""
     try:
-        proc = subprocess.run(
-            [sys.executable, "-m", "gqis.check_environment", "--smoke-worker"],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
+        proc = subprocess.run([sys.executable, "-m", "gqis.check_environment", "--smoke-worker"],
+                              capture_output=True, text=True, timeout=timeout, check=False)
     except subprocess.TimeoutExpired as exc:
         if exc.stdout:
-            print(exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else exc.stdout, end="")
+            print(exc.stdout.decode(errors="replace")
+                  if isinstance(exc.stdout, bytes) else exc.stdout, end="")
         if exc.stderr:
-            print(exc.stderr.decode(errors="replace") if isinstance(exc.stderr, bytes) else exc.stderr, end="")
+            print(exc.stderr.decode(errors="replace")
+                  if isinstance(exc.stderr, bytes) else exc.stderr, end="")
         print(f"Smoke test: FAILED (exceeded {timeout:g}s; worker terminated)")
         return False
 
@@ -339,9 +323,11 @@ def run_bounded_smoke_test(timeout: float) -> bool:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Check GQIS dependencies and CUDA availability.")
     parser.add_argument("--smoke", action="store_true", help="run a tiny GPU solve")
-    parser.add_argument("--smoke-timeout", type=float, default=120.0, help="maximum seconds for the GPU/NVRTC smoke test")
+    parser.add_argument("--smoke-timeout", type=float, default=120.0,
+                        help="maximum seconds for the GPU/NVRTC smoke test")
     parser.add_argument("--smoke-worker", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--check-julia-packages", action="store_true", help="import optional Julia benchmark packages")
+    parser.add_argument("--check-julia-packages", action="store_true",
+                        help="import optional Julia benchmark packages")
     args = parser.parse_args()
 
     if args.smoke_worker:
