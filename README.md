@@ -17,7 +17,7 @@ The main target is quantum interferometry: dense grids of low-dimensional open-s
 
 ## Why This Tool Exists
 
-Many quantum dynamics tools are excellent for one system, one parameter set, or a moderate number of CPU-parallel jobs. Interferometry often needs millions of independent low-dimensional simulations on a rectangular grid. In that regime, moving only a single trajectory to the GPU is not enough: the parameter sweep itself must live inside the GPU kernel.
+Many quantum dynamics tools are excellent for one system, one parameter set, or a moderate number of CPU-parallel jobs. Interferometry often needs millions of independent simulations on a rectangular grid. In that regime, moving only a single trajectory to the GPU is not enough: the parameter sweep itself must live inside the GPU kernel.
 
 `GQIS` is designed for that case. It compiles the model once, sends the parameter grid to the GPU, integrates every grid point in parallel, accumulates the requested observable inside the kernel, and transfers only the final 2D result back to CPU memory for plotting.
 
@@ -64,20 +64,19 @@ Distinct implementation choices:
 
 - The Hamiltonian and collapse operators are ordinary SymPy matrices, so the physics model remains readable.
 - The Lindblad RHS is generated symbolically, then converted into CUDA code instead of being interpreted inside Python.
-- Only independent density-matrix variables are evolved, reducing unnecessary work.
+- Only the independent density-matrix elements are evolved, reducing unnecessary work.
 - The CUDA kernel computes the observable during integration, so every time step does not need to be stored in GPU memory.
-- Runtime constants can be changed for animations without regenerating the full symbolic RHS when the equation structure is unchanged.
-- GQIS reuses a generated ODE and compiled kernel when the symbolic model is unchanged; numeric sweep arrays, explicit initial-state arrays, and selected runtime constants can change between calls without recompilation.
+- When the symbolic model is unchanged, GQIS reuses the generated RHS and compiled kernel; numeric sweep arrays, explicit initial states, and selected runtime constants can change between calls without recompilation, which supports efficient animations.
 
 ## Benefits For Massive Parameter Sweeps
 
 - `GQIS` avoids a Python-level loop over millions of parameter points.
 - One compiled kernel can evaluate a full 2D interferogram where each thread solves one independent low-dimensional system.
-- Dense GPU sweeps are useful for thin resonances, where low-resolution CPU scans can miss structure.
+- Dense GPU sweeps are useful for resolving thin resonances, where low-resolution CPU scans can miss structure.
 - The workflow stays in Python/SymPy/CuPy while still producing compiled CUDA kernels.
-- QuTiP remains the recommended CPU reference for validation, but GQIS is intended for the high-throughput sweep after the model and resolution are validated.
+- QuTiP remains the recommended CPU reference for validation, but GQIS is intended for the high-throughput sweep after the model is validated.
 
-This tool is not a replacement for general-purpose quantum solvers. It is specialized for structured, independent parameter sweeps where a fixed time grid is acceptable after convergence checks.
+This tool is specialized for structured, independent parameter sweeps where a fixed time grid is acceptable after manual convergence confirmation.
 
 ## Supported Models And Outputs
 
@@ -88,27 +87,14 @@ The solver is not limited to the included two- and four-level examples. A user s
 - any list of Lindblad collapse operators with dimensions matching `H`
 - an output operator whose expectation value is accumulated or sampled
 - up to two parameter-sweep axes
-- an optional symbolic initial density matrix, symbolic initial-state sweep, or explicit array of initial reduced density matrices
+- an optional symbolic initial density matrix, symbolic initial-state sweep, or explicit array of initial density matrices
 
 `mesolve_2D` constructs the Lindblad equation, reduces the Hermitian trace-one density matrix to `N*N - 1` independent real variables, generates CUDA expressions for the RHS and observable, inserts them into the packaged CUDA template, compiles with NVRTC, and launches one independent trajectory per GPU thread. The practical system dimension is limited by generated-code size, register pressure, compilation resources, and GPU memory rather than by a hard-coded two-level model.
 
-Output modes include a time-averaged observable, a final observable, the final reduced density matrix, and an optional sampled observable trace. See the [GQIS API reference](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md) for every argument and helper function.
+Output modes include a time-averaged observable, a final observable, the final density matrix, and an optional sampled observable trace. See the [GQIS API reference](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md) for every argument and helper function.
 
-## Units And Basis Conventions
-
-The solver is unit-agnostic. The included examples use dimensionless model
-parameters normalized by a selected energy-gap scale. All Hamiltonian
-coefficients, drive frequencies, and dissipative rates in one model must use
-the same frequency convention. A physical model may use either ordinary
-frequency or angular frequency after consistent normalization; mixing the two
-introduces an unwanted factor of `2*pi`. The corresponding time variable must
-use the reciprocal convention so that every phase argument is dimensionless.
-
-Labels such as `|0>` and `|1>` identify states of the basis used to construct
-the Hamiltonian. They are not automatically energy-ground and energy-excited
-states. The Hamiltonian determines its instantaneous energy eigenstates, while
-collapse operators specify the dissipative transition directions represented
-in the model.
+GQIS does not interpret physical units or basis labels. Define all quantities,
+states, and operators in each model using compatible units and a consistent basis.
 
 ## Installation
 
