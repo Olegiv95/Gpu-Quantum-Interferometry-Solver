@@ -19,7 +19,8 @@ Many quantum dynamics tools are excellent for one system, one parameter set, or 
 
 ## Solver Pipeline
 
-This is the principal solver scheme used by the examples and benchmarks:
+A call with a new symbolic model follows this pipeline. Later calls can reuse
+the generated equations and compiled CUDA kernel when the model structure is unchanged:
 
 <table>
   <tr align="center">
