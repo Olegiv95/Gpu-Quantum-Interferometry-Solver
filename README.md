@@ -308,15 +308,23 @@ and extrapolated points use squares with the same color.
 In `full_benchmark` mode, `--no-plot` suppresses the interactive Matplotlib
 window but still saves the PNG figure and CSV table.
 
-The generated CSV files include CPU, GPU, VRAM, OS, Python, GQIS and numerical-package versions, CUDA runtime, and GPU first-RHS/codegen timing metadata.
+The generated CSV files include the hardware, software, physical-model,
+time-grid, precision, CPU-divider, sweep-limit, and timing metadata needed to
+reproduce the benchmark configuration.
 
 ## Current Benchmark Results
 
-Reference results are generated files rather than manually duplicated README
-tables. The CSV files are authoritative: they include machine metadata,
-measured/extrapolated status, total time, and separate preparation/calculation
-times when a backend reports them. Regenerate them after solver changes before
-citing performance.
+On the reference RTX 3080, GQIS approaches linear scaling with the number of
+simulations once fixed launch overhead no longer dominates. The largest
+measured `32768 x 32768` runs evaluate `1.07 x 10^9` parameter sets, with
+10,240 RK4 steps per trajectory, in about 104 s for the 2-level model and 421 s
+for the 4-level model. Direct QuTiP calculations at this resolution are
+estimated to require `6.0 x 10^6` s and `9.3 x 10^6` s, or about two and four
+months of continuous CPU computation. Those large-grid CPU times are therefore
+extrapolated from measured smaller grids. The resulting estimated GQIS speedups
+are about `5.7 x 10^4` and `2.2 x 10^4` for these benchmark configurations.
+Reaching resolutions that are impractical with a CPU reference is the primary
+motivation for GQIS.
 
 ### Two-Level Reference
 
@@ -330,27 +338,23 @@ citing performance.
 
 ![Four-level full benchmark](./Benchmark_02_full_benchmark.png)
 
+Running `full_benchmark` automatically saves both the CSV timing table and PNG
+figure, including when `--no-plot` suppresses the interactive window.
+
 ## Solver Fairness Notes
 
 - `gpu` uses the GQIS CUDA backend with a fixed-step RK4 grid.
 - `python_cpu` is also a simple fixed-step RK4 reference backend implemented in the benchmark script. It is not Python's default ODE solver and it is not SciPy `solve_ivp`.
 - `python_ode_cpu` uses SciPy `solve_ivp` with adaptive RK45 integration. It is the plain Python adaptive ODE reference backend.
 - `qutip_cpu` uses QuTiP `mesolve`, which is adaptive internally, but the requested output/coefficient time list still comes from the benchmark settings.
-- The fixed-step `python_cpu` divider defaults to `1`, giving it the same RK4 integration-step density as the GPU solver. Its independent divider can be increased only for a deliberately coarser fixed-step comparison.
-- The adaptive `python_ode_cpu` and `qutip_cpu` dividers default to `10`. They reduce the requested output/coefficient time grid, while the solvers choose internal adaptive steps. Use divider `1` when validating all backends on the same requested time grid.
-- A time list with `M` samples defines `M - 1` integration intervals. GQIS and the fixed-step Python RK4 backend average post-step observable samples and exclude the initial state at `t=0`.
-- The Julia benchmark path receives the exact trace- and Hermiticity-reduced density-matrix RHS produced by the same `build_reduced_lindblad_rhs` function used by GQIS. Julia adds one accumulator equation to integrate the observable continuously, whereas GQIS forms a post-step sample average; this output calculation can differ slightly on a coarse grid even though the physical density-matrix ODE is identical. The generated scalar Julia RHS uses Float32 literals and global common-subexpression elimination. Julia `prep` is Python/SymPy equation generation, while Julia `calc` is the synchronized `solve` interval and includes first-solve Julia/GPU compilation. Run with `--timings` to also display the complete Julia subprocess duration.
+- The fixed-step `python_cpu` divider defaults to `1`, matching the GQIS RK4 step density, while the adaptive `python_ode_cpu` and `qutip_cpu` dividers default to `10` and reduce their requested output/coefficient grid. Use divider `1` for adaptive backends when validating all solvers on the same requested time grid; increase the fixed-step divider only for an intentionally coarser RK4 comparison.
+- A time list with `M` samples defines `M - 1` integration intervals.
+- `julia_gpu` solves the same trace- and Hermiticity-reduced density-matrix ODE system as GQIS. Its benchmark time is the synchronized Julia solve stage; symbolic and code-generation preparation is excluded from that scaling time and reported separately when available.
 
-The generated CSV records hardware and software versions in its metadata
-header. Each result row records the grid side, number of simulations, solver,
-total time, available preparation and calculation times, and whether the point
-was measured, extrapolated, or failed. The first GPU RHS/code-generation time
-is also stored in the metadata when available.
-
-The scripts currently print, but do not save in the CSV, the simulated duration,
-solver steps per period, CPU divider values, and numerical precision. Retain
-these settings with the generated files when reporting publication-quality
-comparisons.
+Each CSV result row records the grid side, number of simulations, solver,
+scaling time, available preparation and calculation times, and whether the
+point was measured, extrapolated, or failed. The first GQIS RHS/code-generation
+time is stored in the metadata when available.
 
 ## Project Layout
 

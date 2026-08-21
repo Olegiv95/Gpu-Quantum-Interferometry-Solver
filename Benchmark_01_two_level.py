@@ -721,7 +721,7 @@ def run_julia_gpu_solver(cfg: BenchConfig, *, julia_cmd: str) -> tuple[np.ndarra
                   f"julia_solve={julia_elapsed:.3f}s subprocess_total={process_elapsed:.3f}s")
         p_mat = np.loadtxt(out_csv, delimiter=",", dtype=np.float32)
 
-    return p_mat, prep_elapsed + julia_elapsed
+    return p_mat, julia_elapsed
 
 
 def parse_julia_time(stdout: str, timing_path: Path) -> float | None:
@@ -916,6 +916,30 @@ def run_full_benchmark(base_cfg: BenchConfig, args: argparse.Namespace,
     out_csv = Path(f"{args.output_filename}.csv")
     out_png = Path(f"{args.output_filename}.png")
     metadata = collect_equipment_info()
+    metadata.update({
+        "system_levels": "2", "benchmark_solvers": ",".join(solvers),
+        "simulation_periods": f"{base_cfg.tr:.9g}",
+        "solver_steps_per_period": str(base_cfg.solver_steps_per_period),
+        "solver_steps_per_trajectory": str(base_cfg.num_steps),
+        "time_step": f"{base_cfg.dt:.9g}",
+        "averaging_skip_fraction": f"{base_cfg.warmup_time:.9g}",
+        "python_cpu_step_density_divider": str(args.python_cpu_spp_divider),
+        "python_ode_output_density_divider": str(args.python_ode_cpu_spp_divider),
+        "qutip_output_density_divider": str(args.qutip_cpu_spp_divider),
+        "gpu_precision": base_cfg.gpu_precision,
+        "python_cpu_precision": base_cfg.cpu_precision,
+        "python_ode_cpu_precision": "fp64", "qutip_cpu_precision": "fp64",
+        "julia_gpu_precision": "fp32", "cpu_workers": str(base_cfg.workers),
+        "Delta": f"{base_cfg.delta:.9g}", "w": f"{base_cfg.w:.9g}",
+        "gamma1": f"{base_cfg.gamma1:.9g}", "gamma2": f"{base_cfg.gamma2:.9g}",
+        "eps_min": f"{float(base_cfg.eps_list[0]):.9g}",
+        "eps_max": f"{float(base_cfg.eps_list[-1]):.9g}",
+        "A_min": f"{float(base_cfg.A_list[0]):.9g}",
+        "A_max": f"{float(base_cfg.A_list[-1]):.9g}",
+        "benchmark_min_side": str(args.bench_min_side_size),
+        "benchmark_max_side": str(args.bench_max_side_size),
+        "solver_time_limit_s": f"{args.bench_solver_time_limit:.9g}",
+    })
     if np.isfinite(gpu_first_rhs_stage_s):
         metadata["gpu_first_rhs_stage_s"] = f"{gpu_first_rhs_stage_s:.9g}"
     print_equipment_info(metadata)

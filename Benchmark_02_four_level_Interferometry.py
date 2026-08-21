@@ -523,7 +523,7 @@ def run_julia_gpu_solver(cfg: FourCfg, julia_cmd: str = "julia",
             print(f"julia_gpu timings: prep={prep_time:.3f}s julia_solve={solve_time:.3f}s "
                   f"subprocess_total={compute_time:.3f}s")
         out = np.loadtxt(out_csv, delimiter=",", dtype=np.float32)
-    return out, SolverTiming(total=prep_time + solve_time, prep=prep_time, compute=solve_time)
+    return out, SolverTiming(total=solve_time, prep=prep_time, compute=solve_time)
 
 
 def run_solver(name: str, cfg: FourCfg, julia_cmd: str, timeout_s: Optional[float] = None):
@@ -639,7 +639,8 @@ def warmup_gpu_solver_for_benchmark(cfg: FourCfg, side: int) -> float:
 def run_full_benchmark(cfg: FourCfg, *, julia_cmd: str, solvers: tuple[str, ...], min_side: int,
                        max_side: int, time_limit: float, output_filename: str, show_plot: bool,
                        python_cpu_divider: int, python_ode_cpu_divider: int,
-                       qutip_cpu_divider: int) -> list[dict]:
+                       qutip_cpu_divider: int, simulation_periods: float,
+                       solver_steps_per_period: int) -> list[dict]:
     """Run a timing sweep over square grids and extrapolate slow backends."""
     sides = benchmark_sides(min_side, max_side)
     rows = []
@@ -716,6 +717,29 @@ def run_full_benchmark(cfg: FourCfg, *, julia_cmd: str, solvers: tuple[str, ...]
     out_csv = Path(f"{output_filename}.csv")
     out_png = Path(f"{output_filename}.png")
     metadata = collect_equipment_info()
+    metadata.update({
+        "system_levels": str(cfg.N), "benchmark_solvers": ",".join(solvers),
+        "simulation_periods": f"{simulation_periods:.9g}",
+        "solver_steps_per_period": str(solver_steps_per_period),
+        "solver_steps_per_trajectory": str(cfg.num_steps), "time_step": f"{cfg.dt:.9g}",
+        "averaging_skip_fraction": f"{cfg.warmup_time:.9g}",
+        "python_cpu_step_density_divider": str(python_cpu_divider),
+        "python_ode_output_density_divider": str(python_ode_cpu_divider),
+        "qutip_output_density_divider": str(qutip_cpu_divider),
+        "gpu_precision": "fp32", "python_cpu_precision": "fp64",
+        "python_ode_cpu_precision": "fp64", "qutip_cpu_precision": "fp64",
+        "julia_gpu_precision": "fp32", "cpu_workers": str(cfg.workers),
+        "regime": cfg.regime_name, "Delta": f"{cfg.delta_abs:.9g}",
+        "w": f"{cfg.w_abs:.9g}", "gamma1": f"{cfg.gamma1:.9g}",
+        "gamma2": f"{cfg.gamma2:.9g}", "kappa": f"{cfg.kappa:.9g}",
+        "Ap": f"{cfg.Ap:.9g}", "g1": f"{cfg.g1:.9g}", "wr2": f"{cfg.wr2:.9g}",
+        "eps_min": f"{float(cfg.eps_list[0]):.9g}",
+        "eps_max": f"{float(cfg.eps_list[-1]):.9g}",
+        "A_min": f"{float(cfg.A_list[0]):.9g}",
+        "A_max": f"{float(cfg.A_list[-1]):.9g}",
+        "benchmark_min_side": str(min_side), "benchmark_max_side": str(max_side),
+        "solver_time_limit_s": f"{time_limit:.9g}",
+    })
     if np.isfinite(gpu_first_rhs_stage_s):
         metadata["gpu_first_rhs_stage_s"] = f"{gpu_first_rhs_stage_s:.9g}"
     print_equipment_info(metadata)
@@ -980,7 +1004,9 @@ def main() -> None:
                            output_filename=args.output_filename, show_plot=not args.no_plot,
                            python_cpu_divider=python_cpu_num_t_divider,
                            python_ode_cpu_divider=python_ode_cpu_num_t_divider,
-                           qutip_cpu_divider=qutip_cpu_num_t_divider)
+                           qutip_cpu_divider=qutip_cpu_num_t_divider,
+                           simulation_periods=simulation_periods,
+                           solver_steps_per_period=solver_steps_per_period)
         raise SystemExit(0)
 
     if mode == "single":
