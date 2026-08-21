@@ -22,16 +22,6 @@ def test_packaged_cuda_template_is_discoverable():
     assert template.parent.name == "gqis"
 
 
-def test_legacy_imports_resolve_to_canonical_api():
-    import GPU_Int_Tool
-    import gpu_int_tool
-
-    assert gpu_int_tool.mesolve_2D is mesolve_2D
-    assert GPU_Int_Tool.mesolve_2D is mesolve_2D
-    assert gpu_int_tool.build_reduced_lindblad_rhs is build_reduced_lindblad_rhs
-    assert GPU_Int_Tool.build_reduced_lindblad_rhs is build_reduced_lindblad_rhs
-
-
 def test_independent_density_matrix_layout():
     rho, metadata = build_independent_rho(3)
     assert rho.shape == (3, 3)

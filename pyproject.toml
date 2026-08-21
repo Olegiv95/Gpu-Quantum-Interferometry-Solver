@@ -64,8 +64,7 @@ all-cuda12 = [
 ]
 
 [tool.setuptools]
-packages = ["gqis", "gpu_int_tool"]
-py-modules = ["GPU_Int_Tool"]
+packages = ["gqis"]
 include-package-data = true
 
 [tool.setuptools.package-data]

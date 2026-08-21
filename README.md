@@ -195,10 +195,6 @@ Installed code should import the packaged interface:
 from gqis import mesolve_2D
 ```
 
-The former `from gpu_int_tool import mesolve_2D` and
-`from GPU_Int_Tool import mesolve_2D` forms remain available as compatibility
-imports. New code should use `gqis`.
-
 | Script | Demonstration |
 | --- | --- |
 | `Example_01_two_level_basic.py` | Basic two-level interferogram. |
@@ -345,16 +341,16 @@ citing performance.
 - A time list with `M` samples defines `M - 1` integration intervals. GQIS and the fixed-step Python RK4 backend average post-step observable samples and exclude the initial state at `t=0`.
 - The Julia benchmark path receives the exact trace- and Hermiticity-reduced density-matrix RHS produced by the same `build_reduced_lindblad_rhs` function used by GQIS. Julia adds one accumulator equation to integrate the observable continuously, whereas GQIS forms a post-step sample average; this output calculation can differ slightly on a coarse grid even though the physical density-matrix ODE is identical. The generated scalar Julia RHS uses Float32 literals and global common-subexpression elimination. Julia `prep` is Python/SymPy equation generation, while Julia `calc` is the synchronized `solve` interval and includes first-solve Julia/GPU compilation. Run with `--timings` to also display the complete Julia subprocess duration.
 
-For publication-quality comparisons, report:
+The generated CSV records hardware and software versions in its metadata
+header. Each result row records the grid side, number of simulations, solver,
+total time, available preparation and calculation times, and whether the point
+was measured, extrapolated, or failed. The first GPU RHS/code-generation time
+is also stored in the metadata when available.
 
-- hardware and software versions
-- grid size and number of simulations
-- simulated duration in drive periods and solver steps per period
-- CPU divider values
-- precision
-- preparation/RHS/codegen time
-- kernel or solver calculation time
-- whether each data point is measured or extrapolated
+The scripts currently print, but do not save in the CSV, the simulated duration,
+solver steps per period, CPU divider values, and numerical precision. Retain
+these settings with the generated files when reporting publication-quality
+comparisons.
 
 ## Project Layout
 
@@ -365,8 +361,6 @@ For publication-quality comparisons, report:
 - `GQIS_API.md` and `INSTALLATION_TEST.md` provide detailed API and
   setup guidance.
 - `tests/` and `.github/workflows/ci.yml` contain automated checks.
-- `gpu_int_tool/` and `GPU_Int_Tool.py` preserve compatibility with earlier
-  imports; new code should import `gqis`.
 
 ## Contributing
 

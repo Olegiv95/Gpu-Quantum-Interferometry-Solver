@@ -12,9 +12,6 @@ These three functions form the public package interface. The remaining helpers
 documented below are available from `gqis.solver` for inspection and advanced
 development, but they may change before version 1.0.
 
-The compatibility imports `from gpu_int_tool import mesolve_2D` and
-`from GPU_Int_Tool import mesolve_2D` are retained for older scripts.
-
 ## `mesolve_2D`
 
 ```python
