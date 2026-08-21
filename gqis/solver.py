@@ -838,8 +838,8 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
     if not np.allclose(time_diffs, uniform_dt_host, rtol=1.0e-6, atol=storage_tolerance):
         raise ValueError("tlist must be uniformly spaced because the GPU RK4 kernel uses one "
                          "fixed dt.")
-    # A list of N sample times defines N - 1 integration intervals.  Passing N
-    # to the kernel advanced the state one step beyond tlist[-1].
+    # A list of M sample times defines M - 1 integration intervals. Passing M
+    # to the kernel would advance the state one step beyond tlist[-1].
     num_steps_host = num_t_host - 1
     warmup_time = float(warmup_time)
     if warmup_time < 0.0 or warmup_time > 1.0:

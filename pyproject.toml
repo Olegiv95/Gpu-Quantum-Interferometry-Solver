@@ -43,7 +43,6 @@ Issues = "https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/issues"
 
 [project.scripts]
 gqis-check = "gqis.check_environment:main"
-gpu-int-tool-check = "gqis.check_environment:main"
 
 [project.optional-dependencies]
 cuda11 = ["cupy-cuda11x>=13,<14"]

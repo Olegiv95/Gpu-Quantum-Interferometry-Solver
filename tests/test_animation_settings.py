@@ -16,6 +16,8 @@ def test_animation_settings_separate_frame_count_from_parameter_values():
         assert values.ndim == 1
         assert len(values) == settings["forward_frame_count"]
         assert settings["animated_parameter"]
+        assert settings["ffmpeg_preset"]
+        assert 0 <= settings["ffmpeg_crf"] <= 51
         assert {"frame_count", "mode", "varray"}.isdisjoint(settings)
 
 

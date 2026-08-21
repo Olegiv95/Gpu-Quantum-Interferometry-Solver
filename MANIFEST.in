@@ -1,6 +1,7 @@
 include README.md
 include GQIS_API.md
 include INSTALLATION_TEST.md
+include BENCHMARKS.md
 include CONTRIBUTING.md
 include CHANGELOG.md
 include LICENSE

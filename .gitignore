@@ -29,6 +29,7 @@ env/
 # Large generated scientific outputs
 *.dat
 *.mp4
+!Example_03_two_level_animation.mp4
 *.avi
 *.mov
 *.gif

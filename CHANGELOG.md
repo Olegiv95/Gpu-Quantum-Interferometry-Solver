@@ -26,8 +26,8 @@ semantic version numbers.
 - GPU, native fixed-step Python, adaptive SciPy, and QuTiP benchmark backends.
 - Pairwise benchmark `diff` mode with MSE, RMS, and maximum absolute deviation,
   plus automatic full-benchmark scaling mode.
-- Installable `gqis` package, compatibility imports, environment checker,
-  automated tests, public documentation, and MIT license.
+- Installable `gqis` package, environment checker, automated tests, public
+  documentation, and MIT license.
 
 [Unreleased]: https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/releases/tag/v0.1.0

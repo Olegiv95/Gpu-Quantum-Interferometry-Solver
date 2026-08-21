@@ -58,8 +58,9 @@ that so a maintainer can perform it.
 
 For performance changes, report hardware, software versions, grid, precision,
 solver steps, and whether timings are measured or extrapolated. Do not commit
-caches, environments, videos, or disposable outputs. Update tracked benchmark
-CSV and PNG files only when the change intentionally affects them.
+caches, environments, or disposable outputs. Add a generated video only when
+it is a small, intentional documentation asset. Update tracked benchmark CSV
+and PNG files only when the change intentionally affects them.
 
 Contributions are made available under the project's MIT License. No contributor
 license agreement is currently required.

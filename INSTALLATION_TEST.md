@@ -104,6 +104,97 @@ Do not install `cupy`, `cupy-cuda11x`, `cupy-cuda12x`, and `cupy-cuda13x`
 together in one environment. CUDA 11 and CUDA 13 extras are provided but have
 not been tested on the reference workstation used for version 0.1.0.
 
+## Installation Extras
+
+Install plotting support for the examples with:
+
+```text
+pip install "gqis[cuda12,examples]"
+```
+
+Install QuTiP and SciPy for the benchmark comparison backends with:
+
+```text
+pip install "gqis[cuda12,examples,benchmarks]"
+```
+
+The CUDA extra selects CuPy. The `examples` extra adds Matplotlib, while the
+`benchmarks` extra adds Matplotlib, QuTiP, and SciPy. Julia and FFmpeg are
+external programs and are not installed by pip.
+
+## Source And Development Installation
+
+Before the PyPI release, or to install an exact tagged source revision, use:
+
+```text
+pip install "gqis[cuda12,examples] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.1.0"
+```
+
+From a local clone, install normally or in editable development mode:
+
+```text
+pip install ".[cuda12,examples,benchmarks]"
+pip install -e ".[all-cuda12]"
+```
+
+An editable installation imports the package directly from the clone, so code
+changes become available without reinstalling. A normal installation is better
+for testing the built package as an end user would receive it.
+
+## Dependency Policy And Tested Versions
+
+`pyproject.toml` is the package dependency source of truth. It declares minimum
+compatible versions so pip does not reject an older version unnecessarily.
+`requirements.txt` is a CUDA 12-oriented environment recipe.
+
+The versions below are the GQIS 0.1.0 reference environment. Other versions may
+work, but they should be checked with `gqis-check --installation-test` and a
+numerical comparison before scientific use.
+
+| Dependency | Declared requirement | Locally tested version |
+| --- | --- | --- |
+| Python | `>=3.10` | 3.11.7 |
+| NumPy | `>=1.24` | 2.4.6 |
+| SymPy | `>=1.11` | 1.14.0 |
+| CuPy/CUDA | CUDA-specific extra | `cupy-cuda12x` 14.1.1, CUDA runtime 12.9 |
+| Matplotlib | `>=3.7` (examples) | 3.11.1 |
+| SciPy | `>=1.10` (benchmarks) | 1.16.1 |
+| QuTiP | `>=5.0` (benchmarks) | 5.2.0 |
+| pytest | `>=8` (tests) | 8.4.2 |
+| build | `>=1` (release builds) | 1.5.0 |
+| Ruff | `==0.16.2` (development) | 0.16.2 |
+| Julia | external optional backend | 1.10.2 |
+
+## Automated Tests And Package Build
+
+Examples and benchmarks exercise realistic workflows but do not replace
+automated tests because they are slower, depend on local GPU/plotting software,
+and generally do not assert known numerical answers.
+
+Run the CPU-safe package and time-grid tests with:
+
+```text
+pytest -m "not gpu"
+```
+
+Run the complete test suite, including the CUDA numerical test, with:
+
+```text
+pytest
+```
+
+Build and check the source distribution and wheel with:
+
+```text
+python -m pip install build twine
+python -m build
+python -m twine check dist/*
+```
+
+The GitHub Actions workflow currently tests Python 3.11, runs the non-GPU test
+suite, and builds the package. Python 3.10 remains the declared minimum but is
+outside the current continuous-integration test matrix.
+
 ## Optional External Programs
 
 FFmpeg is needed only for MP4 animation export. On Windows, confirm that the
