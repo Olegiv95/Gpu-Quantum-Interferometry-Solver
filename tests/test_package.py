@@ -36,6 +36,7 @@ def test_independent_density_matrix_layout():
     rho, metadata = build_independent_rho(3)
     assert rho.shape == (3, 3)
     assert len(metadata["rho_syms"]) == 8
+    assert metadata["num_coherences"] == 3
     assert sp.simplify(sp.trace(rho) - 1) == 0
 
 

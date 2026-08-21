@@ -175,8 +175,8 @@ def build_independent_rho(N):
 
     I = sp.I
     num_diag = N - 1
-    M = (N * (N - 1)) // 2
-    vec_len = num_diag + 2 * M
+    num_coherences = (N * (N - 1)) // 2
+    vec_len = num_diag + 2 * num_coherences
     rho_syms = [sp.Symbol(f"rho[{i}]", real=True) for i in range(vec_len)]
 
     def diag_elem(i):
@@ -204,7 +204,8 @@ def build_independent_rho(N):
             return sp.conjugate(upper_elem(j, i))
 
     rho = sp.Matrix(N, N, rho_elem)
-    meta = {"N": N, "rho_syms": rho_syms, "num_diag": num_diag, "M": M, "vec_len": vec_len}
+    meta = {"N": N, "rho_syms": rho_syms, "num_diag": num_diag,
+            "num_coherences": num_coherences, "vec_len": vec_len}
     return rho, meta
 
 
@@ -690,7 +691,8 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
     Solve a Lindblad master equation over a 2D parameter sweep on GPU.
 
     Args:
-        H: Symbolic Hamiltonian matrix.
+        H: ``N x N`` symbolic Hamiltonian matrix, where ``N`` is the number of
+            simulated basis states or quantum levels.
         Drive: Symbolic drive expression or dict[Symbol -> expression].
         Col_Ops: List of symbolic collapse operators.
         mean_operator: Symbolic operator whose expectation value is returned.
@@ -699,16 +701,22 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
         var_arrays: Dict containing one or two sweep arrays, mapped to ParX/ParY
             in insertion order. A one-element dummy axis may be used when no
             physical parameter is swept.
-        const_values: Constant substitutions performed before codegen unless kept symbolic.
+        const_values: Constants normally substituted as fixed numbers during
+            ODE and CUDA-code generation. Changing one on a later call requires
+            new generation and compilation unless that symbol is kept symbolic.
         kernel_template_file: Explicit CUDA template path. ``None`` uses the
             canonical template packaged with GQIS.
-        RHSreuse: Reuse a process-local compiled kernel for equivalent
-            RHS/codegen settings. Sweep values, explicit initial-state values,
-            and runtime-constant values can change without recompilation.
-        runtime_consts: Explicit runtime constants passed through Const_arr.
-            These values override matching entries in const_values.
-        keep_symbolic_consts: Const symbols that must remain runtime constants;
-            "all", "auto", and "const_values" select every const_values key.
+        RHSreuse: Reuse a process-local generated ODE and compiled kernel for
+            equivalent symbolic models. This supports animations and repeated
+            calls in which sweep arrays, explicit initial-state values, or
+            selected runtime constants change.
+        runtime_consts: Values for constants intentionally kept symbolic in the
+            generated ODE. They are uploaded on every call and override matching
+            entries in const_values, allowing animation parameters to change
+            without regenerating the ODE.
+        keep_symbolic_consts: Select const_values symbols that remain symbolic
+            so their values can change between repeated calls; "all", "auto",
+            and "const_values" select every const_values key.
         auto_runtime_consts: If True, keep all const_values symbolic at runtime.
         output_mode: "mean", "final", or "final_rho".
         fp64: If True, generate and run FP64 kernel; otherwise FP32.
@@ -721,18 +729,22 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
         warmup_time: Initial fraction [0, 1] of time excluded from the time
             average. This suppresses transient dependence on the initial state;
             it does not shorten the simulated trajectory.
-        rho0: Optional symbolic initial density matrix or reduced rho vector.
+        rho0: Optional ``N x N`` symbolic initial density matrix or reduced rho
+            vector with ``N*N - 1`` real components.
             It may contain symbols swept through ``var_arrays`` or
             ``rho0_var_arrays``. This enables initial-condition sweeps without
             changing the Hamiltonian. For matrix input, the last population and
             lower triangle are reconstructed from unit trace and Hermiticity.
-        rho0_var_arrays: Optional dict of symbols to 1D arrays used only to make
-            initial-condition sweeps explicit. These arrays are merged with
-            ``var_arrays`` and share the same two total sweep axes.
-        rho0_values: Optional numeric array of explicit reduced initial states.
+        rho0_var_arrays: Optional dict of symbols to 1D arrays used in symbolic
+            rho0. These arrays select one initial state for each independent
+            simulation, are merged with var_arrays, and share the same two total
+            sweep axes. They do not represent time samples.
+        rho0_values: Alternative numeric array of explicit reduced initial
+            states at t=0, with one state per independent simulation.
             Shape can be ``(num_X, N*N-1)`` for one sweep axis or
             ``(num_X, num_Y, N*N-1)`` for two axes. This is useful for arbitrary
-            initial-state lists such as Fibonacci-sphere samples.
+            initial-state lists such as Fibonacci-sphere samples. The final
+            dimension contains density-matrix components, not time samples.
         return_time_trace: If True, also return sampled time dependence of
             mean_operator after selected solver steps, beginning at ``t=dt``.
         time_trace_every: Record one trace point every k RK4 kernel steps. For

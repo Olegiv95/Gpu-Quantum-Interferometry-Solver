@@ -22,19 +22,30 @@ Many quantum dynamics tools are excellent for one system, one parameter set, or 
 This is the principal solver scheme used by the examples and benchmarks:
 
 ```mermaid
-flowchart TD
-    A[User defines H, drive, collapse operators, and an expectation-value operator in SymPy]
-    B[Build Lindblad master equation]
-    C[Reduce to independent density-matrix equations]
-    D[Simplify, substitute constants, and optimize symbolic RHS]
-    E[Generate CUDA C code for RHS and observable]
-    F[Insert generated code into CUDA kernel template]
-    G[Compile with CuPy/NVRTC and cache the kernel]
-    H[Launch 2D parameter sweep: one GPU thread per grid point]
-    I[Integrate fixed-step RK4 and accumulate the expectation value inside the kernel]
-    J[Transfer final 2D map to NumPy and plot with Matplotlib]
+flowchart TB
+    subgraph top[" "]
+        direction LR
+        A["1. Define H, drives,<br/>collapse and observable"]
+        B["2. Build Lindblad<br/>master equation"]
+        C["3. Reduce density-matrix<br/>equations"]
+        D["4. Simplify and optimize<br/>the symbolic RHS"]
+        E["5. Generate CUDA C<br/>for RHS and observable"]
+        A --> B --> C --> D --> E
+    end
 
-    A --> B --> C --> D --> E --> F --> G --> H --> I --> J
+    subgraph bottom[" "]
+        direction RL
+        F["6. Insert code into<br/>the kernel template"]
+        G["7. Compile and cache<br/>with CuPy/NVRTC"]
+        H["8. Launch the 2D sweep<br/>one thread per point"]
+        I["9. Integrate RK4 and<br/>accumulate the observable"]
+        J["10. Return the 2D<br/>NumPy result"]
+        F --> G --> H --> I --> J
+    end
+
+    top --> bottom
+    style top fill:transparent,stroke:transparent
+    style bottom fill:transparent,stroke:transparent
 ```
 
 Distinct implementation choices:
@@ -44,7 +55,7 @@ Distinct implementation choices:
 - Only independent density-matrix variables are evolved, reducing unnecessary work.
 - The CUDA kernel computes the observable during integration, so every time step does not need to be stored in GPU memory.
 - Runtime constants can be changed for animations without regenerating the full symbolic RHS when the equation structure is unchanged.
-- Symbols that remain part of the equation structure participate in the RHS cache key; numeric sweep arrays and explicit initial-state arrays can change without recompiling that structure.
+- GQIS reuses a generated ODE and compiled kernel when the symbolic model is unchanged; numeric sweep arrays, explicit initial-state arrays, and selected runtime constants can change between calls without recompilation.
 
 ## Benefits For Massive Parameter Sweeps
 
@@ -317,13 +328,13 @@ citing performance.
 
 [Timing data (CSV)](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/Benchmark_01_full_benchmark.csv) | [Figure file (PNG)](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/Benchmark_01_full_benchmark.png)
 
-![Two-level full benchmark](https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Benchmark_01_full_benchmark.png)
+![Two-level full benchmark](./Benchmark_01_full_benchmark.png)
 
 ### Four-Level Reference
 
 [Timing data (CSV)](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/Benchmark_02_full_benchmark.csv) | [Figure file (PNG)](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/Benchmark_02_full_benchmark.png)
 
-![Four-level full benchmark](https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Benchmark_02_full_benchmark.png)
+![Four-level full benchmark](./Benchmark_02_full_benchmark.png)
 
 ## Solver Fairness Notes
 

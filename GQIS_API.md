@@ -37,35 +37,64 @@ mesolve_2D(
 
 Build and solve a finite-dimensional Lindblad master equation over one or two
 parameter axes. One CUDA thread integrates one parameter combination with
-fixed-step RK4.
+fixed-step RK4. GQIS symbolically generates the right-hand side (RHS) of the
+reduced ODE and compiles it as a CUDA kernel.
+
+Notation used below:
+
+- `N` is the Hilbert-space dimension: the number of basis states or quantum
+  levels represented by the Hamiltonian. Therefore `H`, every collapse
+  operator, `mean_operator`, and a symbolic initial density matrix are `N x N`.
+- `M` is the number of time samples in `tlist`. These samples define `M - 1`
+  solver steps from `tlist[0]` through `tlist[-1]`.
+- `num_X` and `num_Y` are the numbers of independent simulations along the two
+  parameter-sweep axes. They are unrelated to the time samples.
+
+### Minimal Call
+
+Assuming the symbolic model and numerical arrays have already been defined, the
+smallest one-axis call is:
+
+```python
+result = mesolve_2D(
+    H, drive_expr, collapse_ops, mean_operator, tlist,
+    var_arrays={eps: eps_values},
+)
+```
+
+The first five arguments specify the Hamiltonian, time-dependent drive,
+collapse operators, measured operator, and time samples. At least one sweep
+array is required. This call returns shape `(len(eps_values), 1)`; a two-axis
+call uses `var_arrays={eps: eps_values, A: amplitude_values}` and returns shape
+`(len(eps_values), len(amplitude_values))`.
 
 ### Physical Model
 
 | Parameter | Type | Meaning |
 | --- | --- | --- |
-| `H` | square SymPy matrix | Hamiltonian. Its dimension defines the Hilbert-space dimension `N`. It may contain sweep symbols, constant symbols, and one or more drive placeholder symbols. |
+| `H` | `N x N` SymPy matrix | Hamiltonian. `N` is the number of simulated basis states or quantum levels. `H` may contain sweep symbols, constant symbols, and one or more drive placeholder symbols. |
 | `Drive` | SymPy expression or `dict[Symbol, Expr]` | Time-dependent signal. A single expression supplies the conventional `Symbol("Drive")` placeholder used by `H`. A dictionary explicitly maps multiple Hamiltonian placeholder symbols to separate signals. Expressions may use `t`, sweep parameters, and constants. |
-| `Col_Ops` | sequence of square SymPy matrices | Lindblad collapse operators. Use `[]` for closed-system evolution. Every operator must have the same shape as `H`. |
-| `mean_operator` | square SymPy matrix | Operator whose expectation value is averaged, returned at the final time, or sampled as a trace. It must match `H`. |
+| `Col_Ops` | sequence of `N x N` SymPy matrices | Lindblad collapse operators. Use `[]` for closed-system evolution. Every operator must have the same shape as `H`. |
+| `mean_operator` | `N x N` SymPy matrix | Operator whose expectation value is averaged, returned at the final time, or sampled as a trace. It must match `H`. |
 | `tlist` | 1D array | Finite, strictly increasing, uniformly spaced times beginning at zero. `M` samples define exactly `M - 1` solver steps through `tlist[-1]`. Requiring zero avoids an additional kernel time-offset argument. The current CUDA backend uses fixed-step RK4. |
 
 ### Sweeps And Constants
 
 | Parameter | Type/default | Meaning |
 | --- | --- | --- |
-| `var_arrays` | `dict[Symbol, 1D array]` | One or two sweep axes are required. Dictionary insertion order maps the first array to result axis X and the second to Y. For a single parameter point, supply a one-element dummy axis. Array values and lengths can change without changing generated RHS structure. |
-| `const_values` | `dict[Symbol, number]` | Constant substitutions. By default values are folded into generated CUDA code, so changing them produces a different cache key and kernel. |
-| `runtime_consts` | `dict[Symbol, number]` | Explicit constants uploaded through `Const_arr`. A value here overrides the same symbol's value in `const_values`. Values can change while reusing an equivalent compiled RHS. Symbols unused by the model are removed and do not change the generated kernel. |
-| `keep_symbolic_consts` | iterable, `"all"`, `"auto"`, `"const_values"`, or `None` | Selects symbols from `const_values` that must remain runtime constants. `"all"`, `"auto"`, and `"const_values"` all select every `const_values` key. |
-| `auto_runtime_consts` | `False` | Keep every `const_values` key symbolic at runtime when true. |
-| `rho0_var_arrays` | `dict[Symbol, 1D array]` | Initial-condition-only sweep symbols. They are merged with `var_arrays`; the total remains limited to two axes. |
-| `rho0_values` | numeric array or `None` | Explicit reduced initial states. Shape is `(num_X, N*N-1)` for a one-axis sweep, or `(num_X, num_Y, N*N-1)` for two axes. Values can change without recompilation. Cannot be combined with `rho0`. |
+| `var_arrays` | `dict[Symbol, 1D array]` | One or two sweep axes are required. Dictionary insertion order maps the first array to result axis X and the second to Y. For a single parameter point, supply a one-element dummy axis. Array values and lengths can change while reusing the generated ODE. |
+| `const_values` | `dict[Symbol, number]` | Constants substituted as numbers while generating the ODE and CUDA code. If one of these values changes on a later call, GQIS normally generates and compiles a new ODE kernel. |
+| `runtime_consts` | `dict[Symbol, number]` | Values for constants intentionally left symbolic in the generated ODE. They are uploaded for each call, so they can change while the previously generated and compiled ODE kernel is reused. A value here overrides the same symbol in `const_values`. This is useful for animations and repeated calculations. |
+| `keep_symbolic_consts` | iterable, `"all"`, `"auto"`, `"const_values"`, or `None` | Selects which `const_values` symbols remain symbolic instead of being inserted as fixed numbers. This allows selected constants to change between animation frames while reusing the generated ODE and compiled kernel. `"all"`, `"auto"`, and `"const_values"` select every `const_values` key. |
+| `auto_runtime_consts` | `False` | Keep every `const_values` key symbolic so all constant values can change between repeated calls without regenerating the ODE. |
+| `rho0_var_arrays` | `dict[Symbol, 1D array]` | Sweep values for symbols used only in the symbolic `rho0` matrix. They are merged with `var_arrays`; the total remains limited to two sweep axes. These arrays select different initial states for independent simulations, not for different time samples. |
+| `rho0_values` | numeric array or `None` | Alternative to symbolic `rho0`: one explicit reduced initial state per simulation point. Shape is `(num_X, N*N-1)` for one sweep axis or `(num_X, num_Y, N*N-1)` for two axes. The last dimension stores density-matrix components, not time samples. Values can change without recompilation. Cannot be combined with `rho0`. |
 
 ### Initial State And Output
 
 | Parameter | Type/default | Meaning |
 | --- | --- | --- |
-| `rho0` | SymPy matrix, reduced expression list, or `None` | Initial density matrix. It may contain sweep or runtime-constant symbols. `None` initializes state `|0><0|`. For a matrix, GQIS reads the first `N-1` diagonal populations and the upper-triangular coherences; unit trace and the lower triangle are reconstructed. |
+| `rho0` | `N x N` SymPy matrix, reduced expression list, or `None` | Initial density matrix at `t=0`. It may contain symbols swept through `rho0_var_arrays` or `var_arrays`, and it may use runtime constants. `None` initializes state `|0><0|`. For matrix input, GQIS reads the first `N-1` diagonal populations and the upper-triangular coherences; unit trace and the lower triangle are reconstructed. |
 | `output_mode` | `"mean"` | `"mean"` averages the observable after each post-warmup solver step; `"final"` returns its final expectation; `"final_rho"` returns the final reduced real density vector in the ordering described under `build_independent_rho`. |
 | `warmup_time` | `0.0` | Initial fraction of time excluded from the time average, in `[0, 1]`. This can suppress transient dependence on the initial state without shortening the simulated trajectory. A value of `1` leaves no averaging window and returns the final expectation value. |
 | `return_time_trace` | `False` | Also return sampled expectation values and their times. Samples are recorded from the evolved state after selected integration steps, beginning at `t=dt`, not from the initial state at `t=0`. |
@@ -73,12 +102,31 @@ fixed-step RK4.
 | `time_trace_samples_per_period` | `None` | Requested approximate stored trace density per drive period. Requires `solver_samples_per_period`; the integer stride is `max(1, round(solver_samples_per_period / time_trace_samples_per_period))`. |
 | `solver_samples_per_period` | `None` | Number of solver integration steps per drive period, used only to convert trace density to a stride. |
 
+### Initial-State Representations
+
+An `N`-level density matrix has shape `N x N`. A Hermitian matrix contains
+`N*N` independent real values, and the unit-trace condition removes one of
+them. GQIS therefore evolves and stores only `N*N - 1` real values per state:
+
+1. the first `N - 1` diagonal populations
+2. the real and imaginary parts of the upper-triangular coherences
+
+The final diagonal population and lower-triangular coherences are reconstructed
+from unit trace and Hermiticity. This is why the last dimension of
+`rho0_values` is `N*N - 1`, rather than `N*N`.
+
+Use `rho0` with `rho0_var_arrays` when the initial state has a convenient
+analytic SymPy form. Use `rho0_values` when the initial states have already been
+calculated numerically or are easier to provide as arbitrary reduced vectors.
+Both interfaces specify one initial state at `t=0` for every independent GPU
+simulation; neither contains a state for every time sample.
+
 ### Code Generation And Execution
 
 | Parameter | Type/default | Meaning |
 | --- | --- | --- |
 | `kernel_template_file` | `None` | Uses the canonical CUDA template packaged with GQIS. Supply an explicit path only to test or develop a custom kernel template; relative explicit paths are checked in the current directory and then inside the installed package. |
-| `RHSreuse` | `True` | Reuse an in-memory generated and compiled kernel when model structure and code-generation settings match. Sweep values, explicit `rho0_values`, and runtime-constant values are intentionally excluded from the structural cache key. `False` regenerates and recompiles on every call. |
+| `RHSreuse` | `True` | Reuse the previously generated ODE and compiled CUDA kernel when a later call has the same symbolic model. Sweep arrays, explicit `rho0_values`, and selected runtime-constant values may change between calls. This is useful for animations and repeated parameter studies. `False` regenerates and recompiles on every call. |
 | `fp64` | `False` | Use FP64 state, sweep arrays, constants, generated math, and output instead of the faster FP32 path. |
 | `pre_expand` | `True` | Expand symbolic RHS expressions before code generation. |
 | `collect_rho` | `True` | Collect RHS terms by reduced density variables. |
@@ -93,10 +141,32 @@ fixed-step RK4.
 
 | Parameter | Type/default | Meaning |
 | --- | --- | --- |
-| `timings` | `False` | Print symbolic/codegen/compile stage time, GPU kernel time, total call time, and cache hit/miss. |
-| `return_timing_info` | `False` | Collect timings without requiring console output and include a dictionary with `rhs_stage_s`, `gpu_kernel_s`, `total_s`, and `cached_rhs` (`"hit"` or `"miss"`). On a cache miss, `rhs_stage_s` includes symbolic generation and NVRTC compilation. |
+| `timings` | `False` | Print symbolic-generation/compilation time, GPU kernel time, total call time, and whether the generated ODE and kernel were reused. |
+| `return_timing_info` | `False` | Collect timings without requiring console output and include a dictionary with `rhs_stage_s`, `gpu_kernel_s`, `total_s`, and `cached_rhs`. For `cached_rhs`, `"hit"` means the generated ODE and kernel were reused; `"miss"` means they were generated and compiled for this call. |
 | `beep_on_error` | `False` | Play a best-effort notification before raising for non-finite output. |
 | `ignore_non_finite_output` | `False` | Return NaN/Inf output with a warning instead of raising. Intended for diagnosis, not production data. |
+
+### Reusing The ODE For Animations
+
+With `RHSreuse=True`, GQIS can reuse the generated right-hand side (RHS) of the
+ODE and its compiled CUDA kernel across repeated calls. Constants that must
+change between frames need to remain symbolic. For example:
+
+```python
+result = mesolve_2D(
+    H, drive_expr, collapse_ops, mean_operator, tlist,
+    var_arrays={eps: eps_values, A: amplitude_values},
+    const_values={gamma: gamma_for_this_frame},
+    keep_symbolic_consts={gamma},
+    RHSreuse=True,
+)
+```
+
+On the next call, `gamma_for_this_frame` may change while the generated ODE and
+compiled kernel are reused. Without `keep_symbolic_consts={gamma}`, the value is
+inserted directly into the generated equations and changing it requires new
+symbolic generation and compilation. `runtime_consts={gamma: value}` can also
+supply or override the value of a constant kept symbolic this way.
 
 ### Returns
 
@@ -136,7 +206,9 @@ Input: Hilbert-space dimension `N`.
 
 Output: `(rho, metadata)`. `rho` is an `N x N` Hermitian, trace-one SymPy
 matrix built from `N*N-1` real symbols. `metadata` contains `N`, `rho_syms`,
-`num_diag`, `M`, and `vec_len`.
+`num_diag`, `num_coherences`, and `vec_len`. Here `num_coherences` is the number
+of upper-triangular coherence pairs; `M` remains reserved for the number of
+time samples.
 
 Reduced-vector order is:
 
@@ -220,6 +292,6 @@ public API:
 - `_play_notification_beep(kind)` emits a best-effort error or completion sound and returns `None`.
 
 `mesolve_2D` also uses nested private helpers for expression iteration, runtime
-constant derivation, cache-key construction, constant-index compaction, and
+constant derivation, compiled-kernel reuse checks, constant-index compaction, and
 host-to-device conversion. They are intentionally local because they depend on
 the current solve call and are not callable package APIs.
