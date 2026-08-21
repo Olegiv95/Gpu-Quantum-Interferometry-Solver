@@ -6,14 +6,14 @@ systems. It converts a symbolic Lindblad master-equation model written with
 SymPy into CUDA code, compiles it with CuPy/NVRTC, and runs one independent
 parameter point per GPU thread.
 
+The main target is quantum interferometry: dense grids of low-dimensional open-system simulations where a CPU loop over parameter points becomes the bottleneck. The solver is not hard-coded for a two-level system. You provide the Hamiltonian matrix, collapse operators, observable, drive expression, and optional initial density matrix. In principle this can represent any finite-dimensional Lindblad model that fits in GPU memory and has equations small enough for CUDA compilation.
+
 > **Status:** GQIS 0.1.0 is alpha research software. The CUDA backend uses
 > fixed-step fourth-order Runge-Kutta (RK4) integration on the user-supplied
 > time grid. Verify time-step convergence by repeating calculations with
 > progressively smaller steps. For important results, compare against a trusted
 > reference solver because RK4 is not suitable for every problem, and its
 > accuracy and stability depend on the time-step size.
-
-The main target is quantum interferometry: dense grids of low-dimensional open-system simulations where a CPU loop over parameter points becomes the bottleneck. The solver is not hard-coded for a two-level system. You provide the Hamiltonian matrix, collapse operators, observable, drive expression, and optional initial density matrix. In principle this can represent any finite-dimensional Lindblad model that fits in GPU memory and has equations small enough for CUDA compilation.
 
 ## Why This Tool Exists
 
