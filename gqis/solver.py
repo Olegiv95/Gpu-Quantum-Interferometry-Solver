@@ -696,13 +696,19 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
         mean_operator: Symbolic operator whose expectation value is returned.
         tlist: Uniform, strictly increasing time samples beginning at zero. A
             list of ``M`` samples defines ``M - 1`` fixed-step RK4 intervals.
-        var_arrays: Dict of up to two sweep arrays, mapped to ParX/ParY.
+        var_arrays: Dict containing one or two sweep arrays, mapped to ParX/ParY
+            in insertion order. A one-element dummy axis may be used when no
+            physical parameter is swept.
         const_values: Constant substitutions performed before codegen unless kept symbolic.
         kernel_template_file: Explicit CUDA template path. ``None`` uses the
             canonical template packaged with GQIS.
-        RHSreuse: Reuse compiled kernel for equivalent RHS/codegen settings.
+        RHSreuse: Reuse a process-local compiled kernel for equivalent
+            RHS/codegen settings. Sweep values, explicit initial-state values,
+            and runtime-constant values can change without recompilation.
         runtime_consts: Explicit runtime constants passed through Const_arr.
-        keep_symbolic_consts: Const symbols that must remain runtime constants.
+            These values override matching entries in const_values.
+        keep_symbolic_consts: Const symbols that must remain runtime constants;
+            "all", "auto", and "const_values" select every const_values key.
         auto_runtime_consts: If True, keep all const_values symbolic at runtime.
         output_mode: "mean", "final", or "final_rho".
         fp64: If True, generate and run FP64 kernel; otherwise FP32.
@@ -710,14 +716,16 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
             hoist_rho_independent: SymPy codegen controls.
         nvrtc_options: Additional NVRTC compile options.
         timings: If True, print concise timing breakdown (RHS stage, GPU kernel, total).
-        return_timing_info: If True, return a timing dict together with the result.
+        return_timing_info: If True, collect and return a timing dict together
+            with the result, without requiring printed timing output.
         warmup_time: Initial fraction [0, 1] of time excluded from the time
             average. This suppresses transient dependence on the initial state;
             it does not shorten the simulated trajectory.
         rho0: Optional symbolic initial density matrix or reduced rho vector.
             It may contain symbols swept through ``var_arrays`` or
             ``rho0_var_arrays``. This enables initial-condition sweeps without
-            changing the Hamiltonian.
+            changing the Hamiltonian. For matrix input, the last population and
+            lower triangle are reconstructed from unit trace and Hermiticity.
         rho0_var_arrays: Optional dict of symbols to 1D arrays used only to make
             initial-condition sweeps explicit. These arrays are merged with
             ``var_arrays`` and share the same two total sweep axes.
@@ -725,8 +733,10 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
             Shape can be ``(num_X, N*N-1)`` for one sweep axis or
             ``(num_X, num_Y, N*N-1)`` for two axes. This is useful for arbitrary
             initial-state lists such as Fibonacci-sphere samples.
-        return_time_trace: If True, also return sampled time dependence of mean_operator.
-        time_trace_every: Record one trace point every N RK4 kernel steps.
+        return_time_trace: If True, also return sampled time dependence of
+            mean_operator after selected solver steps, beginning at ``t=dt``.
+        time_trace_every: Record one trace point every k RK4 kernel steps. For
+            stride k, times are dt, (k+1)*dt, (2k+1)*dt, and so on.
         time_trace_samples_per_period: Desired trace samples per driving period. Requires
             solver_samples_per_period and maps to time_trace_every internally.
         solver_samples_per_period: Number of RK4 integration steps per driving period.
@@ -742,6 +752,13 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
             - (num_X, num_Y, N*N-1) real for "final_rho"
         If return_time_trace=True, returns (result, trace, trace_t), where trace has
         shape (num_X, num_Y, num_trace) complex.
+        If return_timing_info=True, append timing_info to the trace tuple, or
+        return (result, timing_info) when no trace is requested.
+
+    Notes:
+        Initial-state shape and finite output values are validated, but physical
+        positivity of a user-supplied initial density matrix is the caller's
+        responsibility. The kernel cache exists only for the current process.
     """
     valid_output_modes = {"mean", "final", "final_rho"}
     if output_mode not in valid_output_modes:

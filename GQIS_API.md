@@ -8,6 +8,10 @@ CUDA code-generation stages for inspection or advanced customization.
 from gqis import build_independent_rho, build_reduced_lindblad_rhs, mesolve_2D
 ```
 
+These three functions form the public package interface. The remaining helpers
+documented below are available from `gqis.solver` for inspection and advanced
+development, but they may change before version 1.0.
+
 The compatibility imports `from gpu_int_tool import mesolve_2D` and
 `from GPU_Int_Tool import mesolve_2D` are retained for older scripts.
 
@@ -40,7 +44,7 @@ fixed-step RK4.
 | Parameter | Type | Meaning |
 | --- | --- | --- |
 | `H` | square SymPy matrix | Hamiltonian. Its dimension defines the Hilbert-space dimension `N`. It may contain sweep symbols, constant symbols, and one or more drive placeholder symbols. |
-| `Drive` | SymPy expression or `dict[Symbol, Expr]` | Time-dependent signal. A single expression replaces the conventional `Drive` placeholder. A dictionary maps multiple placeholders used by `H` to separate signals. Expressions may use `t`, sweep parameters, and constants. |
+| `Drive` | SymPy expression or `dict[Symbol, Expr]` | Time-dependent signal. A single expression supplies the conventional `Symbol("Drive")` placeholder used by `H`. A dictionary explicitly maps multiple Hamiltonian placeholder symbols to separate signals. Expressions may use `t`, sweep parameters, and constants. |
 | `Col_Ops` | sequence of square SymPy matrices | Lindblad collapse operators. Use `[]` for closed-system evolution. Every operator must have the same shape as `H`. |
 | `mean_operator` | square SymPy matrix | Operator whose expectation value is averaged, returned at the final time, or sampled as a trace. It must match `H`. |
 | `tlist` | 1D array | Finite, strictly increasing, uniformly spaced times beginning at zero. `M` samples define exactly `M - 1` solver steps through `tlist[-1]`. Requiring zero avoids an additional kernel time-offset argument. The current CUDA backend uses fixed-step RK4. |
@@ -49,24 +53,24 @@ fixed-step RK4.
 
 | Parameter | Type/default | Meaning |
 | --- | --- | --- |
-| `var_arrays` | `dict[Symbol, 1D array]` | One or two ordinary sweep axes. Dictionary insertion order maps the first array to result axis X and the second to Y. Values change without changing generated RHS structure. |
-| `const_values` | `dict[Symbol, number]` | Constant substitutions. By default values are folded into generated CUDA code, so changing them requires a different cached RHS. |
-| `runtime_consts` | `dict[Symbol, number]` | Explicit constants uploaded through `Const_arr`. Their values can change while reusing an equivalent compiled RHS. |
-| `keep_symbolic_consts` | iterable, `"all"`, `"auto"`, or `None` | Selects symbols from `const_values` that must remain runtime constants. |
+| `var_arrays` | `dict[Symbol, 1D array]` | One or two sweep axes are required. Dictionary insertion order maps the first array to result axis X and the second to Y. For a single parameter point, supply a one-element dummy axis. Array values and lengths can change without changing generated RHS structure. |
+| `const_values` | `dict[Symbol, number]` | Constant substitutions. By default values are folded into generated CUDA code, so changing them produces a different cache key and kernel. |
+| `runtime_consts` | `dict[Symbol, number]` | Explicit constants uploaded through `Const_arr`. A value here overrides the same symbol's value in `const_values`. Values can change while reusing an equivalent compiled RHS. Symbols unused by the model are removed and do not change the generated kernel. |
+| `keep_symbolic_consts` | iterable, `"all"`, `"auto"`, `"const_values"`, or `None` | Selects symbols from `const_values` that must remain runtime constants. `"all"`, `"auto"`, and `"const_values"` all select every `const_values` key. |
 | `auto_runtime_consts` | `False` | Keep every `const_values` key symbolic at runtime when true. |
 | `rho0_var_arrays` | `dict[Symbol, 1D array]` | Initial-condition-only sweep symbols. They are merged with `var_arrays`; the total remains limited to two axes. |
-| `rho0_values` | numeric array or `None` | Explicit reduced initial states. Shape is `(num_X, N*N-1)` for a one-axis sweep, or `(num_X, num_Y, N*N-1)` for two axes. Cannot be combined with `rho0`. |
+| `rho0_values` | numeric array or `None` | Explicit reduced initial states. Shape is `(num_X, N*N-1)` for a one-axis sweep, or `(num_X, num_Y, N*N-1)` for two axes. Values can change without recompilation. Cannot be combined with `rho0`. |
 
 ### Initial State And Output
 
 | Parameter | Type/default | Meaning |
 | --- | --- | --- |
-| `rho0` | SymPy matrix, reduced expression list, or `None` | Initial density matrix. It may contain sweep or runtime-constant symbols. `None` initializes state `|0><0|`. |
-| `output_mode` | `"mean"` | `"mean"` averages the observable after each post-warmup solver step; `"final"` returns its final expectation; `"final_rho"` returns the final reduced real density vector. |
+| `rho0` | SymPy matrix, reduced expression list, or `None` | Initial density matrix. It may contain sweep or runtime-constant symbols. `None` initializes state `|0><0|`. For a matrix, GQIS reads the first `N-1` diagonal populations and the upper-triangular coherences; unit trace and the lower triangle are reconstructed. |
+| `output_mode` | `"mean"` | `"mean"` averages the observable after each post-warmup solver step; `"final"` returns its final expectation; `"final_rho"` returns the final reduced real density vector in the ordering described under `build_independent_rho`. |
 | `warmup_time` | `0.0` | Initial fraction of time excluded from the time average, in `[0, 1]`. This can suppress transient dependence on the initial state without shortening the simulated trajectory. A value of `1` leaves no averaging window and returns the final expectation value. |
-| `return_time_trace` | `False` | Also return sampled expectation values and their times. Samples are recorded after integration steps, not at `t=0`. |
-| `time_trace_every` | `None` | Store one trace value every specified number of solver steps. Mutually exclusive with `time_trace_samples_per_period`. |
-| `time_trace_samples_per_period` | `None` | Requested stored trace density per drive period. Requires `solver_samples_per_period`. |
+| `return_time_trace` | `False` | Also return sampled expectation values and their times. Samples are recorded from the evolved state after selected integration steps, beginning at `t=dt`, not from the initial state at `t=0`. |
+| `time_trace_every` | `None` | Store one trace value every specified number of solver steps. With stride `k`, stored times are `dt`, `(k+1)*dt`, `(2k+1)*dt`, and so on. Mutually exclusive with `time_trace_samples_per_period`. |
+| `time_trace_samples_per_period` | `None` | Requested approximate stored trace density per drive period. Requires `solver_samples_per_period`; the integer stride is `max(1, round(solver_samples_per_period / time_trace_samples_per_period))`. |
 | `solver_samples_per_period` | `None` | Number of solver integration steps per drive period, used only to convert trace density to a stride. |
 
 ### Code Generation And Execution
@@ -74,8 +78,8 @@ fixed-step RK4.
 | Parameter | Type/default | Meaning |
 | --- | --- | --- |
 | `kernel_template_file` | `None` | Uses the canonical CUDA template packaged with GQIS. Supply an explicit path only to test or develop a custom kernel template; relative explicit paths are checked in the current directory and then inside the installed package. |
-| `RHSreuse` | `True` | Reuse an in-memory generated and compiled kernel when model structure and code-generation settings match. |
-| `fp64` | `False` | Use FP64 state, constants, generated math, and output instead of the faster FP32 path. |
+| `RHSreuse` | `True` | Reuse an in-memory generated and compiled kernel when model structure and code-generation settings match. Sweep values, explicit `rho0_values`, and runtime-constant values are intentionally excluded from the structural cache key. `False` regenerates and recompiles on every call. |
+| `fp64` | `False` | Use FP64 state, sweep arrays, constants, generated math, and output instead of the faster FP32 path. |
 | `pre_expand` | `True` | Expand symbolic RHS expressions before code generation. |
 | `collect_rho` | `True` | Collect RHS terms by reduced density variables. |
 | `factor_terms` | `False` | Factor symbolic terms before common-subexpression elimination. This can reduce operations but increase preparation time. |
@@ -90,7 +94,7 @@ fixed-step RK4.
 | Parameter | Type/default | Meaning |
 | --- | --- | --- |
 | `timings` | `False` | Print symbolic/codegen/compile stage time, GPU kernel time, total call time, and cache hit/miss. |
-| `return_timing_info` | `False` | Include a dictionary with `rhs_stage_s`, `gpu_kernel_s`, `total_s`, and `cached_rhs`. |
+| `return_timing_info` | `False` | Collect timings without requiring console output and include a dictionary with `rhs_stage_s`, `gpu_kernel_s`, `total_s`, and `cached_rhs` (`"hit"` or `"miss"`). On a cache miss, `rhs_stage_s` includes symbolic generation and NVRTC compilation. |
 | `beep_on_error` | `False` | Play a best-effort notification before raising for non-finite output. |
 | `ignore_non_finite_output` | `False` | Return NaN/Inf output with a warning instead of raising. Intended for diagnosis, not production data. |
 
@@ -106,6 +110,23 @@ With `return_time_trace=True`, the return is
 `(result, trace, trace_t)`, where `trace` has complex shape
 `(num_X, num_Y, num_trace)`. With `return_timing_info=True`, `timing_info` is
 appended to that tuple; without a trace the return is `(result, timing_info)`.
+
+### Validation And Limitations
+
+- At least one sweep array is required, even for a single trajectory; use a
+  one-element dummy axis when no physical parameter is swept.
+- GQIS validates matrix dimensions, time-grid structure, option combinations,
+  explicit initial-state array shapes, and finite output values.
+- GQIS does not test whether a supplied symbolic or reduced initial state is
+  positive semidefinite. The caller is responsible for providing a physical
+  density matrix. For matrix input, the last population and lower triangle are
+  reconstructed rather than independently validated.
+- The time grid must be uniform and begin at zero because the CUDA kernel uses
+  fixed-step RK4 and derives stage times from the integer step index.
+- Kernel reuse is process-local; the compiled-kernel cache is not written to
+  disk. A new Python process compiles its first model again.
+- Practical Hilbert-space size is limited by symbolic-generation cost, NVRTC
+  compilation, CUDA register pressure, and GPU memory.
 
 ## Density-Matrix Helpers
 

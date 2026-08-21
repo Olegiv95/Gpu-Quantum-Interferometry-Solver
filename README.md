@@ -6,6 +6,9 @@ systems. It converts a symbolic Lindblad master-equation model written with
 SymPy into CUDA code, compiles it with CuPy/NVRTC, and runs one independent
 parameter point per GPU thread.
 
+> **Status:** GQIS 0.1.0 is alpha research software. Check time-grid
+> convergence and compare important models with a trusted reference solver.
+
 The main target is quantum interferometry: dense grids of low-dimensional open-system simulations where a CPU loop over parameter points becomes the bottleneck. The solver is not hard-coded for a two-level system. You provide the Hamiltonian matrix, collapse operators, observable, drive expression, and optional initial density matrix. In principle this can represent any finite-dimensional Lindblad model that fits in GPU memory and has equations small enough for CUDA compilation.
 
 ## Why This Tool Exists
@@ -86,60 +89,56 @@ in the model.
 
 ## Installation
 
-Core requirements are Python 3.10 or newer, NumPy, SymPy, an NVIDIA CUDA-capable GPU, and exactly one CuPy distribution matching the CUDA major version. Pip cannot detect the CUDA major version and choose a CuPy wheel interactively, so CUDA support is provided through explicit extras.
-
-After the public package is uploaded to PyPI, install the tested CUDA 12
-configuration and plotting examples with:
+GQIS requires Python 3.10 or newer, NumPy, SymPy, an NVIDIA CUDA-capable
+GPU, and one CuPy distribution matching the CUDA major version. Install the
+tested CUDA 12 configuration and plotting examples with:
 
 ```bash
 pip install "gqis[cuda12,examples]"
 ```
 
-The PyPI distribution and Python import package are both named `gqis`:
-
 ```python
 from gqis import mesolve_2D
 ```
 
-Use `cuda11` with CuPy 13 for CUDA 11, or `cuda13` for CUDA 13. Do not install multiple `cupy`, `cupy-cuda11x`, `cupy-cuda12x`, or `cupy-cuda13x` distributions in the same environment. CUDA 11 and CUDA 13 package extras are provided but were not tested on the CUDA 12 reference workstation for version 0.1.0.
-
-Install benchmark dependencies:
+Use the `cuda11` or `cuda13` extra instead when appropriate. Do not install
+multiple CuPy distributions in one environment. CUDA 11 and CUDA 13 extras are
+provided but were not tested on the CUDA 12 reference workstation for version
+0.1.0. Install optional benchmark dependencies with:
 
 ```bash
 pip install "gqis[cuda12,examples,benchmarks]"
 ```
 
-Before the PyPI upload, or when an exact source revision is required, install
-the tagged public GitHub release directly:
+Before the PyPI upload, or to install an exact source revision, use the tagged
+GitHub release:
 
 ```bash
 pip install "gqis[cuda12,examples] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.1.0"
 ```
 
-From a local repository clone, use `.` as the package source:
+From a local clone, install normally or in editable development mode:
 
 ```bash
-pip install ".[cuda12,examples]"
 pip install ".[cuda12,examples,benchmarks]"
-pip install -e ".[cuda12,examples]"
-```
-
-The first two local commands create standalone installations. Editable mode is
-intended only for package development because it remains linked to the source
-folder. Install all CUDA 12 development, benchmark, and test dependencies with:
-
-```bash
 pip install -e ".[all-cuda12]"
 ```
 
-See the [installation and GPU smoke-test guide](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/INSTALLATION_AND_SMOKE_TEST.md) for clean Conda and `venv` instructions, CUDA selection, hardware reporting, update commands, and environment deactivation.
+Verify the installed package with a small GPU solve:
 
-Optional external programs are FFmpeg for MP4 export and Julia with `DifferentialEquations`, `DiffEqGPU`, `CUDA`, and `StaticArrays` for Julia GPU comparisons. `requirements.txt` provides a CUDA 12-oriented non-package installation list.
+```bash
+gqis-check --installation-test
+```
+
+See the [installation and GPU test guide](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/INSTALLATION_TEST.md)
+for isolated Conda and `venv` setup, CUDA selection, optional tools, hardware
+reporting, and updates. `requirements.txt` is a CUDA 12-oriented environment
+recipe; `pyproject.toml` is the package dependency source of truth.
 
 Declared requirements use minimum compatible versions so pip does not reject an
 older version unnecessarily. The exact versions below are the version 0.1.0
 local test environment; versions outside this tested set may work, but should be
-validated with `gqis-check --smoke` and the benchmark `diff` mode.
+validated with `gqis-check --installation-test` and benchmark `diff` mode.
 
 | Dependency | Declared requirement | Locally tested version |
 | --- | --- | --- |
@@ -155,46 +154,6 @@ validated with `gqis-check --smoke` and the benchmark `diff` mode.
 | Ruff | `==0.16.2` (development) | 0.16.2 |
 | Julia | external optional backend | 1.10.2 |
 
-FFmpeg is an optional external executable for MP4 output. The Julia comparison
-also requires `DifferentialEquations`, `DiffEqGPU`, `CUDA`, and `StaticArrays`.
-
-CuPy cannot be one unconditional dependency because its binary package name is
-CUDA-major-specific. Pip does not prompt for or reliably detect that choice
-while resolving package metadata; selecting the matching `cuda11`, `cuda12`, or
-`cuda13` extra is explicit and avoids installing conflicting CuPy wheels.
-
-On Windows, installing FFmpeg is not sufficient if its `bin` directory is not
-on `PATH`. Confirm the same terminal used to run Python can execute
-`where ffmpeg` and `ffmpeg -version`; Matplotlib's `FFMpegWriter` uses that PATH
-lookup unless `matplotlib.rcParams["animation.ffmpeg_path"]` is set explicitly.
-
-Check the environment:
-
-```bash
-python check_environment.py
-```
-
-After package installation, the equivalent command is:
-
-```bash
-gqis-check
-```
-
-Run a tiny GPU smoke test:
-
-```bash
-python check_environment.py --smoke
-```
-
-The smoke solve runs in a child process and is terminated after 120 seconds by
-default. Change the bound with `--smoke-timeout SECONDS`.
-
-To check Julia benchmark packages as well:
-
-```bash
-python check_environment.py --check-julia-packages
-```
-
 ## Tests
 
 Examples and benchmarks exercise realistic workflows, but they are not a
@@ -207,7 +166,7 @@ Run the fast package and time-grid tests, without requiring a working GPU:
 pytest -m "not gpu"
 ```
 
-Run the optional CUDA numerical smoke test as well:
+Run the complete suite, including the CUDA numerical test:
 
 ```bash
 pytest
@@ -218,26 +177,6 @@ distribution and wheel, and runs the non-GPU tests. Python 3.10 remains the
 declared minimum but is outside the current release test matrix. Numerical
 convergence against QuTiP should still be checked before publishing scientific
 results or changing the CUDA integration core.
-
-## Tested Local Environment
-
-The reference benchmark files were produced on an RTX 3080 workstation. The environment checker reports the exact machine metadata and the full benchmark CSV files store it at the top of the file.
-
-Version 0.1.0 local test environment:
-
-```text
-Python: 3.11.7
-OS: Windows 11 Home (25H2, build 26200.9168)
-CPU: 11th Gen Intel(R) Core(TM) i9-11900K @ 3.50GHz
-GPU: NVIDIA GeForce RTX 3080, compute capability 8.6, memory 10.00 GB
-NumPy: 2.4.6
-SymPy: 1.14.0
-Matplotlib: 3.11.1
-CuPy: 14.1.1 (cupy-cuda12x; CUDA runtime 12.9)
-SciPy: 1.16.1
-QuTiP: 5.2.0
-Julia: 1.10.2
-```
 
 ## Quick Start
 
@@ -251,38 +190,22 @@ The former `from gpu_int_tool import mesolve_2D` and
 `from GPU_Int_Tool import mesolve_2D` forms remain available as compatibility
 imports. New code should use `gqis`.
 
-Run the two-level tutorial:
+| Script | Demonstration |
+| --- | --- |
+| `Example_01_two_level_basic.py` | Basic two-level interferogram. |
+| `Example_02_four_level_interferogram.py` | Coupled qubit-resonator interferogram. |
+| `Example_03_two_level_animation.py` | Two-level parameter animation. |
+| `Example_04_four_level_animation.py` | Four-level parameter animation. |
+| `Example_05_initial_condition_sweep_gate_fidelity.py` | Initial-state sweep and gate-fidelity comparison. |
+
+Run a tutorial from the repository root, for example:
 
 ```bash
 python Example_01_two_level_basic.py
 ```
 
-Run the four-level interferogram tutorial:
-
-```bash
-python Example_02_four_level_interferogram.py
-```
-
-Run the two-level animation:
-
-```bash
-python Example_03_two_level_animation.py
-```
-
-Run the four-level animation:
-
-```bash
-python Example_04_four_level_animation.py
-```
-
-Run the initial-state sweep and gate-fidelity tutorial:
-
-```bash
-python Example_05_initial_condition_sweep_gate_fidelity.py
-```
-
 Tutorial examples use visible GPU-sized grids by default. If your GPU is smaller
-or you want a first smoke run, reduce the grid in the `user_settings()` block
+or you want a quick test run, reduce the grid in the `user_settings()` block
 near the bottom of each script. Examples 01-04 use `simulation_periods` and
 `solver_steps_per_period`; Example 05 uses `solver_steps` because each selected
 gate has its own duration. A time grid with `N` integration intervals contains
@@ -424,30 +347,17 @@ For publication-quality comparisons, report:
 - kernel or solver calculation time
 - whether each data point is measured or extrapolated
 
-## Repository Files
+## Project Layout
 
-- `gqis/solver.py`: packaged symbolic-to-CUDA solver implementation.
-- `gqis/N_Level_Kernel.cu`: packaged CUDA kernel template.
-- `gqis/__init__.py`: public package interface.
-- `gpu_int_tool/` and `GPU_Int_Tool.py`: backward-compatible import shims.
-- `GQIS_API.md`: complete function, parameter, and return-value reference.
-- `INSTALLATION_AND_SMOKE_TEST.md`: isolated installation and CUDA verification guide.
-- [CONTRIBUTING.md](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/CONTRIBUTING.md): issue reports, development setup, scientific validation, and pull-request requirements.
-- [CHANGELOG.md](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/CHANGELOG.md): concise user-facing history of significant changes by release.
-- `.gitattributes`: cross-platform source line-ending policy.
-- `Benchmark_full_tools.py`: shared full-benchmark plotting, extrapolation, and metadata helpers.
-- `Example_01_two_level_basic.py`: basic two-level interferogram.
-- `Example_02_four_level_interferogram.py`: four-level interferogram.
-- `Example_03_two_level_animation.py`: two-level animation using GQIS directly.
-- `Example_04_four_level_animation.py`: four-level animation.
-- `Example_05_initial_condition_sweep_gate_fidelity.py`: initial-condition sweep and gate-fidelity map.
-- `Benchmark_01_two_level.py`: two-level benchmark.
-- `Benchmark_02_four_level_Interferometry.py`: four-level benchmark.
-- `check_environment.py`: dependency, GPU, CPU, OS, and smoke-test checker.
-- `tests/`: fast structural/time-grid tests and an optional CUDA smoke test.
-- `.github/workflows/ci.yml`: source-build and non-GPU test workflow.
-- `Benchmark_01_full_benchmark.csv` and `Benchmark_02_full_benchmark.csv`: saved reference timing tables.
-- `Benchmark_01_full_benchmark.png` and `Benchmark_02_full_benchmark.png`: saved reference timing figures.
+- `gqis/` contains the packaged solver, public interface, environment checker,
+  and CUDA kernel template.
+- `Example_*.py` contains runnable tutorials; `Benchmark_*.py` contains accuracy
+  and scaling comparisons.
+- `GQIS_API.md` and `INSTALLATION_TEST.md` provide detailed API and
+  setup guidance.
+- `tests/` and `.github/workflows/ci.yml` contain automated checks.
+- `gpu_int_tool/` and `GPU_Int_Tool.py` preserve compatibility with earlier
+  imports; new code should import `gqis`.
 
 ## Contributing
 

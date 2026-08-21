@@ -1,11 +1,8 @@
 include README.md
-include .gitignore
-include .gitattributes
 include GQIS_API.md
-include INSTALLATION_AND_SMOKE_TEST.md
+include INSTALLATION_TEST.md
 include CONTRIBUTING.md
 include CHANGELOG.md
-include GitHub_metadata_files_tutorial.md
 include LICENSE
 include CITATION.cff
 include requirements.txt
@@ -19,5 +16,7 @@ include Benchmark_*.py
 include check_environment.py
 recursive-include gqis *.cu
 recursive-include tests *.py
-recursive-include .github *.yml
+exclude .gitignore
+exclude .gitattributes
+prune .github
 global-exclude __pycache__ *.py[cod]

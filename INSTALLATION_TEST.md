@@ -1,4 +1,4 @@
-# Installation and GPU Smoke Test
+# Installation and GPU Test
 
 These instructions create an isolated environment, install GQIS, verify its
 dependencies, and run a small CUDA calculation. They are suitable for public
@@ -22,11 +22,11 @@ nvidia-smi
 Open Anaconda Prompt or Miniconda Prompt and run:
 
 ```text
-conda create --name gqis-smoke python=3.11 -y
-conda activate gqis-smoke
+conda create --name gqis-test python=3.11 -y
+conda activate gqis-test
 python -m pip install --upgrade pip
 pip install "gqis[cuda12]"
-gqis-check --smoke
+gqis-check --installation-test
 ```
 
 The short PyPI command works after the release has been uploaded. To install
@@ -34,13 +34,13 @@ the tagged public GitHub release directly, use:
 
 ```text
 pip install "gqis[cuda12] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.1.0"
-gqis-check --smoke
+gqis-check --installation-test
 ```
 
 A successful test ends with output similar to:
 
 ```text
-Smoke test: PASS shape=(4, 4)
+Installation test: PASS shape=(4, 4)
 Environment check: PASS
 ```
 
@@ -53,7 +53,7 @@ conda deactivate
 To remove the temporary environment later:
 
 ```text
-conda env remove --name gqis-smoke
+conda env remove --name gqis-test
 ```
 
 ## Alternative: Standard Python Virtual Environment
@@ -62,28 +62,28 @@ In Windows Command Prompt, use a Python executable that is already installed
 and visible in that terminal:
 
 ```bat
-python -m venv "%USERPROFILE%\gqis-smoke"
-"%USERPROFILE%\gqis-smoke\Scripts\activate.bat"
+python -m venv "%USERPROFILE%\gqis-test"
+"%USERPROFILE%\gqis-test\Scripts\activate.bat"
 python -m pip install --upgrade pip
 pip install "gqis[cuda12]"
-gqis-check --smoke
+gqis-check --installation-test
 deactivate
 ```
 
 In PowerShell, activate the same environment with:
 
 ```powershell
-& "$env:USERPROFILE\gqis-smoke\Scripts\Activate.ps1"
+& "$env:USERPROFILE\gqis-test\Scripts\Activate.ps1"
 ```
 
 On Linux:
 
 ```bash
-python3 -m venv "$HOME/gqis-smoke"
-source "$HOME/gqis-smoke/bin/activate"
+python3 -m venv "$HOME/gqis-test"
+source "$HOME/gqis-test/bin/activate"
 python -m pip install --upgrade pip
 pip install "gqis[cuda12]"
-gqis-check --smoke
+gqis-check --installation-test
 deactivate
 ```
 
@@ -104,6 +104,20 @@ Do not install `cupy`, `cupy-cuda11x`, `cupy-cuda12x`, and `cupy-cuda13x`
 together in one environment. CUDA 11 and CUDA 13 extras are provided but have
 not been tested on the reference workstation used for version 0.1.0.
 
+## Optional External Programs
+
+FFmpeg is needed only for MP4 animation export. On Windows, confirm that the
+same terminal used to run Python can execute both `where ffmpeg` and
+`ffmpeg -version`. Matplotlib searches `PATH` unless
+`matplotlib.rcParams["animation.ffmpeg_path"]` is set explicitly.
+
+The optional Julia GPU benchmark requires Julia plus `DifferentialEquations`,
+`DiffEqGPU`, `CUDA`, and `StaticArrays`. Check these packages with:
+
+```text
+gqis-check --check-julia-packages
+```
+
 ## Record Hardware Information
 
 The environment checker reports Python and dependency versions, the operating
@@ -123,12 +137,12 @@ Update a PyPI installation with:
 
 ```text
 pip install --upgrade "gqis[cuda12]"
-gqis-check --smoke
+gqis-check --installation-test
 ```
 
 To test the newest public development commit instead of a tagged release:
 
 ```text
 pip install --upgrade --force-reinstall "gqis[cuda12] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@main"
-gqis-check --smoke
+gqis-check --installation-test
 ```

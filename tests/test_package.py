@@ -1,3 +1,4 @@
+import inspect
 from pathlib import Path
 
 import numpy as np
@@ -6,6 +7,13 @@ import sympy as sp
 
 from gqis.solver import (_resolve_kernel_template_file, build_independent_rho,
                          build_reduced_lindblad_rhs, mesolve_2D)
+
+
+def test_mesolve_api_reference_documents_every_parameter():
+    reference = (Path(__file__).parents[1] / "GQIS_API.md").read_text(encoding="utf-8")
+    undocumented = [name for name in inspect.signature(mesolve_2D).parameters
+                    if f"`{name}`" not in reference]
+    assert undocumented == []
 
 
 def test_packaged_cuda_template_is_discoverable():

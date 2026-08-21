@@ -253,7 +253,7 @@ def print_cuda_report() -> bool:
         return False
 
 
-def run_smoke_test() -> bool:
+def run_installation_test() -> bool:
     """Run a tiny two-level GPU solve to verify NVRTC/kernel execution."""
     try:
         import numpy as np
@@ -286,22 +286,23 @@ def run_smoke_test() -> bool:
                          timings=True)
         arr = np.asarray(out)
         if arr.shape != (len(eps_list), len(A_list)):
-            print(f"Smoke test: FAILED unexpected shape {arr.shape}")
+            print(f"Installation test: FAILED unexpected shape {arr.shape}")
             return False
         if not np.all(np.isfinite(arr)):
-            print("Smoke test: FAILED non-finite output")
+            print("Installation test: FAILED non-finite output")
             return False
-        print(f"Smoke test: PASS shape={arr.shape}")
+        print(f"Installation test: PASS shape={arr.shape}")
         return True
     except Exception as exc:
-        print(f"Smoke test: FAILED ({type(exc).__name__}: {exc})")
+        print(f"Installation test: FAILED ({type(exc).__name__}: {exc})")
         return False
 
 
-def run_bounded_smoke_test(timeout: float) -> bool:
-    """Run the CUDA/NVRTC smoke test in a child process with a hard timeout."""
+def run_bounded_installation_test(timeout: float) -> bool:
+    """Run the CUDA/NVRTC installation test with a hard timeout."""
     try:
-        proc = subprocess.run([sys.executable, "-m", "gqis.check_environment", "--smoke-worker"],
+        proc = subprocess.run([sys.executable, "-m", "gqis.check_environment",
+                               "--installation-test-worker"],
                               capture_output=True, text=True, timeout=timeout, check=False)
     except subprocess.TimeoutExpired as exc:
         if exc.stdout:
@@ -310,7 +311,7 @@ def run_bounded_smoke_test(timeout: float) -> bool:
         if exc.stderr:
             print(exc.stderr.decode(errors="replace")
                   if isinstance(exc.stderr, bytes) else exc.stderr, end="")
-        print(f"Smoke test: FAILED (exceeded {timeout:g}s; worker terminated)")
+        print(f"Installation test: FAILED (exceeded {timeout:g}s; worker terminated)")
         return False
 
     if proc.stdout:
@@ -322,25 +323,29 @@ def run_bounded_smoke_test(timeout: float) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Check GQIS dependencies and CUDA availability.")
-    parser.add_argument("--smoke", action="store_true", help="run a tiny GPU solve")
-    parser.add_argument("--smoke-timeout", type=float, default=120.0,
-                        help="maximum seconds for the GPU/NVRTC smoke test")
-    parser.add_argument("--smoke-worker", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--installation-test", "--smoke", dest="installation_test",
+                        action="store_true", help="run a small GPU installation test")
+    parser.add_argument("--installation-test-timeout", "--smoke-timeout",
+                        dest="installation_test_timeout", type=float, default=120.0,
+                        help="maximum seconds for the GPU/NVRTC installation test")
+    parser.add_argument("--installation-test-worker", action="store_true",
+                        help=argparse.SUPPRESS)
     parser.add_argument("--check-julia-packages", action="store_true",
                         help="import optional Julia benchmark packages")
     args = parser.parse_args()
 
-    if args.smoke_worker:
-        return 0 if run_smoke_test() else 1
-    if args.smoke_timeout <= 0.0:
-        parser.error("--smoke-timeout must be positive")
+    if args.installation_test_worker:
+        return 0 if run_installation_test() else 1
+    if args.installation_test_timeout <= 0.0:
+        parser.error("--installation-test-timeout must be positive")
 
     packages_ok = print_package_report()
     print_external_report(check_julia_packages=args.check_julia_packages)
     cuda_ok = print_cuda_report()
-    smoke_ok = run_bounded_smoke_test(args.smoke_timeout) if args.smoke else True
+    installation_ok = (run_bounded_installation_test(args.installation_test_timeout)
+                       if args.installation_test else True)
 
-    passed = packages_ok and cuda_ok and smoke_ok
+    passed = packages_ok and cuda_ok and installation_ok
     if passed:
         print("Environment check: PASS")
     else:
