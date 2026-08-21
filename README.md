@@ -21,32 +21,40 @@ Many quantum dynamics tools are excellent for one system, one parameter set, or 
 
 This is the principal solver scheme used by the examples and benchmarks:
 
-```mermaid
-flowchart TB
-    subgraph top[" "]
-        direction LR
-        A["1. Define H, drives,<br/>collapse and observable"]
-        B["2. Build Lindblad<br/>master equation"]
-        C["3. Reduce density-matrix<br/>equations"]
-        D["4. Simplify and optimize<br/>the symbolic RHS"]
-        E["5. Generate CUDA C<br/>for RHS and observable"]
-        A --> B --> C --> D --> E
-    end
-
-    subgraph bottom[" "]
-        direction RL
-        F["6. Insert code into<br/>the kernel template"]
-        G["7. Compile and cache<br/>with CuPy/NVRTC"]
-        H["8. Launch the 2D sweep<br/>one thread per point"]
-        I["9. Integrate RK4 and<br/>accumulate the observable"]
-        J["10. Return the 2D<br/>NumPy result"]
-        F --> G --> H --> I --> J
-    end
-
-    top --> bottom
-    style top fill:transparent,stroke:transparent
-    style bottom fill:transparent,stroke:transparent
-```
+<table>
+  <tr align="center">
+    <td><strong>1.</strong> Define <em>H</em>, drives,<br>collapse and observable</td>
+    <td>&rarr;</td>
+    <td><strong>2.</strong> Build Lindblad<br>master equation</td>
+    <td>&rarr;</td>
+    <td><strong>3.</strong> Reduce density-matrix<br>equations</td>
+    <td>&rarr;</td>
+    <td><strong>4.</strong> Simplify and optimize<br>the symbolic RHS</td>
+  </tr>
+  <tr align="center">
+    <td colspan="6"></td>
+    <td>&darr;</td>
+  </tr>
+  <tr align="center">
+    <td><strong>8.</strong> Launch the 2D sweep:<br>one thread per point</td>
+    <td>&larr;</td>
+    <td><strong>7.</strong> Compile and cache<br>with CuPy/NVRTC</td>
+    <td>&larr;</td>
+    <td><strong>6.</strong> Insert code into<br>the kernel template</td>
+    <td>&larr;</td>
+    <td><strong>5.</strong> Generate CUDA C<br>for RHS and observable</td>
+  </tr>
+  <tr align="center">
+    <td>&darr;</td>
+    <td colspan="6"></td>
+  </tr>
+  <tr align="center">
+    <td><strong>9.</strong> Integrate RK4 and<br>accumulate the observable</td>
+    <td>&rarr;</td>
+    <td><strong>10.</strong> Return the 2D<br>NumPy result</td>
+    <td colspan="4"></td>
+  </tr>
+</table>
 
 Distinct implementation choices:
 
