@@ -13,6 +13,8 @@ include Benchmark_01_full_benchmark.png
 include Benchmark_02_full_benchmark.csv
 include Benchmark_02_full_benchmark.png
 include Example_*.py
+include Example_01_two_level_basic.png
+include Example_02_four_level_interferogram.png
 include Benchmark_*.py
 include check_environment.py
 recursive-include gqis *.cu

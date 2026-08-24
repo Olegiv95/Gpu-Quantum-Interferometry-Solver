@@ -86,9 +86,16 @@ The examples print the actual workload and calculation time for their selected g
 parameters. Animation examples print initial-frame and per-frame times, plus total MP4 calculation/export time when
 saving. Reduce `grid_size` in the `user_settings()` block for a quicker run or a GPU with less memory.
 
-[![Two-level GQIS animation preview](./Example_03_two_level_animation_preview.png)](./Example_03_two_level_animation.mp4)
-
-Click the preview to open the two-level parameter animation. MP4 export requires FFmpeg.
+<table>
+  <tr>
+    <td width="50%"><img src="./Example_01_two_level_basic.png" alt="Two-level interferogram"></td>
+    <td width="50%"><img src="./Example_02_four_level_interferogram.png" alt="Four-level interferogram"></td>
+  </tr>
+  <tr align="center">
+    <td><strong>Example 01:</strong> two-level interferogram</td>
+    <td><strong>Example 02:</strong> coupled qubit-resonator interferogram</td>
+  </tr>
+</table>
 
 ## Supported Models And Outputs
 
@@ -162,6 +169,13 @@ with 10,240 RK4 steps per trajectory. GQIS completed these runs in about 1 minut
 7 minutes 1 second for the four-level model. Across the approximately linear large-grid region, the average reported
 speedups were about 69,000 times and 24,000 times over extrapolated QuTiP timings for the two- and four-level models,
 respectively.
+
+<p align="center">
+  <a href="./Benchmark_01_full_benchmark.png">
+    <img src="./Benchmark_01_full_benchmark.png" alt="Two-level calculation-time scaling benchmark" width="900">
+  </a>
+</p>
+<p align="center"><em>Two-level scaling reference. Click the figure for the full-resolution result.</em></p>
 
 Comparing every solver or running a full scaling sweep can take considerable time. The scripts print progress, enforce
 a configurable solver time limit, save CSV/PNG results, and mark extrapolated data. See [benchmark validation,
