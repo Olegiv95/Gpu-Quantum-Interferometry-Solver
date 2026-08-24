@@ -59,11 +59,12 @@ result = mesolve_2D(
 )
 ```
 
-The first five arguments specify the Hamiltonian, time-dependent drive,
-collapse operators, measured operator, and time samples. At least one sweep
-array is required. This call returns shape `(len(eps_values), 1)`; a two-axis
-call uses `var_arrays={eps: eps_values, A: amplitude_values}` and returns shape
-`(len(eps_values), len(amplitude_values))`.
+The required positional arguments `H`, `drive_expr`, `collapse_ops`,
+`mean_operator`, and `tlist` specify the Hamiltonian, time-dependent drive,
+collapse operators, measured operator, and time samples, respectively. At least
+one sweep array is required. This call returns shape `(len(eps_values), 1)`; a
+two-axis call uses `var_arrays={eps: eps_values, A: amplitude_values}` and
+returns shape `(len(eps_values), len(amplitude_values))`.
 
 ### Physical Model
 

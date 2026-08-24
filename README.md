@@ -4,29 +4,29 @@ The GPU Quantum Interferometry Solver (`GQIS`) is a Python/CUDA research package
 of driven open quantum systems. It targets dense quantum interferometry maps in which every grid point requires an
 independent time evolution and conventional CPU loops become impractical at high resolutions. GQIS combines
 user-defined open-system SymPy models with massively parallel execution on NVIDIA CUDA, supporting workloads from
-tutorial-scale calculations to parameter grids containing millions or billions of trajectories.
+tutorial-scale calculations to parameter grids containing millions or even billions of trajectories.
 
 ## Why GQIS Was Created
 
-High-resolution quantum interferometry requires a large ensemble of independent time evolutions: every pixel in a
-two-dimensional map represents a separate simulation, and fitting a model to experimental data requires the complete
+High-resolution quantum interferometry requires a large ensemble of independent time evolutions: every grid point in a
+two-dimensional map represents a separate simulation. Fitting a model to experimental data usually requires the complete
 map to be recalculated for many candidate parameter sets. In the CPU-based workflow that motivated this project, one
-useful interferogram could take from 30 minutes to several hours. Repeated fitting and parameter studies could therefore
-take weeks or months, while reducing the grid resolution risked missing narrow interference features.
+sufficiently resolved interferogram could take from 30 minutes to several hours. Repeated fitting and parameter studies
+could therefore take weeks or months, while reducing the grid resolution risked missing narrow interference features.
 
-Most quantum-dynamics packages evaluated for this workflow exposed flexible single-system evolution, leaving large
-parameter sweeps to repeated solver calls or external orchestration. Julia provides capable GPU parameter sweeping, but
-the workflow evaluated here required a manually prepared system of independent ODEs. Changing the Hamiltonian terms,
-collapse operators, or observable therefore required the reduced equations to be derived and rewritten for the new
-model. The tested Julia workflow also required substantial single-threaded CPU preparation before GPU execution and
-showed higher VRAM consumption for large sweeps. These costs made rapid reuse across different quantum models less
-convenient despite Julia's useful sweep performance.
+Many quantum-dynamics software evaluated during GQIS development was designed primarily to evolve one system per solver
+call. Large parameter sweeps consequently required Python code to launch and coordinate many independent solver calls.
+Julia was an important exception and provided capable GPU parameter sweeping. However, the tested Julia workflow
+required a prepared system of independent ODEs as its input and substantial single-threaded CPU preparation before GPU
+execution. Structural changes to the Hamiltonian, collapse operators, or observable therefore required the reduced ODE
+system to be derived and implemented again.
 
-GQIS was created to automate this missing path from a readable open-system model to a sweep-optimized CUDA kernel. It
-derives and simplifies the independent density-matrix equations symbolically, inserts them into the kernel, and evolves
-one parameter set per GPU thread. On the reference RTX 3080, this approach reduces representative `2048 x 2048`
-interferogram calculations from CPU-scale waiting times to seconds and makes animations over an additional model
-parameter practical.
+GQIS was created to connect a symbolic open-system model directly to a sweep-optimized CUDA kernel. The symbolic
+generator derives the independent density-matrix equations, eliminates repeated operations, and precomputes reusable
+parameter combinations. The generated equations are then inserted into a compact CUDA kernel that evolves one
+parameter set per GPU thread. On the reference RTX 3080, representative `2048 x 2048` interferograms complete in
+seconds, making repeated parameter studies and animations over an additional model parameter practical. Controlled
+timing comparisons are reported in [Validation And Performance](#validation-and-performance).
 
 ## Installation
 
@@ -55,9 +55,16 @@ result = mesolve_2D(
 )
 ```
 
-The first five arguments are the `N x N` Hamiltonian, time-dependent drive expression, list of `N x N` collapse
-operators, measured `N x N` operator, and uniform time grid. If `tlist` contains `M` time samples, the solver performs
-`M - 1` RK4 steps. The example above returns one result for every pair in the two sweep arrays.
+The five required positional arguments are:
+
+1. `H`: `N x N` symbolic Hamiltonian, where `N` is the number of simulated quantum levels.
+2. `drive_expr`: SymPy drive expression, or a dictionary defining multiple time-dependent terms.
+3. `collapse_ops`: sequence of `N x N` Lindblad collapse operators.
+4. `observable`: `N x N` operator whose expectation value is requested.
+5. `tlist`: one-dimensional, uniformly spaced time grid beginning at zero.
+
+If `tlist` contains `M` time samples, the solver performs `M - 1` RK4 steps. The example above returns one result for
+every pair in the two sweep arrays.
 
 See the [complete `mesolve_2D` API reference](./GQIS_API.md) for symbolic constants, initial-state sweeps, output modes,
 sampled time traces, kernel reuse, precision, timings, and code-generation controls.
@@ -80,7 +87,7 @@ python Example_01_two_level_basic.py
 
 The examples print the actual workload and calculation time for their selected grid, time grid, and physical
 parameters. Animation examples print initial-frame and per-frame times, plus total MP4 calculation/export time when
-saving. Reduce `grid_size` in the `user_settings()` block for a quicker run or a GPU with less memory.
+saving. Reduce `grid_size` in the `user_settings()` block for a quicker run or for a GPU with less memory.
 
 <table>
   <tr>
@@ -95,21 +102,22 @@ saving. Reduce `grid_size` in the `user_settings()` block for a quicker run or a
 
 ## Supported Models And Outputs
 
-GQIS is not hard-coded for a two-level system. The user supplies the physical model and requested output. A solver call
+The user supplies the physical model and requested output. A solver call
 can contain:
 
-- any finite-dimensional SymPy Hamiltonian, including one or more symbolic drive placeholders
-- a SymPy drive expression or a dictionary of expressions for multiple time-dependent terms
+- any finite-dimensional SymPy Hamiltonian, optionally containing symbolic placeholders mapped to one or more
+  time-dependent drive expressions
 - any list of dimensionally compatible Lindblad collapse operators
 - an operator whose expectation value is averaged, returned at the final time, or sampled over time
 - one or two numerical parameter-sweep axes
-- a fixed, symbolic, swept, or explicitly supplied initial density matrix
-- selected runtime constants that can change without regenerating the symbolic equations
+- initial density matrix (fixed, symbolic, swept, or explicitly supplied)
+- selected runtime constants that can change without regenerating the system of independent ODEs
 
-GQIS reduces an `N x N` Hermitian, unit-trace density matrix to `N*N - 1` independent real variables. Output modes
-include a time-averaged observable, final observable, final reduced density matrix, and an optional sampled observable
-trace. GQIS does not interpret physical units or basis labels; define all model quantities in compatible units and one
-consistent basis.
+From the Lindblad master equation for an `N x N` Hermitian, unit-trace density matrix, GQIS derives `N*N - 1` coupled
+real ODEs for the independent density-matrix components. Output modes include a time-averaged observable, final
+observable, final reduced density matrix, and an optional sampled observable trace; for details see the [API output-mode
+reference](./GQIS_API.md#initial-state-and-output) for details. Please note GQIS does not interpret physical units or basis labels; define all model
+quantities in compatible units and one consistent basis.
 
 ## Solver Pipeline
 
@@ -160,15 +168,15 @@ For a new model, these components perform the following pipeline:
   </tr>
 </table>
 
-Later calls can reuse the generated equations and compiled CUDA kernel when the symbolic model is unchanged. Numerical
-sweep values, explicit initial states, and selected runtime constants may then change without recompilation.
+Later calls can reuse the generated equations and compiled CUDA kernel when the symbolic model is unchanged, so they can start from stage 8.
+Numerical sweep values, explicit initial states, and selected runtime constants may then change without recompilation.
 
 Important implementation choices are:
 
-- the Hamiltonian and collapse operators remain readable SymPy matrices
+- the Hamiltonian and collapse operators are supplied as symbolic SymPy matrices
 - independent scalar equations are generated automatically rather than derived and maintained by hand
-- only independent density-matrix components are evolved after applying trace and Hermiticity constraints
-- only the requested sweep output is transferred back to CPU memory
+- only independent density-matrix components are evolved after applying trace and Hermiticity constraints to minimize redundant calcualtions
+- only the requested sweep output is transferred back to CPU memory, without storing other intermediate data to save memory
 
 ## Validation And Performance
 
@@ -184,6 +192,9 @@ with 10,240 RK4 steps per trajectory. GQIS completed these runs in about 1 minut
 speedups were about 69,000 times and 24,000 times over extrapolated QuTiP timings for the two- and four-level models,
 respectively.
 
+The compact GQIS kernel retains the reduced state and RK4 working values instead of storing each complete time
+trajectory. In the tested large sweeps, this execution design used less VRAM than the Julia benchmark implementation.
+
 <p align="center">
   <a href="./Benchmark_01_full_benchmark.png">
     <img src="./Benchmark_01_full_benchmark.png" alt="Two-level calculation-time scaling benchmark" width="900">
@@ -195,7 +206,7 @@ Comparing every solver or running a full scaling sweep can take considerable tim
 a configurable solver time limit, save CSV/PNG results, and mark extrapolated data. See [benchmark validation,
 methodology, and complete reference results](./BENCHMARKS.md) before interpreting or reproducing these numbers.
 
-> **Numerical disclaimer:** GQIS 0.1.0 is an alpha research release. The current CUDA backend uses fixed-step
+> **Numerical accuracy disclaimer:** GQIS 0.1.0 is an alpha research release. The current CUDA backend uses fixed-step
 > fourth-order Runge-Kutta (RK4) integration on the user-supplied uniform time grid. Verify time-grid convergence by
 > repeating calculations with smaller steps. For important results, compare against a trusted adaptive reference solver
 > because RK4 is not suitable for every problem, and its accuracy and stability depend on the time-step size. QuTiP is
@@ -216,8 +227,8 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or pull request
 
 ## Citation
 
-If you use this software in scientific work, cite the repository metadata from [CITATION.cff](./CITATION.cff). After a
-paper or Zenodo archive is available, add its DOI and cite the archived release for reproducibility.
+If you use GQIS in a publication, please cite the software using the metadata in [CITATION.cff](./CITATION.cff). A paper
+citation or archival DOI will be added when available.
 
 ## License
 
