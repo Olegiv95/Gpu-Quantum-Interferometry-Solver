@@ -1,7 +1,10 @@
 # GPU Quantum Interferometry Solver (GQIS)
 
 The GPU Quantum Interferometry Solver (`GQIS`) is a Python/CUDA research package for high-throughput parameter sweeps
-of driven open quantum systems.
+of driven open quantum systems. It targets dense quantum interferometry maps in which every grid point requires an
+independent time evolution and conventional CPU loops become impractical. GQIS combines user-defined open-system
+models with massively parallel GPU execution, supporting workloads from tutorial-scale calculations to parameter grids
+containing millions or billions of trajectories.
 
 ## Why GQIS Was Created
 
@@ -9,9 +12,15 @@ Quantum interferometry can require millions or billions of independent low-dimen
 parameter grid. In that regime, moving one trajectory to a GPU is not enough: the parameter sweep itself must execute
 inside the GPU kernel.
 
-GQIS was created to make those sweeps practical while keeping the physical model in readable Python code. It focuses
-on massive parallel parameter sweeps, user-defined finite-dimensional open-system models, and dense interferograms that
-can resolve narrow features missed by coarser scans.
+A conventional parameter sweep repeatedly launches a solver from Python or distributes individual trajectories among
+CPU workers. This approach is effective at modest grid sizes, but its total runtime grows rapidly when interferograms
+need enough resolution to reveal narrow resonances, avoided crossings, and fine interference fringes. Coarser scans can
+hide these structures or represent them inaccurately.
+
+GQIS was created to treat the complete parameter sweep as the parallel workload while keeping the physical model in
+readable Python code. It is intended to complement trusted adaptive solvers: first validate the model and time-grid
+convergence on manageable grids, then use GQIS to calculate the high-resolution interferogram that would otherwise be
+impractical.
 
 ## Installation
 
@@ -146,14 +155,6 @@ Important implementation choices are:
 - the requested observable is accumulated inside the kernel instead of storing every trajectory at every time sample
 - only the final sweep result is transferred back to CPU memory
 
-## Numerical Method And Validation
-
-GQIS 0.1.0 is an alpha research release. The current CUDA backend uses fixed-step fourth-order Runge-Kutta (RK4)
-integration on the user-supplied uniform time grid. Verify time-grid convergence by repeating calculations with smaller
-steps. For important results, compare against a trusted adaptive reference solver because RK4 is not suitable for every
-problem, and its accuracy and stability depend on the time-step size. QuTiP is the primary reference used by the
-included validation benchmarks.
-
 ## Validation And Performance
 
 The benchmark scripts support the solver rather than define its interface. They compare GQIS output with trusted CPU
@@ -178,6 +179,12 @@ respectively.
 Comparing every solver or running a full scaling sweep can take considerable time. The scripts print progress, enforce
 a configurable solver time limit, save CSV/PNG results, and mark extrapolated data. See [benchmark validation,
 methodology, and complete reference results](./BENCHMARKS.md) before interpreting or reproducing these numbers.
+
+> **Numerical disclaimer:** GQIS 0.1.0 is an alpha research release. The current CUDA backend uses fixed-step
+> fourth-order Runge-Kutta (RK4) integration on the user-supplied uniform time grid. Verify time-grid convergence by
+> repeating calculations with smaller steps. For important results, compare against a trusted adaptive reference solver
+> because RK4 is not suitable for every problem, and its accuracy and stability depend on the time-step size. QuTiP is
+> the primary reference used by the included validation benchmarks.
 
 ## Project Layout
 
