@@ -30,17 +30,25 @@ timing comparisons are reported in [Validation And Performance](#validation-and-
 
 ## Installation
 
-GQIS requires Python 3.10 or newer, an NVIDIA CUDA-capable GPU, and one CuPy distribution matching the CUDA major
-version. Install the tested CUDA 12 configuration with plotting support and run the installation test:
+GQIS supports Python 3.10 and 3.11 and requires an NVIDIA CUDA-capable GPU plus one CuPy distribution matching the
+CUDA major version. Choose exactly one CUDA installation command:
+
+```bash
+pip install "gqis[cuda12]"  # tested default
+pip install "gqis[cuda11]"  # CUDA 11
+pip install "gqis[cuda13]"  # CUDA 13
+```
+
+Add the `examples` extra for plotting support, then run the installation test:
 
 ```bash
 pip install "gqis[cuda12,examples]"
 gqis-check --installation-test
 ```
 
-Use the `cuda11` or `cuda13` extra when appropriate, and do not install multiple CuPy variants in one environment. See
-the [installation and GPU test guide](./INSTALLATION_TEST.md) for clean environments, source installs, optional
-dependencies, tested versions, FFmpeg, Julia, automated tests, and updates.
+Do not install multiple CuPy variants in one environment. See the [installation and GPU test
+guide](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/INSTALLATION_TEST.md) for clean
+environments, source installs, optional dependencies, tested versions, FFmpeg, Julia, automated tests, and updates.
 
 ## Minimal Use
 
@@ -66,7 +74,7 @@ The five required positional arguments are:
 If `tlist` contains `M` time samples, the solver performs `M - 1` RK4 steps. The example above returns one result for
 every pair in the two sweep arrays.
 
-See the [complete `mesolve_2D` API reference](./GQIS_API.md) for symbolic constants, initial-state sweeps, output modes,
+See the [complete `mesolve_2D` API reference](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md) for symbolic constants, initial-state sweeps, output modes,
 sampled time traces, kernel reuse, precision, timings, and code-generation controls.
 
 ## Examples
@@ -91,8 +99,8 @@ saving. Reduce `grid_size` in the `user_settings()` block for a quicker run or f
 
 <table>
   <tr>
-    <td width="50%"><img src="./Example_01_two_level_basic.png" alt="Two-level interferogram"></td>
-    <td width="50%"><img src="./Example_02_four_level_interferogram.png" alt="Four-level interferogram"></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Example_01_two_level_basic.png" alt="Two-level interferogram"></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Example_02_four_level_interferogram.png" alt="Four-level interferogram"></td>
   </tr>
   <tr align="center">
     <td><strong>Example 01:</strong> two-level interferogram</td>
@@ -115,9 +123,11 @@ can contain:
 
 From the Lindblad master equation for an `N x N` Hermitian, unit-trace density matrix, GQIS derives `N*N - 1` coupled
 real ODEs for the independent density-matrix components. Output modes include a time-averaged observable, final
-observable, final reduced density matrix, and an optional sampled observable trace; for details see the [API output-mode
-reference](./GQIS_API.md#initial-state-and-output) for details. Please note GQIS does not interpret physical units or basis labels; define all model
-quantities in compatible units and one consistent basis.
+observable, final reduced density matrix, and an optional sampled observable trace; see the [API output-mode
+reference](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md#initial-state-and-output)
+for details. [Example 05](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/Example_05_initial_condition_sweep_gate_fidelity.py)
+uses `output_mode="final_rho"` for final-state gate-fidelity calculations. GQIS does not interpret physical units or basis
+labels; define all model quantities in compatible units and one consistent basis.
 
 ## Solver Pipeline
 
@@ -196,15 +206,16 @@ The compact GQIS kernel retains the reduced state and RK4 working values instead
 trajectory. In the tested large sweeps, this execution design used less VRAM than the Julia benchmark implementation.
 
 <p align="center">
-  <a href="./Benchmark_01_full_benchmark.png">
-    <img src="./Benchmark_01_full_benchmark.png" alt="Two-level calculation-time scaling benchmark" width="900">
+  <a href="https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/Benchmark_01_full_benchmark.png">
+    <img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Benchmark_01_full_benchmark.png" alt="Two-level calculation-time scaling benchmark" width="900">
   </a>
 </p>
 <p align="center"><em>Two-level scaling reference. Click the figure for the full-resolution result.</em></p>
 
 Comparing every solver or running a full scaling sweep can take considerable time. The scripts print progress, enforce
 a configurable solver time limit, save CSV/PNG results, and mark extrapolated data. See [benchmark validation,
-methodology, and complete reference results](./BENCHMARKS.md) before interpreting or reproducing these numbers.
+methodology, and complete reference results](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md)
+before interpreting or reproducing these numbers.
 
 > **Numerical accuracy disclaimer:** GQIS 0.1.0 is an alpha research release. The current CUDA backend uses fixed-step
 > fourth-order Runge-Kutta (RK4) integration on the user-supplied uniform time grid. Verify time-grid convergence by
@@ -223,13 +234,14 @@ methodology, and complete reference results](./BENCHMARKS.md) before interpretin
 ## Contributing
 
 Bug reports, validation results from other GPUs, documentation corrections, and focused code contributions are welcome.
-See [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or pull request.
+See [CONTRIBUTING.md](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/CONTRIBUTING.md)
+before opening an issue or pull request.
 
 ## Citation
 
-If you use GQIS in a publication, please cite the software using the metadata in [CITATION.cff](./CITATION.cff). A paper
+If you use GQIS in a publication, please cite the software using the metadata in [CITATION.cff](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/CITATION.cff). A paper
 citation or archival DOI will be added when available.
 
 ## License
 
-This project is released under the [MIT License](./LICENSE).
+This project is released under the [MIT License](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/LICENSE).

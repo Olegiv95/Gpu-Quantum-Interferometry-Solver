@@ -1,4 +1,7 @@
 import inspect
+import subprocess
+import sys
+import textwrap
 from pathlib import Path
 
 import numpy as np
@@ -7,6 +10,33 @@ import sympy as sp
 
 from gqis.solver import (_resolve_kernel_template_file, build_independent_rho,
                          build_reduced_lindblad_rhs, mesolve_2D)
+
+
+def test_public_package_import_does_not_require_cupy():
+    code = textwrap.dedent("""
+        import builtins
+
+        original_import = builtins.__import__
+
+        def import_without_cupy(name, *args, **kwargs):
+            if name == "cupy" or name.startswith("cupy."):
+                raise ModuleNotFoundError("No module named 'cupy'", name="cupy")
+            return original_import(name, *args, **kwargs)
+
+        builtins.__import__ = import_without_cupy
+        import gqis
+
+        assert "gqis.solver" not in sys.modules
+        try:
+            gqis.mesolve_2D
+        except ImportError as exc:
+            assert "gqis[cuda12]" in str(exc)
+        else:
+            raise AssertionError("mesolve_2D loaded without CuPy")
+    """)
+    proc = subprocess.run([sys.executable, "-c", "import sys\n" + code], capture_output=True,
+                          text=True, check=False)
+    assert proc.returncode == 0, proc.stderr
 
 
 def test_mesolve_api_reference_documents_every_parameter():

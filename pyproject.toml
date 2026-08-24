@@ -7,7 +7,7 @@ name = "gqis"
 version = "0.1.0"
 description = "GPU Quantum Interferometry Solver for massive parameter sweeps of user-defined finite-dimensional Lindblad systems."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.12"
 license = "MIT"
 authors = [
     { name = "Oleh Ivakhnenko" }
@@ -27,6 +27,7 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Topic :: Scientific/Engineering :: Physics",
 ]

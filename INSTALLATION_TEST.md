@@ -8,7 +8,7 @@ release testing and for comparing behavior across different NVIDIA GPUs.
 
 - Windows 10 or 11, or a supported Linux distribution
 - an NVIDIA CUDA-capable GPU with a current NVIDIA driver
-- Python 3.10 or newer
+- Python 3.10 or 3.11
 - Git when installing directly from GitHub
 
 Confirm that the NVIDIA driver is visible:
@@ -93,12 +93,14 @@ full path.
 
 ## CUDA Version Selection
 
-The commands above use the locally tested CUDA 12 configuration. Install
-exactly one CuPy variant:
+The commands above use the locally tested CUDA 12 configuration. Choose exactly
+one CUDA installation command:
 
-- CUDA 11: replace `[cuda12]` with `[cuda11]`
-- CUDA 12: use `[cuda12]`
-- CUDA 13: replace `[cuda12]` with `[cuda13]`
+```text
+pip install "gqis[cuda12]"  # tested default
+pip install "gqis[cuda11]"  # CUDA 11
+pip install "gqis[cuda13]"  # CUDA 13
+```
 
 Do not install `cupy`, `cupy-cuda11x`, `cupy-cuda12x`, and `cupy-cuda13x`
 together in one environment. CUDA 11 and CUDA 13 extras are provided but have
@@ -153,7 +155,7 @@ numerical comparison before scientific use.
 
 | Dependency | Declared requirement | Locally tested version |
 | --- | --- | --- |
-| Python | `>=3.10` | 3.11.7 |
+| Python | `>=3.10,<3.12` | 3.11.7 |
 | NumPy | `>=1.24` | 2.4.6 |
 | SymPy | `>=1.11` | 1.14.0 |
 | CuPy/CUDA | CUDA-specific extra | `cupy-cuda12x` 14.1.1, CUDA runtime 12.9 |
@@ -191,9 +193,8 @@ python -m build
 python -m twine check dist/*
 ```
 
-The GitHub Actions workflow currently tests Python 3.11, runs the non-GPU test
-suite, and builds the package. Python 3.10 remains the declared minimum but is
-outside the current continuous-integration test matrix.
+The GitHub Actions workflow tests Python 3.10 and 3.11 and runs the non-GPU test
+suite on both versions. It builds and validates the package on Python 3.11.
 
 ## Optional External Programs
 
