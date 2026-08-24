@@ -63,7 +63,8 @@ Run either script with `--help` for its complete command-line options. Those opt
 - If a time list contains `M` samples, it defines `M - 1` integration intervals. `N` always denotes the number of
   simulated quantum levels, not the time-grid length.
 - The Julia backend solves the same trace- and Hermiticity-reduced physical ODE system as GQIS. Its scaling value is the
-  synchronized Julia solve time; symbolic preparation is excluded.
+  synchronized Julia solve time; symbolic and Julia-side single-threaded CPU preparation are excluded. Consequently,
+  the plotted value does not represent Julia's complete model-preparation workflow or its peak VRAM requirement.
 - The reference timings are hardware- and model-specific. Compare numerical output first, then interpret speed.
 
 ## Full Scaling Benchmark

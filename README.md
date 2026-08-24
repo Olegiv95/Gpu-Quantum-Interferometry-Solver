@@ -2,25 +2,31 @@
 
 The GPU Quantum Interferometry Solver (`GQIS`) is a Python/CUDA research package for high-throughput parameter sweeps
 of driven open quantum systems. It targets dense quantum interferometry maps in which every grid point requires an
-independent time evolution and conventional CPU loops become impractical. GQIS combines user-defined open-system
-models with massively parallel GPU execution, supporting workloads from tutorial-scale calculations to parameter grids
-containing millions or billions of trajectories.
+independent time evolution and conventional CPU loops become impractical at high resolutions. GQIS combines
+user-defined open-system SymPy models with massively parallel execution on NVIDIA CUDA, supporting workloads from
+tutorial-scale calculations to parameter grids containing millions or billions of trajectories.
 
 ## Why GQIS Was Created
 
-Quantum interferometry can require millions or billions of independent low-dimensional simulations on a rectangular
-parameter grid. In that regime, moving one trajectory to a GPU is not enough: the parameter sweep itself must execute
-inside the GPU kernel.
+High-resolution quantum interferometry requires a large ensemble of independent time evolutions: every pixel in a
+two-dimensional map represents a separate simulation, and fitting a model to experimental data requires the complete
+map to be recalculated for many candidate parameter sets. In the CPU-based workflow that motivated this project, one
+useful interferogram could take from 30 minutes to several hours. Repeated fitting and parameter studies could therefore
+take weeks or months, while reducing the grid resolution risked missing narrow interference features.
 
-A conventional parameter sweep repeatedly launches a solver from Python or distributes individual trajectories among
-CPU workers. This approach is effective at modest grid sizes, but its total runtime grows rapidly when interferograms
-need enough resolution to reveal narrow resonances, avoided crossings, and fine interference fringes. Coarser scans can
-hide these structures or represent them inaccurately.
+Most quantum-dynamics packages evaluated for this workflow exposed flexible single-system evolution, leaving large
+parameter sweeps to repeated solver calls or external orchestration. Julia provides capable GPU parameter sweeping, but
+the workflow evaluated here required a manually prepared system of independent ODEs. Changing the Hamiltonian terms,
+collapse operators, or observable therefore required the reduced equations to be derived and rewritten for the new
+model. The tested Julia workflow also required substantial single-threaded CPU preparation before GPU execution and
+showed higher VRAM consumption for large sweeps. These costs made rapid reuse across different quantum models less
+convenient despite Julia's useful sweep performance.
 
-GQIS was created to treat the complete parameter sweep as the parallel workload while keeping the physical model in
-readable Python code. It is intended to complement trusted adaptive solvers: first validate the model and time-grid
-convergence on manageable grids, then use GQIS to calculate the high-resolution interferogram that would otherwise be
-impractical.
+GQIS was created to automate this missing path from a readable open-system model to a sweep-optimized CUDA kernel. It
+derives and simplifies the independent density-matrix equations symbolically, inserts them into the kernel, and evolves
+one parameter set per GPU thread. On the reference RTX 3080, this approach reduces representative `2048 x 2048`
+interferogram calculations from CPU-scale waiting times to seconds and makes animations over an additional model
+parameter practical.
 
 ## Installation
 
@@ -107,8 +113,17 @@ consistent basis.
 
 ## Solver Pipeline
 
-For a new model, GQIS constructs and reduces the Lindblad equations symbolically, generates CUDA code, compiles it with
-CuPy/NVRTC, and assigns one independent parameter point to each GPU thread:
+GQIS consists of two principal components:
+
+1. **Symbolic equation generator:** constructs the Lindblad master equation from the user-defined model, reduces it to
+   independent real ODEs, eliminates repeated operations, precomputes parameter-only combinations where possible, and
+   emits CUDA C expressions for the right-hand side and requested observable.
+2. **CUDA execution kernel:** uses a minimal fixed-step RK4 implementation with one independent parameter set per GPU
+   thread. In averaged and final-output modes, it retains only the state and intermediate values needed for integration,
+   accumulates expectation values in place, and returns the requested time average or final reduced density matrix
+   without storing the complete trajectory in GPU memory.
+
+For a new model, these components perform the following pipeline:
 
 <table>
   <tr align="center">
@@ -151,9 +166,9 @@ sweep values, explicit initial states, and selected runtime constants may then c
 Important implementation choices are:
 
 - the Hamiltonian and collapse operators remain readable SymPy matrices
+- independent scalar equations are generated automatically rather than derived and maintained by hand
 - only independent density-matrix components are evolved after applying trace and Hermiticity constraints
-- the requested observable is accumulated inside the kernel instead of storing every trajectory at every time sample
-- only the final sweep result is transferred back to CPU memory
+- only the requested sweep output is transferred back to CPU memory
 
 ## Validation And Performance
 
