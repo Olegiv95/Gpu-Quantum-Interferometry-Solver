@@ -1,36 +1,17 @@
 # GPU Quantum Interferometry Solver (GQIS)
 
-The GPU Quantum Interferometry Solver (`GQIS`) is a Python/CUDA research package for fast two-dimensional parameter
-sweeps of driven open quantum systems. It converts a symbolic Lindblad master-equation model written with SymPy into
-CUDA code, compiles it with CuPy/NVRTC, and runs one independent parameter point per GPU thread.
+The GPU Quantum Interferometry Solver (`GQIS`) is a Python/CUDA research package for high-throughput parameter sweeps
+of driven open quantum systems.
 
-GQIS is not hard-coded for a two-level system. The user supplies the Hamiltonian, drive, collapse operators,
-observable, and optional initial density matrix. It can represent finite-dimensional Lindblad models whose generated
-equations and working data fit the available CUDA compilation resources, registers, and GPU memory.
-
-> **Status:** GQIS 0.1.0 is alpha-stage research software. The CUDA backend uses fixed-step fourth-order Runge-Kutta
-> (RK4) integration on the user-supplied time grid. Verify time-grid convergence by repeating calculations with smaller
-> steps. For important results, compare against a trusted reference solver because RK4 is not suitable for every
-> problem, and its accuracy and stability depend on the time-step size.
-
-## Why GQIS
+## Why GQIS Was Created
 
 Quantum interferometry can require millions or billions of independent low-dimensional simulations on a rectangular
 parameter grid. In that regime, moving one trajectory to a GPU is not enough: the parameter sweep itself must execute
 inside the GPU kernel.
 
-GQIS compiles a readable SymPy model once, integrates one complete trajectory per GPU thread, accumulates the requested
-observable inside the kernel, and transfers only the final result to CPU memory. This provides:
-
-- no Python loop over individual parameter points
-- symbolic construction of user-defined Lindblad models instead of a fixed built-in system
-- trace- and Hermiticity-reduced density-matrix equations to avoid redundant evolution variables
-- in-kernel observable accumulation without storing every time sample for every trajectory
-- reuse of generated equations and compiled kernels for repeated sweeps, animations, and selected runtime constants
-- dense interferograms that can resolve narrow features missed by coarser parameter scans
-
-The method is specialized for independent parameter sweeps where a fixed time grid is acceptable after convergence
-validation. QuTiP or another trusted adaptive solver remains the recommended numerical reference.
+GQIS was created to make those sweeps practical while keeping the physical model in readable Python code. It focuses
+on massive parallel parameter sweeps, user-defined finite-dimensional open-system models, and dense interferograms that
+can resolve narrow features missed by coarser scans.
 
 ## Installation
 
@@ -99,7 +80,8 @@ saving. Reduce `grid_size` in the `user_settings()` block for a quicker run or a
 
 ## Supported Models And Outputs
 
-A solver call can contain:
+GQIS is not hard-coded for a two-level system. The user supplies the physical model and requested output. A solver call
+can contain:
 
 - any finite-dimensional SymPy Hamiltonian, including one or more symbolic drive placeholders
 - a SymPy drive expression or a dictionary of expressions for multiple time-dependent terms
@@ -116,7 +98,8 @@ consistent basis.
 
 ## Solver Pipeline
 
-A call with a new symbolic model follows this pipeline:
+For a new model, GQIS constructs and reduces the Lindblad equations symbolically, generates CUDA code, compiles it with
+CuPy/NVRTC, and assigns one independent parameter point to each GPU thread:
 
 <table>
   <tr align="center">
@@ -155,6 +138,21 @@ A call with a new symbolic model follows this pipeline:
 
 Later calls can reuse the generated equations and compiled CUDA kernel when the symbolic model is unchanged. Numerical
 sweep values, explicit initial states, and selected runtime constants may then change without recompilation.
+
+Important implementation choices are:
+
+- the Hamiltonian and collapse operators remain readable SymPy matrices
+- only independent density-matrix components are evolved after applying trace and Hermiticity constraints
+- the requested observable is accumulated inside the kernel instead of storing every trajectory at every time sample
+- only the final sweep result is transferred back to CPU memory
+
+## Numerical Method And Validation
+
+GQIS 0.1.0 is an alpha research release. The current CUDA backend uses fixed-step fourth-order Runge-Kutta (RK4)
+integration on the user-supplied uniform time grid. Verify time-grid convergence by repeating calculations with smaller
+steps. For important results, compare against a trusted adaptive reference solver because RK4 is not suitable for every
+problem, and its accuracy and stability depend on the time-step size. QuTiP is the primary reference used by the
+included validation benchmarks.
 
 ## Validation And Performance
 
