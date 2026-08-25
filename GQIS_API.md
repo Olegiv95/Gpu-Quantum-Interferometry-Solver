@@ -1,7 +1,8 @@
 # GQIS API Reference
 
-This file documents the packaged interface in `gqis/solver.py`. Normal
-user code only needs `mesolve_2D`; the other functions expose the symbolic and
+This technical reference documents the application programming interface (API) of the GPU Quantum Interferometry
+Solver (GQIS) in `gqis/solver.py`. New users should begin with the [README](./README.md) and
+`Example_01_two_level_basic.py`. Normal user code only needs `mesolve_2D`; the other functions expose the symbolic and
 CUDA code-generation stages for inspection or advanced customization.
 
 ```python
@@ -32,10 +33,10 @@ mesolve_2D(
 )
 ```
 
-Build and solve a finite-dimensional Lindblad master equation over one or two
-parameter axes. One CUDA thread integrates one parameter combination with
-fixed-step RK4. GQIS symbolically generates the right-hand side (RHS) of the
-reduced ODE and compiles it as a CUDA kernel.
+Build and solve a finite-dimensional Lindblad master equation over one or two parameter axes. One CUDA thread
+integrates one parameter combination with fixed-step fourth-order Runge-Kutta (RK4). GQIS symbolically generates the
+right-hand side (RHS), meaning the time derivatives, of the reduced ordinary differential equation (ODE) system and
+compiles it as a CUDA kernel.
 
 Notation used below:
 
@@ -46,6 +47,7 @@ Notation used below:
   solver steps from `tlist[0]` through `tlist[-1]`.
 - `num_X` and `num_Y` are the numbers of independent simulations along the two
   parameter-sweep axes. They are unrelated to the time samples.
+- `1D` means a one-dimensional array.
 
 ### Minimal Call
 
@@ -54,12 +56,12 @@ smallest one-axis call is:
 
 ```python
 result = mesolve_2D(
-    H, drive_expr, collapse_ops, mean_operator, tlist,
+    H, Drive, Col_Ops, mean_operator, tlist,
     var_arrays={eps: eps_values},
 )
 ```
 
-The required positional arguments `H`, `drive_expr`, `collapse_ops`,
+The required positional arguments `H`, `Drive`, `Col_Ops`,
 `mean_operator`, and `tlist` specify the Hamiltonian, time-dependent drive,
 collapse operators, measured operator, and time samples, respectively. At least
 one sweep array is required. This call returns shape `(len(eps_values), 1)`; a
@@ -74,7 +76,7 @@ returns shape `(len(eps_values), len(amplitude_values))`.
 | `Drive` | SymPy expression or `dict[Symbol, Expr]` | Time-dependent signal. A single expression supplies the conventional `Symbol("Drive")` placeholder used by `H`. A dictionary explicitly maps multiple Hamiltonian placeholder symbols to separate signals. Expressions may use `t`, sweep parameters, and constants. |
 | `Col_Ops` | sequence of `N x N` SymPy matrices | Lindblad collapse operators. Use `[]` for closed-system evolution. Every operator must have the same shape as `H`. |
 | `mean_operator` | `N x N` SymPy matrix | Operator whose expectation value is averaged, returned at the final time, or sampled as a trace. It must match `H`. |
-| `tlist` | 1D array | Finite, strictly increasing, uniformly spaced times beginning at zero. `M` samples define exactly `M - 1` solver steps through `tlist[-1]`. Requiring zero avoids an additional kernel time-offset argument. The current CUDA backend uses fixed-step RK4. |
+| `tlist` | 1D array | Finite, strictly increasing, uniformly spaced times beginning at zero. `M` samples define exactly `M - 1` solver steps through `tlist[-1]`. Requiring zero avoids an additional kernel time-offset argument. The current CUDA solver uses fixed-step RK4. |
 
 ### Sweeps And Constants
 
@@ -93,8 +95,8 @@ returns shape `(len(eps_values), len(amplitude_values))`.
 | Parameter | Type/default | Meaning |
 | --- | --- | --- |
 | `rho0` | `N x N` SymPy matrix, reduced expression list, or `None` | Initial density matrix at `t=0`. It may contain symbols swept through `rho0_var_arrays` or `var_arrays`, and it may use runtime constants. `None` initializes state `|0><0|`. For matrix input, GQIS reads the first `N-1` diagonal populations and the upper-triangular coherences; unit trace and the lower triangle are reconstructed. |
-| `output_mode` | `"mean"` | `"mean"` averages the observable after each post-warmup solver step; `"final"` returns its final expectation; `"final_rho"` returns the final reduced real density vector in the ordering described under `build_independent_rho`. |
-| `warmup_time` | `0.0` | Initial fraction of time excluded from the time average, in `[0, 1]`. This can suppress transient dependence on the initial state without shortening the simulated trajectory. A value of `1` leaves no averaging window and returns the final expectation value. |
+| `output_mode` | `"mean"` | `"mean"` averages the expectation value after each post-warmup solver step; `"final"` returns the expectation value at the final time; `"final_rho"` returns the final reduced real density vector in the ordering described under `build_independent_rho`. |
+| `warmup_time` | `0.0` | Initial fraction of time excluded from the time average, in `[0, 1]`. This can suppress transient dependence on the initial state without shortening the simulated evolution. A value of `1` leaves no averaging window and returns the final expectation value. |
 | `return_time_trace` | `False` | Also return sampled expectation values and their times. Samples are recorded from the evolved state after selected integration steps, beginning at `t=dt`, not from the initial state at `t=0`. |
 | `time_trace_every` | `None` | Store one trace value every specified number of solver steps. With stride `k`, stored times are `dt`, `(k+1)*dt`, `(2k+1)*dt`, and so on. Mutually exclusive with `time_trace_samples_per_period`. |
 | `time_trace_samples_per_period` | `None` | Requested approximate stored trace density per drive period. Requires `solver_samples_per_period`; the integer stride is `max(1, round(solver_samples_per_period / time_trace_samples_per_period))`. |
@@ -124,15 +126,15 @@ simulation; neither contains a state for every time sample.
 | Parameter | Type/default | Meaning |
 | --- | --- | --- |
 | `kernel_template_file` | `None` | Uses the canonical CUDA template packaged with GQIS. Supply an explicit path only to test or develop a custom kernel template; relative explicit paths are checked in the current directory and then inside the installed package. |
-| `RHSreuse` | `True` | Reuse the previously generated ODE and compiled CUDA kernel when a later call has the same symbolic model. Sweep arrays, explicit `rho0_values`, and selected runtime-constant values may change between calls. This is useful for animations and repeated parameter studies. `False` regenerates and recompiles on every call. |
-| `fp64` | `False` | Use FP64 state, sweep arrays, constants, generated math, and output instead of the faster FP32 path. |
+| `RHSreuse` | `True` | Reuse the previously generated ODE and compiled CUDA kernel when a later call has the same symbolic equation structure. Sweep arrays, numerical initial states supplied through `rho0_values`, and numerical values assigned to selected constants kept symbolic may change between calls. This is useful for animations and repeated parameter studies. `False` regenerates and recompiles on every call. |
+| `fp64` | `False` | Use 64-bit floating-point (FP64) state, sweep arrays, constants, generated math, and output instead of the faster 32-bit floating-point (FP32) path. |
 | `pre_expand` | `True` | Expand symbolic RHS expressions before code generation. |
 | `collect_rho` | `True` | Collect RHS terms by reduced density variables. |
-| `factor_terms` | `False` | Factor symbolic terms before common-subexpression elimination. This can reduce operations but increase preparation time. |
+| `factor_terms` | `False` | Factor symbolic terms before common-subexpression elimination (CSE). This can reduce operations but increase preparation time. |
 | `cse_batch_size` | `None` | Equations per common-subexpression-elimination batch. `None` performs global CSE; smaller batches can lower CUDA register pressure. |
 | `cse_simplify` | `True` | Simplify expressions during CSE emission. |
 | `hoist_rho_independent` | `True` | Move state-independent expressions to per-thread static or per-RK-stage drive calculations. |
-| `nvrtc_options` | empty tuple | Additional options passed to `cupy.RawKernel`. A string or iterable of strings is accepted. |
+| `nvrtc_options` | empty tuple | Additional NVIDIA Runtime Compilation (NVRTC) options passed to `cupy.RawKernel`. A string or iterable of strings is accepted. |
 | `Actual_Kernel_Save` | `False` | `True` saves `<caller>_Kernel.cu`; a string saves to that explicit path. Generated kernels are debugging artifacts and are ignored by the repository. |
 
 ### Diagnostics
@@ -142,17 +144,19 @@ simulation; neither contains a state for every time sample.
 | `timings` | `False` | Print symbolic-generation/compilation time, GPU kernel time, total call time, and whether the generated ODE and kernel were reused. |
 | `return_timing_info` | `False` | Collect timings without requiring console output and include a dictionary with `rhs_stage_s`, `gpu_kernel_s`, `total_s`, and `cached_rhs`. For `cached_rhs`, `"hit"` means the generated ODE and kernel were reused; `"miss"` means they were generated and compiled for this call. |
 | `beep_on_error` | `False` | Play a best-effort notification before raising for non-finite output. |
-| `ignore_non_finite_output` | `False` | Return NaN/Inf output with a warning instead of raising. Intended for diagnosis, not production data. |
+| `ignore_non_finite_output` | `False` | Return not-a-number (NaN) or infinite (Inf) output with a warning instead of raising. Intended for diagnosis, not production data. |
 
 ### Reusing The ODE For Animations
 
 With `RHSreuse=True`, GQIS can reuse the generated right-hand side (RHS) of the
-ODE and its compiled CUDA kernel across repeated calls. Constants that must
-change between frames need to remain symbolic. For example:
+ODE and its compiled CUDA kernel across repeated calls. The symbolic equation
+structure must remain unchanged; only the numerical values assigned to selected
+symbols may change. Constants that change between frames therefore need to
+remain symbolic. For example:
 
 ```python
 result = mesolve_2D(
-    H, drive_expr, collapse_ops, mean_operator, tlist,
+    H, Drive, Col_Ops, mean_operator, tlist,
     var_arrays={eps: eps_values, A: amplitude_values},
     const_values={gamma: gamma_for_this_frame},
     keep_symbolic_consts={gamma},
@@ -181,7 +185,7 @@ appended to that tuple; without a trace the return is `(result, timing_info)`.
 
 ### Validation And Limitations
 
-- At least one sweep array is required, even for a single trajectory; use a
+- At least one sweep array is required, even for a single simulation; use a
   one-element dummy axis when no physical parameter is swept.
 - GQIS validates matrix dimensions, time-grid structure, option combinations,
   explicit initial-state array shapes, and finite output values.
@@ -223,7 +227,7 @@ observable operator, and optional symbolic simplification controls.
 Output: `(drho_eqs, mean_re, mean_im, metadata)`. `drho_eqs` contains the
 `N*N-1` real Lindblad ODE expressions in the ordering defined above. `mean_re`
 and `mean_im` are the expectation-value components. CUDA generation and the
-benchmark Julia/CPU backends use this same function so their density-matrix
+benchmark Julia and central processing unit (CPU) solvers use this same function so their density-matrix
 equations cannot diverge through separately maintained symbolic derivations.
 
 ### `rho_matrix_to_independent_exprs(rho0)`
@@ -276,8 +280,8 @@ and `sqrtf`, with trivial arithmetic removed.
 ### `my_ccode(expr)` and `MyCPrinter`
 
 `my_ccode` takes one SymPy expression and returns CUDA-compatible C text.
-`MyCPrinter` is the underlying SymPy C99 printer; its `_print_Float(expr)`
-method emits an explicit FP32 literal.
+`MyCPrinter` is the underlying SymPy printer for the 1999 C language standard (C99); its `_print_Float(expr)` method
+emits an explicit FP32 literal.
 
 ## File And Notification Helpers
 

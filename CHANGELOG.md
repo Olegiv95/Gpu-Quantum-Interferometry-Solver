@@ -16,15 +16,16 @@ semantic version numbers.
 
 ### Added
 
-- Symbolic Lindblad-equation reduction and CUDA RHS generation for
+- Symbolic Lindblad-equation reduction and CUDA right-hand-side (RHS) generation for
   finite-dimensional user-defined Hamiltonians and collapse operators.
-- Two-dimensional GPU parameter sweeps with fixed-step RK4 integration.
-- Mean, final-observable, final-density-matrix, and sampled-trace output modes.
+- Two-dimensional graphics processing unit (GPU) parameter sweeps with fixed-step fourth-order Runge-Kutta (RK4)
+  integration.
+- Time-averaged expectation-value, final expectation-value, final-density-matrix, and sampled-trace output modes.
 - Runtime constants, symbolic RHS caching, and initial-condition sweeps.
 - Two- and four-level examples, animations, gate-fidelity example, and Julia
-  comparison backend.
-- GPU, native fixed-step Python, adaptive SciPy, and QuTiP benchmark backends.
-- Pairwise benchmark `diff` mode with MSE, RMS, and maximum absolute deviation,
+  comparison solver.
+- GPU, native fixed-step Python, adaptive SciPy, and QuTiP benchmark solvers.
+- Pairwise benchmark `diff` mode with mean-square deviation (MSE), root-mean-square deviation (RMS), and maximum absolute deviation,
   plus automatic full-benchmark scaling mode.
 - Installable `gqis` package, environment checker, automated tests, public
   documentation, and MIT license.

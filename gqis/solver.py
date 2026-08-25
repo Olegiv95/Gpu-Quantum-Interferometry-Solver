@@ -1,7 +1,8 @@
-"""GQIS GPU-based SymPy -> CUDA Lindblad solver core.
+"""GPU Quantum Interferometry Solver (GQIS) symbolic-to-CUDA solver core.
 
-This module converts symbolic Lindblad RHS expressions into a CUDA kernel,
-compiles it with CuPy/NVRTC, and executes a parameter sweep on GPU.
+This module converts symbolic Lindblad right-hand side (RHS) expressions into
+NVIDIA CUDA code, compiles them with CuPy and NVIDIA Runtime Compilation
+(NVRTC), and executes parameter sweeps on a graphics processing unit (GPU).
 """
 
 import os
@@ -248,11 +249,11 @@ def rho_matrix_to_independent_exprs(rho0):
 
 def build_reduced_lindblad_rhs(N, H, Col_Ops, mean_operator, *, pre_expand=False,
                                 collect_rho=False, factor_terms=False):
-    """Build the symbolic Lindblad RHS used by every GQIS backend.
+    """Build the symbolic Lindblad RHS used by every GQIS solver.
 
     The density matrix is reduced to ``N*N - 1`` real variables by enforcing
     Hermiticity and unit trace. Keeping this derivation in one function ensures
-    that CUDA, Julia, and CPU reference backends solve the same physical ODE.
+    that CUDA, Julia, and CPU reference solvers solve the same physical ODE.
 
     Args:
         N: Hilbert-space dimension.
@@ -332,7 +333,7 @@ def generate_unrolled_drho(N, H, Drive_symbol, Col_Ops, mean_operator, drive_exp
         Drive_symbol: Default placeholder symbol used when ``drive_expr`` is a
             single expression rather than a dictionary.
         Col_Ops: List of SymPy collapse-operator matrices.
-        mean_operator: SymPy operator used for the scalar observable.
+        mean_operator: SymPy operator used to calculate the scalar expectation value.
         drive_expr: Either one SymPy expression mapped to ``Drive_symbol`` or a
             dictionary ``{drive_placeholder_symbol: expression}``.
         runtime_const_syms: Symbols that must remain runtime constants and be
@@ -688,7 +689,7 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
                time_trace_samples_per_period=None, solver_samples_per_period=None,
                Actual_Kernel_Save=False, beep_on_error=False, ignore_non_finite_output=False):
     """
-    Solve a Lindblad master equation over a 2D parameter sweep on GPU.
+    Solve a Lindblad master equation over a two-dimensional parameter sweep on GPU.
 
     Args:
         H: ``N x N`` symbolic Hamiltonian matrix, where ``N`` is the number of
@@ -697,13 +698,15 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
         Col_Ops: List of symbolic collapse operators.
         mean_operator: Symbolic operator whose expectation value is returned.
         tlist: Uniform, strictly increasing time samples beginning at zero. A
-            list of ``M`` samples defines ``M - 1`` fixed-step RK4 intervals.
+            list of ``M`` samples defines ``M - 1`` fixed-step fourth-order
+            Runge-Kutta (RK4) intervals.
         var_arrays: Dict containing one or two sweep arrays, mapped to ParX/ParY
             in insertion order. A one-element dummy axis may be used when no
             physical parameter is swept.
         const_values: Constants normally substituted as fixed numbers during
-            ODE and CUDA-code generation. Changing one on a later call requires
-            new generation and compilation unless that symbol is kept symbolic.
+            ordinary differential equation (ODE) and CUDA-code generation.
+            Changing one on a later call requires new generation and compilation
+            unless that symbol is kept symbolic.
         kernel_template_file: Explicit CUDA template path. ``None`` uses the
             canonical template packaged with GQIS.
         RHSreuse: Reuse a process-local generated ODE and compiled kernel for
@@ -719,16 +722,18 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
             and "const_values" select every const_values key.
         auto_runtime_consts: If True, keep all const_values symbolic at runtime.
         output_mode: "mean", "final", or "final_rho".
-        fp64: If True, generate and run FP64 kernel; otherwise FP32.
+        fp64: If True, generate and run a 64-bit floating-point (FP64) kernel;
+            otherwise use 32-bit floating point (FP32).
         pre_expand / collect_rho / factor_terms / cse_batch_size / cse_simplify /
             hoist_rho_independent: SymPy codegen controls.
-        nvrtc_options: Additional NVRTC compile options.
-        timings: If True, print concise timing breakdown (RHS stage, GPU kernel, total).
+        nvrtc_options: Additional NVIDIA Runtime Compilation (NVRTC) options.
+        timings: If True, print a concise timing breakdown for right-hand-side
+            (RHS) generation, GPU-kernel execution, and the total call.
         return_timing_info: If True, collect and return a timing dict together
             with the result, without requiring printed timing output.
         warmup_time: Initial fraction [0, 1] of time excluded from the time
             average. This suppresses transient dependence on the initial state;
-            it does not shorten the simulated trajectory.
+            it does not shorten the simulated evolution.
         rho0: Optional ``N x N`` symbolic initial density matrix or reduced rho
             vector with ``N*N - 1`` real components.
             It may contain symbols swept through ``var_arrays`` or
@@ -756,7 +761,8 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
             "<calling_python_file>_Kernel.cu". If a non-empty string is given,
             use it as the output path.
         beep_on_error: If True, play a short beep before raising non-finite output errors.
-        ignore_non_finite_output: If True, do not raise on NaN/Inf output; return it as-is.
+        ignore_non_finite_output: If True, do not raise on not-a-number (NaN) or
+            infinite (Inf) output; return it as-is.
 
     Returns:
         NumPy array with shape:
@@ -872,7 +878,7 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
 
     effective_output_mode = output_mode
     if output_mode == "mean" and warmup_steps_host >= num_steps_host:
-        # No measurement window left: return final observable instead.
+        # No measurement window left: return the final expectation value instead.
         effective_output_mode = "final"
 
     subs = {
@@ -1202,7 +1208,7 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
             result_arg_comment = " // final reduced rho vector"
         else:
             result_arg_decl = f"    {complex_type}* __restrict__ results"
-            result_arg_comment = " // averaged/final observable"
+            result_arg_comment = " // averaged/final expectation value"
         if return_time_trace:
             result_arg_decl += (f",\n    {complex_type}* __restrict__ time_trace_results,"
                                 "\n    const int time_trace_stride,"
