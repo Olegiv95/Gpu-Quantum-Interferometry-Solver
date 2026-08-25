@@ -191,9 +191,18 @@ right-hand sides. The fourth-order Runge-Kutta (RK4) update is:
 \end{aligned}
 ```
 
-In this formula, `n` is the starting time-sample index of the current interval, `y[n]` is the state at time `t[n]`, and
-`f(t[n], y[n])` is the vector of all derivatives evaluated at that time and state. A grid of `M` time samples is indexed
-from `0` through `M-1` and therefore defines `M-1` intervals, each with duration `h = t[n+1] - t[n]`.
+In this formula:
+
+```math
+\begin{aligned}
+n &:\ \text{starting time-sample index of the current interval}, \\
+\mathbf{y}_n &:\ \text{state at time }t_n, \\
+\mathbf{f}(t_n,\mathbf{y}_n) &:\ \text{vector of all derivatives at time }t_n\text{ and state }\mathbf{y}_n, \\
+M &:\ \text{number of time samples }t_0,\ldots,t_{M-1}, \\
+M-1 &:\ \text{number of integration intervals}, \\
+h=t_{n+1}-t_n &:\ \text{duration of the current interval}.
+\end{aligned}
+```
 
 This RK4 update is applied by every GPU thread to its own evolution with its parameter set.
 
