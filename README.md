@@ -105,8 +105,8 @@ parameters. Animation examples print per-frame times, plus total video calculati
 
 <table>
   <tr>
-    <td width="50%"><img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Example_01_two_level_basic.png" alt="Two-level interferogram"></td>
-    <td width="50%"><img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Example_02_four_level_interferogram.png" alt="Four-level interferogram"></td>
+    <td width="50%"><img src="./Example_01_two_level_basic.png" alt="Two-level interferogram"></td>
+    <td width="50%"><img src="./Example_02_four_level_interferogram.png" alt="Four-level interferogram"></td>
   </tr>
   <tr align="center">
     <td><strong>Example 01:</strong> two-level interferogram</td>
@@ -270,8 +270,8 @@ evolution. In the tested large sweeps, this execution design used less video ran
 comparison solver.
 
 <p align="center">
-  <a href="https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/Benchmark_01_full_benchmark.png">
-    <img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Benchmark_01_full_benchmark.png" alt="Two-level calculation-time scaling benchmark" width="900">
+  <a href="./Benchmark_01_full_benchmark.png">
+    <img src="./Benchmark_01_full_benchmark.png" alt="Two-level calculation-time scaling benchmark" width="900">
   </a>
 </p>
 <p align="center"><em>Two-level scaling reference. Click the figure for the full-resolution result.</em></p>
