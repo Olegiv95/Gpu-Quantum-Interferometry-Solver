@@ -8,7 +8,8 @@ comparisons across different NVIDIA graphics processing units (GPUs).
 ## Prerequisites
 
 - Windows 10 or 11, or a supported Linux distribution
-- an NVIDIA CUDA-capable GPU with a current NVIDIA driver
+- an NVIDIA CUDA-capable GPU with a compatible NVIDIA driver
+- a matching CUDA Toolkit, or CUDA components installed through CuPy 14's `ctk` extra
 - Python 3.10 or 3.11
 - Git when installing directly from GitHub
 
@@ -119,6 +120,21 @@ python -m pip install "gqis[cuda12]"
 
 Replace `cuda12` with `cuda11` or `cuda13` when using a different CUDA major
 version.
+
+The CUDA extra selects the matching CuPy wheel. By default, that wheel expects
+the corresponding CUDA Toolkit compiler/runtime components to be installed on
+the system. This is the configuration tested on the reference Windows
+workstation.
+
+CuPy 14 can instead install NVIDIA CUDA component wheels through its `ctk`
+extra. This avoids a system-wide CUDA Toolkit, but a compatible NVIDIA driver
+is still required:
+
+```text
+python -m pip install "cupy-cuda12x[ctk]"
+python -m pip install "gqis[cuda12]"
+gqis-check --installation-test
+```
 
 Do not install `cupy`, `cupy-cuda11x`, `cupy-cuda12x`, and `cupy-cuda13x`
 together in one environment. CUDA 11 and CUDA 13 extras are provided but have

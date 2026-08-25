@@ -34,8 +34,9 @@ Controlled timing comparisons are reported in [Validation And Performance](#vali
 
 ## Installation
 
-GQIS supports Python 3.10 and 3.11 and requires an NVIDIA CUDA-capable GPU plus one CuPy distribution matching the
-CUDA major version. Install the tested CUDA 12 configuration with:
+GQIS supports Python 3.10 and 3.11 and requires an NVIDIA CUDA-capable GPU, a compatible NVIDIA driver, and CUDA
+compiler/runtime components matching the selected CuPy distribution. The tested Windows configuration uses a locally
+installed CUDA Toolkit. Install the matching GQIS and CuPy packages for CUDA 12 with:
 
 ```bash
 pip install "gqis[cuda12]"
@@ -48,6 +49,12 @@ plotting support, then run the installation test:
 pip install "gqis[cuda12,examples]"
 gqis-check --installation-test
 ```
+
+The standard CuPy wheel expects the matching CUDA Toolkit components to be available. CuPy 14 can alternatively install
+the CUDA components from Python wheels with its `ctk` extra, leaving only the compatible NVIDIA driver as a system
+requirement. See [CUDA version
+selection](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/INSTALLATION_TEST.md#cuda-version-selection)
+for both configurations.
 
 See the [installation and GPU test
 guide](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/INSTALLATION_TEST.md) for optional isolated
