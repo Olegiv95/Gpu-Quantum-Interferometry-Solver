@@ -169,17 +169,19 @@ Using this notation, denote the $D$ retained density-matrix components, represen
 $y_1,\ldots,y_D$. GQIS generates the system of ODEs
 
 $$
-\left\{
-\begin{aligned}
-\frac{dy_1}{dt} &= f_1(t,y_1,\ldots,y_D), \\
-\frac{dy_2}{dt} &= f_2(t,y_1,\ldots,y_D), \\
-&\ \vdots \\
-\frac{dy_D}{dt} &= f_D(t,y_1,\ldots,y_D).
-\end{aligned}
-\right.
+\begin{cases}
+\dfrac{dy_1}{dt} = R_1(t,y_1,\ldots,y_D), \\
+\dfrac{dy_2}{dt} = R_2(t,y_1,\ldots,y_D), \\
+\qquad\vdots \\
+\dfrac{dy_D}{dt} = R_D(t,y_1,\ldots,y_D).
+\end{cases}
 $$
 
-For every time interval of length $h$, the CUDA kernel applies
+Here, $R_i$ is the generated right-hand side of equation $i$. Define $\mathbf{y}=(y_1,\ldots,y_D)$ and
+$\mathbf{f}(t,\mathbf{y})=(R_1,\ldots,R_D)$, so $\mathbf{f}(t_n,\mathbf{y}_n)$ is the vector of all derivatives
+$d\mathbf{y}/dt$ evaluated at time $t_n$ and state $\mathbf{y}_n$. A grid of $M$ time samples contains
+$t_0,\ldots,t_{M-1}$ and therefore defines $M-1$ intervals. 
+The fourth-order Runge–Kutta method step:
 
 $$
 \begin{aligned}
@@ -192,7 +194,7 @@ $$
 \end{aligned}
 $$
 
-This is the fourth-order Runge-Kutta (RK4) update applied by every GPU thread to its own parameter set.
+This RK4 update applied by every GPU thread to its own evolution with its parameter set.
 
 For a new model, these components perform the following pipeline:
 
