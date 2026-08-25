@@ -177,7 +177,7 @@ $y_1,\ldots,y_D$. GQIS generates the system of ODEs
 \end{cases}
 ```
 
-Here, `R_i` is the generated right-hand side of equation `i`. The vector function `f` used below combines all `D`
+Here, $R_i$ is the generated right-hand side of equation $i$. The vector function $f$ used below combines all $D$
 right-hand sides. The fourth-order Runge-Kutta (RK4) update is:
 
 ```math
@@ -191,8 +191,8 @@ right-hand sides. The fourth-order Runge-Kutta (RK4) update is:
 \end{aligned}
 ```
 
-In this formula, $n$ is the starting time-sample index of the current interval, $\mathbf{y}_n$ is the state at time
-$t_n$, and $\mathbf{f}(t_n,\mathbf{y}_n)$ is the vector of all derivatives evaluated at that time and state. A grid of
+In this formula, $n$ is the starting time-sample index of the current interval, $y_n$ is the state at time $t_n$, and
+$f(t_n,y_n)$ is the vector of all derivatives evaluated at that time and state. A grid of
 $M$ time samples contains $t_0,\ldots,t_{M-1}$ and therefore defines $M-1$ integration intervals, each with duration
 $h=t_{n+1}-t_n$.
 
