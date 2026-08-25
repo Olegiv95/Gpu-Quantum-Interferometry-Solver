@@ -1,19 +1,19 @@
 # Contributing to GQIS
 
-We welcome contributions that improve correctness, documentation, GPU
-compatibility, or performance. Small fixes and independent validation results
-are valuable and remain visible in the Git history.
+We welcome contributions that improve the correctness, documentation, graphics processing unit (GPU) compatibility,
+or performance of the GPU Quantum Interferometry Solver (GQIS). Small fixes and independent validation results are
+valuable and remain visible in the Git history.
 
 ## Issues
 
 Search existing issues first. Bug and numerical-error reports should include a
 minimal reproducing model, relevant console output, the output of `gqis-check`,
 model and grid settings, and CUDA/CuPy versions. When relevant, report
-convergence after refining the fixed RK4 grid and comparison with QuTiP or
+convergence after refining the fixed fourth-order Runge-Kutta (RK4) grid and comparison with QuTiP or
 another trusted reference.
 
 Do not share credentials or confidential data. Please open an issue before
-implementing a substantial API change or changing a numerical convention.
+implementing a substantial application programming interface (API) change or changing a numerical convention.
 
 ## Development
 
@@ -41,7 +41,7 @@ On an NVIDIA CUDA system, also run `python -m pytest` and
 ## Style
 
 Following the [QuTiP contributor guide](https://qutip.readthedocs.io/en/stable/development/contributing.html),
-prioritize readability and consistency with surrounding code. Follow PEP 8 and
+prioritize readability and consistency with surrounding code. Follow Python Enhancement Proposal 8 (PEP 8) and
 Ruff; 120 characters is an upper line-length limit, not a target. Preserve
 public names unless a breaking change has been discussed. Conventional physics
 notation is welcome when documented. Update `GQIS_API.md` when a public
@@ -58,8 +58,9 @@ that so a maintainer can perform it.
 
 For performance changes, report hardware, software versions, grid, precision,
 solver steps, and whether timings are measured or extrapolated. Do not commit
-caches, environments, videos, or disposable outputs. Update tracked benchmark
-CSV and PNG files only when the change intentionally affects them.
+caches, environments, or disposable outputs. Add a generated video only when
+it is a small, intentional documentation asset. Update tracked benchmark comma-separated values (CSV) and Portable
+Network Graphics (PNG) files only when the change intentionally affects them.
 
 Contributions are made available under the project's MIT License. No contributor
 license agreement is currently required.

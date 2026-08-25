@@ -33,13 +33,14 @@ def test_two_level_mode_shorthands():
     args = Namespace(mode="single", solver="gpu", mode_or_solver="qutip_cpu")
     assert benchmark_01.normalize_mode_and_solver(args) == ("single", "qutip_cpu")
 
-    args.mode_or_solver = "full-benchmark"
+    args.mode_or_solver = "full_benchmark"
     assert benchmark_01.normalize_mode_and_solver(args) == ("full_benchmark", "gpu")
 
 
 def test_four_level_mode_shorthands():
     assert benchmark_02.normalize_mode_solver("qutip_cpu", "gpu") == ("single", "qutip_cpu", )
-    assert benchmark_02.normalize_mode_solver("full", "gpu") == ("full_benchmark", "gpu")
+    assert benchmark_02.normalize_mode_solver("full_benchmark", "gpu") == (
+        "full_benchmark", "gpu")
 
 
 def test_benchmark_metadata_records_numerical_package_versions():

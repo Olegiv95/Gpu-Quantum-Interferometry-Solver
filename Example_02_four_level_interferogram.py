@@ -154,9 +154,8 @@ def main() -> None:
     ax.xaxis.set_tick_params(labelsize=14)
     ax.yaxis.set_tick_params(labelsize=14)
     plt.tight_layout()
+    print(f"Example calculation and plot preparation time: {time.time() - start_time:.2f}s")
     plt.show()
-
-    print(f"Total runtime: {time.time() - start_time:.2f}s")
 
 
 def user_settings() -> dict:

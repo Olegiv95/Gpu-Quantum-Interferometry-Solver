@@ -313,7 +313,7 @@ def run_working_point_sweep(settings: dict):
             print(f"{regime:>14s} wp={wp:2d} time={result['plan'].gate_time:9.4g} "
                   f"steps={result['num_solver_steps']} dt={result['dt']:.3e} "
                   f"avg_error={result['avg_error']:.4e} avg_fidelity={result['avg_fidelity']:.8f}")
-    print(f"Total working-point sweep calculation time: {time.time() - sweep_start:.3f} s")
+    print(f"Total working-point sweep calculation time: {time.time() - sweep_start:.3f}s")
     return rows
 
 
@@ -355,9 +355,9 @@ def main():
         print(f"Time grid: {result['num_time_samples']} samples, "
               f"{result['num_solver_steps']} solver steps, dt={result['dt']:.6e}")
         print(f"GPU workload: {result['state_step_updates']:.6e} trajectory-step updates, "
-              f"solver call={result['solver_elapsed']:.3f} s, "
+              f"solver call={result['solver_elapsed']:.3f}s, "
               f"end-to-end rate={update_rate:.6e} updates/s")
-        print(f"Initial-condition density calculation time: {calc_elapsed:.3f} s")
+        print(f"Initial-condition density calculation time: {calc_elapsed:.3f}s")
         plot_error_density(result)
 
     if settings["run_working_point_sweep"]:

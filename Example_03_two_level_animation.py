@@ -157,6 +157,8 @@ def main() -> None:
     video_filename = settings["video_filename"]
     video_fps = settings["video_fps"]
     video_dpi = settings["video_dpi"]
+    ffmpeg_preset = settings["ffmpeg_preset"]
+    ffmpeg_crf = settings["ffmpeg_crf"]
 
     # Build the frame order. Pingpong avoids repeating the turnaround endpoint;
     # the initial endpoint returns as the final frame for smooth looping.
@@ -167,12 +169,18 @@ def main() -> None:
     else:
         frame_indices = np.arange(len(parameter_values), dtype=np.int32)
 
+    num_steps_per_frame = int(simulation_periods * solver_steps_per_period)
+    print(f"Animation workload: grid={grid_size}x{grid_size}, "
+          f"calculated_frames={len(frame_indices)}, solver_steps_per_frame={num_steps_per_frame}")
+
     # Initial frame also compiles the CUDA kernel. Later frames reuse it when
     # only runtime constants change.
+    initial_frame_start = time.time()
     params0, subtitle0 = frame_params(animated_parameter, float(parameter_values[0]), base)
     tlist0 = build_time_grid(params0["w"], simulation_periods, solver_steps_per_period)
     p0 = gpu_time_evolution(A_list, eps_list, tlist0, model, params0, RHSreuse=True,
                             averaging_skip_fraction=averaging_skip_fraction, timings=False)
+    print(f"Initial frame calculation time: {time.time() - initial_frame_start:.2f}s")
 
     fig, ax = plt.subplots(figsize=(8, 8))
     img = ax.imshow(p0, aspect="auto", cmap="jet", origin="lower",
@@ -203,12 +211,17 @@ def main() -> None:
     ani = FuncAnimation(fig, update, frames=len(frame_indices), interval=20, blit=False)
 
     if save_mp4:
-        writer = FFMpegWriter(fps=video_fps, codec="libx264", bitrate=-1)
+        writer = FFMpegWriter(fps=video_fps, codec="libx264", bitrate=-1,
+                              extra_args=["-preset", ffmpeg_preset, "-crf",
+                                          str(ffmpeg_crf), "-pix_fmt", "yuv420p"])
         ani.save(video_filename, writer=writer, dpi=video_dpi)
         print(f"\nSaved: {video_filename}")
+        print(f"Animation calculation and MP4 export time: {time.time() - total_start:.2f}s")
+    else:
+        print(f"Interactive animation setup time: {time.time() - total_start:.2f}s; "
+              "per-frame calculation times are printed during playback.")
 
     plt.show()
-    print(f"Total runtime: {time.time() - total_start:.2f}s")
 
 
 def user_settings() -> dict:
@@ -252,6 +265,8 @@ def user_settings() -> dict:
         "video_filename": "Example_03_two_level_animation.mp4",
         "video_fps": 5,  # playback rate, not the number of calculated frames
         "video_dpi": 120,  # saved video resolution scale
+        "ffmpeg_preset": "medium",  # x264 speed/compression preset
+        "ffmpeg_crf": 23,  # x264 quality; lower is higher quality/larger file
     }
 
 

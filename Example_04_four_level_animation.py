@@ -245,9 +245,14 @@ def main() -> None:
     else:
         frame_indices = np.arange(len(parameter_values), dtype=np.int32)
 
+    num_steps_per_frame = int(simulation_periods * solver_steps_per_period)
+    print(f"Animation workload: grid={grid_size}x{grid_size}, "
+          f"calculated_frames={len(frame_indices)}, solver_steps_per_frame={num_steps_per_frame}")
+
     # Initial frame --------------------------------------------------------
     # This call may include symbolic RHS generation and CUDA compilation. Later
     # frames can reuse the compiled RHS when only runtime constants change.
+    initial_frame_start = time.time()
     params0, subtitle0 = frame_params(animated_parameter, float(parameter_values[0]), base,
                                       wq1)
     w0, _, tlist0 = build_time_grid(delta=delta, wd_mhz=params0["wd_mhz"],
@@ -258,6 +263,7 @@ def main() -> None:
                               animated_parameter, RHSreuse=True,
                               averaging_skip_fraction=averaging_skip_fraction, timings=False,
                               fp64=False)
+    print(f"Initial frame calculation time: {time.time() - initial_frame_start:.2f}s")
 
     if output_mode == "response":
         img0 = 10.0 * np.log10(np.clip(map0, 1.0e-30, None))
@@ -312,9 +318,12 @@ def main() -> None:
                                           str(ffmpeg_crf), "-pix_fmt", "yuv420p"])
         ani.save(video_filename, writer=writer, dpi=video_dpi)
         print(f"\nSaved: {video_filename}")
+        print(f"Animation calculation and MP4 export time: {time.time() - start_total:.2f}s")
+    else:
+        print(f"Interactive animation setup time: {time.time() - start_total:.2f}s; "
+              "per-frame calculation times are printed during playback.")
 
     plt.show()
-    print(f"Total runtime: {time.time() - start_total:.2f}s")
 
 
 def user_settings() -> dict:
@@ -367,7 +376,7 @@ def user_settings() -> dict:
         # Increase if mesolve_2D reports non-finite output.
         "solver_steps_per_period": 250,
         "grid_size": 512,  # square grid side per animation frame
-        "save_mp4": False,  # False shows interactive animation only
+        "save_mp4": True,  # False shows interactive animation only
         "video_filename": "Example_04_four_level_animation.mp4",
         "video_fps": 5,  # playback rate, not the number of calculated frames
         "video_dpi": 120,  # saved video resolution scale

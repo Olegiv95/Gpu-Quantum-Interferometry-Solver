@@ -1,0 +1,47 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  package:
+    name: Package distributions
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install packaging tool
+        run: python -m pip install build
+      - name: Package wheel and source archive
+        run: python -m build
+      - name: Store distributions
+        uses: actions/upload-artifact@v5
+        with:
+          name: python-package-distributions
+          path: dist/
+
+  publish:
+    name: Publish distributions to PyPI
+    needs: package
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/gqis
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v6
+        with:
+          name: python-package-distributions
+          path: dist/
+      - name: Publish distributions
+        uses: pypa/gh-action-pypi-publish@release/v1

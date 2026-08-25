@@ -15,7 +15,7 @@ import subprocess
 import sys
 
 REQUIRED_PACKAGES = (("numpy", "1.24", "core"), ("sympy", "1.11", "core"), ("cupy", "13",
-                                                                            "CUDA backend"),
+                                                                            "CUDA support"),
                      )
 OPTIONAL_PACKAGES = (("matplotlib", "3.7", "examples and plots"),
                      ("scipy", "1.10", "adaptive CPU benchmarks"), ("qutip", "5.0",

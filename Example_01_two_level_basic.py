@@ -85,9 +85,8 @@ def main() -> None:
     ax.set_ylabel(r"$A/\Delta$")
     ax.set_title("Two-level interferogram")
     plt.tight_layout()
+    print(f"Example calculation and plot preparation time: {time.time() - start:.2f}s")
     plt.show()
-
-    print(f"Total runtime: {time.time() - start:.2f}s")  # Print total runtime
 
 
 def user_settings() -> dict:
