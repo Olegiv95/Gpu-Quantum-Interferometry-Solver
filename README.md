@@ -146,12 +146,12 @@ GQIS consists of two principal components:
 
 The symbolic generator starts from the Lindblad master equation
 
-$$
+```math
 \frac{d\rho}{dt} = -i[H(t),\rho]
 + \sum_j \left(C_j\rho C_j^\dagger
 - \frac{1}{2}C_j^\dagger C_j\rho
 - \frac{1}{2}\rho C_j^\dagger C_j\right),
-$$
+```
 
 where $\rho$ is the density matrix, $H(t)$ is the time-dependent Hamiltonian, and each $C_j$ is a collapse operator.
 The Hamiltonian coefficients and time variable must use mutually consistent units.
@@ -168,22 +168,19 @@ The Hamiltonian coefficients and time variable must use mutually consistent unit
 Using this notation, denote the $D$ retained density-matrix components, represented by real values, as
 $y_1,\ldots,y_D$. GQIS generates the system of ODEs
 
-$$
+```math
 \begin{cases}
 \dfrac{dy_1}{dt} = R_1(t,y_1,\ldots,y_D), \\
 \dfrac{dy_2}{dt} = R_2(t,y_1,\ldots,y_D), \\
 \qquad\vdots \\
 \dfrac{dy_D}{dt} = R_D(t,y_1,\ldots,y_D).
 \end{cases}
-$$
+```
 
-Here, $R_i$ is the generated right-hand side of equation $i$. Define $\mathbf{y}=(y_1,\ldots,y_D)$ and
-$\mathbf{f}(t,\mathbf{y})=(R_1,\ldots,R_D)$, so $\mathbf{f}(t_n,\mathbf{y}_n)$ is the vector of all derivatives
-$d\mathbf{y}/dt$ evaluated at time $t_n$ and state $\mathbf{y}_n$. A grid of $M$ time samples contains
-$t_0,\ldots,t_{M-1}$ and therefore defines $M-1$ intervals. 
-The fourth-order Runge–Kutta method step:
+Here, `R_i` is the generated right-hand side of equation `i`. The vector function `f` used below combines all `D`
+right-hand sides. The fourth-order Runge-Kutta (RK4) update is:
 
-$$
+```math
 \begin{aligned}
 \mathbf{k}_1 &= \mathbf{f}(t_n,\mathbf{y}_n), \\
 \mathbf{k}_2 &= \mathbf{f}\left(t_n+\frac{h}{2},\mathbf{y}_n+\frac{h}{2}\mathbf{k}_1\right), \\
@@ -192,9 +189,13 @@ $$
 \mathbf{y}_{n+1} &= \mathbf{y}_n+\frac{h}{6}
 \left(\mathbf{k}_1+2\mathbf{k}_2+2\mathbf{k}_3+\mathbf{k}_4\right).
 \end{aligned}
-$$
+```
 
-This RK4 update applied by every GPU thread to its own evolution with its parameter set.
+In this formula, `n` is the starting time-sample index of the current interval, `y[n]` is the state at time `t[n]`, and
+`f(t[n], y[n])` is the vector of all derivatives evaluated at that time and state. A grid of `M` time samples is indexed
+from `0` through `M-1` and therefore defines `M-1` intervals, each with duration `h = t[n+1] - t[n]`.
+
+This RK4 update is applied by every GPU thread to its own evolution with its parameter set.
 
 For a new model, these components perform the following pipeline:
 
