@@ -10,7 +10,7 @@ comparisons across different NVIDIA graphics processing units (GPUs).
 - Windows 10 or 11, or a supported Linux distribution
 - an NVIDIA CUDA-capable GPU with a compatible NVIDIA driver
 - a matching CUDA Toolkit, or CUDA components installed through CuPy 14's `ctk` extra
-- Python 3.10 or 3.11
+- Python 3.10 or newer
 - Git when installing directly from GitHub
 
 Confirm that the NVIDIA driver is visible:
@@ -189,7 +189,7 @@ numerical comparison before scientific use.
 
 | Dependency | Declared requirement | Locally tested version |
 | --- | --- | --- |
-| Python | `>=3.10,<3.12` | 3.11.7 |
+| Python | `>=3.10` | 3.10-3.12 in CI; 3.11.7 locally |
 | NumPy | `>=1.24` | 2.4.6 |
 | SymPy | `>=1.11` | 1.14.0 |
 | CuPy/CUDA | CUDA-specific extra | `cupy-cuda12x` 14.1.1, CUDA runtime 12.9 |
@@ -227,8 +227,10 @@ python -m build
 python -m twine check dist/*
 ```
 
-The GitHub Actions workflow tests Python 3.10 and 3.11 and runs the non-GPU test
-suite on both versions. It builds and validates the package on Python 3.11.
+The GitHub Actions workflow tests Python 3.10, 3.11, and 3.12 and runs the
+non-GPU test suite on all three versions. It builds and validates the package
+on Python 3.11. Newer Python versions are installable but remain unvalidated
+until they are added to this matrix.
 
 ## Optional External Programs
 

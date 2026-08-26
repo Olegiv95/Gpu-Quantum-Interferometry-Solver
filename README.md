@@ -34,9 +34,10 @@ Controlled timing comparisons are reported in [Validation And Performance](#vali
 
 ## Installation
 
-GQIS supports Python 3.10 and 3.11 and requires an NVIDIA CUDA-capable GPU, a compatible NVIDIA driver, and CUDA
-compiler/runtime components matching the selected CuPy distribution. The tested Windows configuration uses a locally
-installed CUDA Toolkit. Install the matching GQIS and CuPy packages for CUDA 12 with:
+GQIS requires Python 3.10 or newer, an NVIDIA CUDA-capable GPU, a compatible NVIDIA driver, and CUDA compiler/runtime
+components matching the selected CuPy distribution. Continuous integration tests Python 3.10 through 3.12; newer
+Python versions remain installable but are not yet validated by the project. The tested Windows configuration uses a
+locally installed CUDA Toolkit. Install the matching GQIS and CuPy packages for CUDA 12 with:
 
 ```bash
 pip install "gqis[cuda12]"
