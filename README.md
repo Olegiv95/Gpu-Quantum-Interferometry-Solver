@@ -34,19 +34,36 @@ Controlled timing comparisons are reported in [Validation And Performance](#vali
 
 ## Installation
 
-GQIS supports Python 3.10 and 3.11 and requires an NVIDIA CUDA-capable GPU plus one CuPy distribution matching the
-CUDA major version. Install the tested CUDA 12 configuration with:
+GQIS requires Python 3.10 or newer, an NVIDIA CUDA-capable GPU, a compatible NVIDIA driver, and CUDA libraries matching
+the selected CuPy package. Continuous integration tests Python 3.10 through 3.12. On Windows, GQIS has been tested both
+with a locally installed CUDA Toolkit and with CUDA runtime libraries downloaded and installed by pip through CuPy's
+`ctk` option.
+
+With a local CUDA 12 Toolkit, install:
 
 ```bash
 pip install "gqis[cuda12]"
 ```
 
-Replace `cuda12` with `cuda11` or `cuda13` when using a different CUDA major version. Add the `examples` extra for
-plotting support, then run the installation test:
+Without a local CUDA Toolkit, use pip to install the CUDA 12 runtime libraries and GQIS:
+
+```bash
+pip install "cupy-cuda12x[ctk]"
+pip install "gqis[cuda12]"
+```
+
+The pip-installed CUDA-library method above has been tested with CUDA 12. When using a local Toolkit with another CUDA
+major version, replace `cuda12` with `cuda11` or `cuda13`. Verify the core solver installation with:
+
+```bash
+gqis-check --installation-test
+```
+
+The repository provides reference example scripts demonstrating the solver's main features. To run them, install their
+optional dependencies, including Matplotlib:
 
 ```bash
 pip install "gqis[cuda12,examples]"
-gqis-check --installation-test
 ```
 
 See the [installation and GPU test
@@ -282,7 +299,7 @@ and mark extrapolated data. See [benchmark validation,
 methodology, and complete reference results](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md)
 before interpreting or reproducing these numbers.
 
-> **Numerical accuracy disclaimer:** GQIS 0.1.0 is an alpha release. The current CUDA solver uses fixed-step
+> **Numerical accuracy disclaimer:** GQIS 0.1.1 is an alpha release. The current CUDA solver uses fixed-step
 > fourth-order Runge-Kutta (RK4) integration on the user-supplied uniform time grid. Verify time-grid convergence by
 > repeating calculations with smaller steps. For important results, compare against a trusted adaptive reference solver,
 > which automatically adjusts its internal time steps. RK4 is not suitable for every problem, and its accuracy and

@@ -46,7 +46,7 @@ def test_four_level_mode_shorthands():
 def test_benchmark_metadata_records_numerical_package_versions():
     metadata = collect_equipment_info()
     assert metadata["python"]
-    assert metadata["gqis"] == "0.1.0"
+    assert metadata["gqis"] == "0.1.1"
     assert metadata["numpy"]
     assert metadata["sympy"]
     assert metadata["matplotlib"]

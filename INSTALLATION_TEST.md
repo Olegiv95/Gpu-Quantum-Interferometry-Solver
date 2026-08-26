@@ -8,8 +8,9 @@ comparisons across different NVIDIA graphics processing units (GPUs).
 ## Prerequisites
 
 - Windows 10 or 11, or a supported Linux distribution
-- an NVIDIA CUDA-capable GPU with a current NVIDIA driver
-- Python 3.10 or 3.11
+- an NVIDIA CUDA-capable GPU with a compatible NVIDIA driver
+- a matching CUDA Toolkit, or CUDA runtime libraries installed by pip through CuPy 14's `ctk` option
+- Python 3.10 or newer
 - Git when installing directly from GitHub
 
 Confirm that the NVIDIA driver is visible:
@@ -35,7 +36,7 @@ The short Python Package Index (PyPI) command works after the release has been u
 GitHub release directly, use:
 
 ```text
-python -m pip install "gqis[cuda12] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.1.0"
+python -m pip install "gqis[cuda12] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.1.1"
 gqis-check --installation-test
 ```
 
@@ -120,13 +121,34 @@ python -m pip install "gqis[cuda12]"
 Replace `cuda12` with `cuda11` or `cuda13` when using a different CUDA major
 version.
 
+The `cuda12` installation option installs the matching CuPy package. By
+default, this installation expects the corresponding CUDA Toolkit libraries
+to be available on the system.
+
+Alternatively, CuPy 14 can download and install the required NVIDIA CUDA
+runtime libraries through pip when its `ctk` option is used. This avoids a
+system-wide CUDA Toolkit, but a compatible NVIDIA driver is still required:
+
+```text
+python -m pip install "cupy-cuda12x[ctk]"
+python -m pip install "gqis[cuda12]"
+gqis-check --installation-test
+```
+
+Both configurations have passed the GQIS installation test on Windows: the
+local-Toolkit configuration on the reference RTX 3080 workstation and the
+pip-installed CUDA configuration on an RTX 4060 Laptop GPU. The clean `ctk`
+test environment occupied approximately 2.5 GB because it included the CUDA
+runtime libraries.
+
 Do not install `cupy`, `cupy-cuda11x`, `cupy-cuda12x`, and `cupy-cuda13x`
-together in one environment. CUDA 11 and CUDA 13 extras are provided but have
-not been tested on the reference workstation used for version 0.1.0.
+together in one environment. CUDA 11 and CUDA 13 installation options are
+provided but have not been tested on the reference workstation used for
+version 0.1.0.
 
-## Installation Extras
+## Optional Dependencies
 
-Install plotting support for the examples with:
+Install the dependencies used by the repository's reference example scripts:
 
 ```text
 python -m pip install "gqis[cuda12,examples]"
@@ -138,16 +160,21 @@ Install QuTiP and SciPy for the benchmark comparison solvers with:
 python -m pip install "gqis[cuda12,examples,benchmarks]"
 ```
 
-The CUDA extra selects CuPy. The `examples` extra adds Matplotlib, while the
-`benchmarks` extra adds Matplotlib, QuTiP, and SciPy. Julia and FFmpeg are
-external programs and are not installed by pip.
+The `cuda12` installation option selects the matching CuPy package. The
+`examples` option adds Matplotlib used by the reference scripts, while the
+`benchmarks` option adds Matplotlib, QuTiP, and SciPy. Julia is used by the
+optional Julia benchmark solver, while FFmpeg is used to save animations as
+`.mp4` files. These external programs are not installed by pip; install and
+verify them manually if you need those features. Installation and verification
+instructions are provided in the [Optional External Programs
+section](#optional-external-programs) below.
 
 ## Source And Development Installation
 
 Before the PyPI release, or to install an exact tagged source revision, use:
 
 ```text
-python -m pip install "gqis[cuda12,examples] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.1.0"
+python -m pip install "gqis[cuda12,examples] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.1.1"
 ```
 
 From a local clone, install normally or in editable development mode:
@@ -167,16 +194,17 @@ for testing the built package as an end user would receive it.
 compatible versions so pip does not reject an older version unnecessarily.
 `requirements.txt` is a CUDA 12-oriented environment recipe.
 
-The versions below are the GQIS 0.1.0 reference environment. Other versions may
-work, but they should be checked with `gqis-check --installation-test` and a
-numerical comparison before scientific use.
+The versions below were validated during the GQIS 0.1.0 and 0.1.1 release
+preparations. Other versions may work, but they should be checked with
+`gqis-check --installation-test` and a numerical comparison before scientific
+use.
 
-| Dependency | Declared requirement | Locally tested version |
+| Dependency | Declared requirement | Tested version |
 | --- | --- | --- |
-| Python | `>=3.10,<3.12` | 3.11.7 |
+| Python | `>=3.10` | 3.10-3.12 in CI; 3.11.7 locally |
 | NumPy | `>=1.24` | 2.4.6 |
 | SymPy | `>=1.11` | 1.14.0 |
-| CuPy/CUDA | CUDA-specific extra | `cupy-cuda12x` 14.1.1, CUDA runtime 12.9 |
+| CuPy/CUDA | CUDA installation option | 14.1.1 with Toolkit; 14.2.0 with `ctk`; CUDA runtime 12.9 |
 | Matplotlib | `>=3.7` (examples) | 3.11.1 |
 | SciPy | `>=1.10` (benchmarks) | 1.16.1 |
 | QuTiP | `>=5.0` (benchmarks) | 5.2.0 |
@@ -211,8 +239,9 @@ python -m build
 python -m twine check dist/*
 ```
 
-The GitHub Actions workflow tests Python 3.10 and 3.11 and runs the non-GPU test
-suite on both versions. It builds and validates the package on Python 3.11.
+The GitHub Actions workflow tests Python 3.10, 3.11, and 3.12 and runs the
+non-GPU test suite on all three versions. It builds and validates the package
+on Python 3.11.
 
 ## Optional External Programs
 
