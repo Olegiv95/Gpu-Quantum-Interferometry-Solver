@@ -85,7 +85,7 @@ figure automatically so a long run can be compared with the reference results la
 
 ## Reference Results
 
-Reference workstation:
+Reference desktop system:
 
 - CPU: 11th Gen Intel Core i9-11900K at 3.50 gigahertz (GHz)
 - GPU: NVIDIA GeForce RTX 3080 with 10 gigabytes (GB) VRAM
