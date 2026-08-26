@@ -137,7 +137,7 @@ gqis-check --installation-test
 
 Both configurations have passed the GQIS installation test on Windows: the
 local-Toolkit configuration with the reference NVIDIA GeForce RTX 3080 desktop
-GPU and the pip-installed CUDA configuration on an RTX 4060 Laptop GPU. The clean `ctk`
+GPU and the pip-installed CUDA configuration on an NVIDIA RTX 4060 Laptop GPU. The clean `ctk`
 test environment occupied approximately 2.5 GB because it included the CUDA
 runtime libraries.
 
