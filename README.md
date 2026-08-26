@@ -299,7 +299,7 @@ and mark extrapolated data. See [benchmark validation,
 methodology, and complete reference results](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md)
 before interpreting or reproducing these numbers.
 
-> **Numerical accuracy disclaimer:** GQIS 0.1.0 is an alpha release. The current CUDA solver uses fixed-step
+> **Numerical accuracy disclaimer:** GQIS 0.1.1 is an alpha release. The current CUDA solver uses fixed-step
 > fourth-order Runge-Kutta (RK4) integration on the user-supplied uniform time grid. Verify time-grid convergence by
 > repeating calculations with smaller steps. For important results, compare against a trusted adaptive reference solver,
 > which automatically adjusts its internal time steps. RK4 is not suitable for every problem, and its accuracy and

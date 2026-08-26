@@ -4,7 +4,7 @@ from importlib import import_module
 
 __all__ = ["build_independent_rho", "build_reduced_lindblad_rhs", "mesolve_2D"]
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 
 def __getattr__(name: str):

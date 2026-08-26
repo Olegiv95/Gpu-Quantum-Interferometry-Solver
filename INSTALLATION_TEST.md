@@ -36,7 +36,7 @@ The short Python Package Index (PyPI) command works after the release has been u
 GitHub release directly, use:
 
 ```text
-python -m pip install "gqis[cuda12] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.1.0"
+python -m pip install "gqis[cuda12] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.1.1"
 gqis-check --installation-test
 ```
 
@@ -174,7 +174,7 @@ section](#optional-external-programs) below.
 Before the PyPI release, or to install an exact tagged source revision, use:
 
 ```text
-python -m pip install "gqis[cuda12,examples] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.1.0"
+python -m pip install "gqis[cuda12,examples] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.1.1"
 ```
 
 From a local clone, install normally or in editable development mode:
@@ -194,9 +194,10 @@ for testing the built package as an end user would receive it.
 compatible versions so pip does not reject an older version unnecessarily.
 `requirements.txt` is a CUDA 12-oriented environment recipe.
 
-The versions below are the GQIS 0.1.0 reference environment. Other versions may
-work, but they should be checked with `gqis-check --installation-test` and a
-numerical comparison before scientific use.
+The versions below were validated during the GQIS 0.1.0 and 0.1.1 release
+preparations. Other versions may work, but they should be checked with
+`gqis-check --installation-test` and a numerical comparison before scientific
+use.
 
 | Dependency | Declared requirement | Tested version |
 | --- | --- | --- |

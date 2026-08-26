@@ -12,6 +12,15 @@ semantic version numbers.
 
 - Collect validation and benchmark results from additional NVIDIA GPUs.
 
+## [0.1.1] - 2026-08-26
+
+### Changed
+
+- Removed the Python upper-version restriction and added Python 3.12 to continuous integration testing.
+- Documented the two tested CUDA 12 installation methods: a local CUDA Toolkit and CUDA runtime libraries installed
+  through pip with CuPy's `ctk` option.
+- Added external installation-test results from an RTX 4060 Laptop GPU without a system-wide CUDA Toolkit.
+
 ## [0.1.0] - 2026-08-25
 
 ### Added
@@ -30,5 +39,6 @@ semantic version numbers.
 - Installable `gqis` package, environment checker, automated tests, public
   documentation, and MIT license.
 
-[Unreleased]: https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/releases/tag/v0.1.0
