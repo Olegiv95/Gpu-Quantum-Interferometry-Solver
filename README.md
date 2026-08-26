@@ -28,7 +28,8 @@ required the reduced ODE system to be derived and implemented again.
 GQIS connects a symbolic open-system model directly to a CUDA kernel optimized for large parameter sweeps. Its symbolic
 generator derives the required density-matrix equations, eliminates repeated operations, and precomputes reusable
 parameter combinations. The generated equations are then inserted into a compact CUDA kernel that evolves one parameter
-set per GPU thread. On the reference RTX 3080, representative `2048 x 2048` interferograms complete in a few seconds,
+set per GPU thread. On the reference NVIDIA GeForce RTX 3080 desktop GPU, representative `2048 x 2048` interferograms
+complete in a few seconds,
 making repeated parameter studies and animations that vary an additional physical parameter affordable and practical.
 Controlled timing comparisons are reported in [Validation And Performance](#validation-and-performance).
 
@@ -276,7 +277,8 @@ solvers and show how calculation time changes with the size of the parameter gri
 - `Benchmark_01_two_level.py`: driven qubit model
 - `Benchmark_02_four_level_Interferometry.py`: coupled qubit-resonator model
 
-On the reference RTX 3080, the largest measured `32768 x 32768` grids contain 1.07 billion independent parameter sets,
+On the reference NVIDIA GeForce RTX 3080 desktop GPU, the largest measured `32768 x 32768` grids contain 1.07 billion
+independent parameter sets,
 with 10,240 RK4 steps per simulation. GQIS completed these runs in about 1 minute 44 seconds for the two-level model and
 7 minutes 1 second for the four-level model. Across the linear scaling region, where calculation time increases in
 proportion to the number of simulations, the average reported speedups were about 69,000 times and 24,000 times over

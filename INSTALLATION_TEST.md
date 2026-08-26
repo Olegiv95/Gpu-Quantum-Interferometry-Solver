@@ -136,15 +136,15 @@ gqis-check --installation-test
 ```
 
 Both configurations have passed the GQIS installation test on Windows: the
-local-Toolkit configuration on the reference RTX 3080 workstation and the
-pip-installed CUDA configuration on an RTX 4060 Laptop GPU. The clean `ctk`
+local CUDA Toolkit configuration with the reference NVIDIA GeForce RTX 3080
+desktop GPU and the pip-installed CUDA configuration with an NVIDIA GeForce
+RTX 4060 Laptop GPU. The clean `ctk`
 test environment occupied approximately 2.5 GB because it included the CUDA
 runtime libraries.
 
 Do not install `cupy`, `cupy-cuda11x`, `cupy-cuda12x`, and `cupy-cuda13x`
 together in one environment. CUDA 11 and CUDA 13 installation options are
-provided but have not been tested on the reference workstation used for
-version 0.1.0.
+provided but have not been tested on the reference desktop system.
 
 ## Optional Dependencies
 
