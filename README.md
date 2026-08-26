@@ -34,28 +34,37 @@ Controlled timing comparisons are reported in [Validation And Performance](#vali
 
 ## Installation
 
-GQIS requires Python 3.10 or newer, an NVIDIA CUDA-capable GPU, a compatible NVIDIA driver, and CUDA compiler/runtime
-components matching the selected CuPy distribution. Continuous integration tests Python 3.10 through 3.12; newer
-Python versions remain installable but are not yet validated by the project. The tested Windows configuration uses a
-locally installed CUDA Toolkit. Install the matching GQIS and CuPy packages for CUDA 12 with:
+GQIS requires Python 3.10 or newer, an NVIDIA CUDA-capable GPU, a compatible NVIDIA driver, and CUDA libraries matching
+the selected CuPy package. Continuous integration tests Python 3.10 through 3.12. On Windows, GQIS has been tested both
+with a locally installed CUDA Toolkit and with CUDA runtime libraries downloaded and installed by pip through CuPy's
+`ctk` option.
+
+With a local CUDA 12 Toolkit, install:
 
 ```bash
 pip install "gqis[cuda12]"
 ```
 
-Replace `cuda12` with `cuda11` or `cuda13` when using a different CUDA major version. Add the `examples` extra for
-plotting support, then run the installation test:
+Without a local CUDA Toolkit, use pip to install the CUDA 12 runtime libraries and GQIS:
 
 ```bash
-pip install "gqis[cuda12,examples]"
+pip install "cupy-cuda12x[ctk]"
+pip install "gqis[cuda12]"
+```
+
+The pip-installed CUDA-library method above has been tested with CUDA 12. When using a local Toolkit with another CUDA
+major version, replace `cuda12` with `cuda11` or `cuda13`. Verify the core solver installation with:
+
+```bash
 gqis-check --installation-test
 ```
 
-The standard CuPy wheel expects the matching CUDA Toolkit components to be available. CuPy 14 can alternatively install
-the CUDA components from Python wheels with its `ctk` extra, leaving only the compatible NVIDIA driver as a system
-requirement. See [CUDA version
-selection](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/INSTALLATION_TEST.md#cuda-version-selection)
-for both configurations.
+The repository provides reference example scripts demonstrating the solver's main features. To run them, install their
+optional dependencies, including Matplotlib:
+
+```bash
+pip install "gqis[cuda12,examples]"
+```
 
 See the [installation and GPU test
 guide](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/INSTALLATION_TEST.md) for optional isolated

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gqis"
-version = "0.2.0.dev0"
+version = "0.1.1.dev0"
 description = "GPU Quantum Interferometry Solver for massive parameter sweeps of user-defined finite-dimensional Lindblad systems."
 readme = "README.md"
 requires-python = ">=3.10"
