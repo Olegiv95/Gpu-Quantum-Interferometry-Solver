@@ -1345,7 +1345,7 @@ def user_settings() -> dict:
         # Optional Benchmark-03 JSON. Missing GPU solvers use 1x; missing CPU
         # solvers use 10x. Relative paths are also searched beside this script
         # and in its parent directory.
-        "accuracy_dividers_file": "results\Benchmark_03_two_level_accuracy_timestep_sweep_optimal_dividers.json",
+        "accuracy_dividers_file": "results/Benchmark_03_two_level_accuracy_timestep_sweep_optimal_dividers.json",
         # None uses the calibration's target list. Otherwise use Benchmark 03
         # names, e.g. ("gqis_rk4", "gqis_dop853", "julia_gpu_fp32_fopt", "qutip_cpu").
         "accuracy_solvers": ("gqis_rk4","gqis_dop853","julia_gpu_fp32_fopt","qutip_cpu")

@@ -60,23 +60,26 @@ class CalibrationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             calibration.load_calibration(self.path, "four_level")
 
-    def test_export_selects_fastest_accepted_not_largest_divider(self):
+    def test_export_selects_coarsest_accepted_despite_timing_fluctuation(self):
         rows = [dict(target_solver="gqis_rk4", acceptable="yes", requested_step_count_divider=d,
                      target_steps_per_period=spp, target_calculation_time_s=t, rms=1e-5, max_abs=1e-4)
                 for d, spp, t in [(4, 512, 0.3), (8, 256, 0.2), (16, 128, 0.25)]]
         accuracy._save_optimal_dividers(rows, self.settings, self.path)
         payload = json.loads(self.path.read_text())
-        self.assertEqual(payload["solver_dividers"]["gqis_rk4"], 8)
-        self.assertEqual(payload["details"]["gqis_rk4"]["time_s"], 0.2)
+        self.assertEqual(payload["solver_dividers"]["gqis_rk4"], 16)
+        self.assertEqual(payload["details"]["gqis_rk4"]["time_s"], 0.25)
         self.assertEqual(payload["benchmark_settings"]["simulation_periods"], 2.0)
 
     def test_both_entry_points_accept_calibration_and_variants(self):
         for module, problem in [(two, "two_level"), (four, "four_level")]:
+            settings = {**module.user_settings(), "full_benchmark_action": "full"}
             with self.subTest(problem=problem), patch("sys.argv", [module.__name__, "full_benchmark",
                     "--accuracy-dividers-file", str(self.path), "--full-solvers",
                     "gqis_dop853,julia_gpu_fp32_fopt", "--no-plot"]), \
+                    patch.object(module, "user_settings", return_value=settings), \
                     patch.object(calibration, "run_calibrated_sweep") as run:
                 module.main()
+                run.assert_called_once()
                 self.assertEqual(run.call_args.kwargs["problem"], problem)
                 self.assertEqual(run.call_args.kwargs["solvers"], "gqis_dop853,julia_gpu_fp32_fopt")
 
@@ -117,6 +120,7 @@ class CalibrationTests(unittest.TestCase):
         save_benchmark_csv([old], source, metadata={"system_levels": "2"})
         original = source.read_bytes()
         options = {**plotting.user_settings(), "csv_file": str(source),
+                   "include_solvers": ("qutip_cpu",), "additional_csv_files": (),
                    "save_merged_csv": True, "show_plot": False,
                    "additional_measured_points": [{"solver": "qutip_cpu",
                        "side_dimension": 2048, "time_s": 43747.3}]}

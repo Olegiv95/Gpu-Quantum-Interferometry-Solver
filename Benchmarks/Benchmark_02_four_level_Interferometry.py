@@ -1202,7 +1202,7 @@ def user_settings() -> dict:
         "Output_filename": "Benchmark_02_full_benchmark",  # base name for CSV and PNG
         # Optional four-level Benchmark-03 JSON. Missing GPU solvers use 1x;
         # missing CPU solvers use 10x.
-        "accuracy_dividers_file": "results\Benchmark_03_four_level_accuracy_timestep_sweep_optimal_dividers.json",
+        "accuracy_dividers_file": "results/Benchmark_03_four_level_accuracy_timestep_sweep_optimal_dividers.json",
         # None uses the calibration's target list. Otherwise use Benchmark 03
         # names, e.g. ("gqis_rk4", "gqis_dop853", "julia_gpu_fp32_fopt").
         "accuracy_solvers": ("gqis_rk4","gqis_dop853","julia_gpu_fp32_fopt","qutip_cpu"),
