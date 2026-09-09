@@ -7,15 +7,19 @@ include CHANGELOG.md
 include LICENSE
 include CITATION.cff
 include requirements.txt
-include Benchmark_01_two_level_basic_julia_gpu.jl
-include Benchmark_01_full_benchmark.csv
-include Benchmark_01_full_benchmark.png
-include Benchmark_02_full_benchmark.csv
-include Benchmark_02_full_benchmark.png
-include Example_*.py
-include Example_01_two_level_basic.png
-include Example_02_four_level_interferogram.png
-include Benchmark_*.py
+recursive-include Benchmarks *.py *.jl *.bat
+recursive-include Benchmarks/presets *.json *.md
+include Benchmarks/results/Benchmark_01_full_benchmark.csv
+include Benchmarks/results/Benchmark_01_full_benchmark_plot.png
+include Benchmarks/results/Benchmark_02_full_benchmark.csv
+include Benchmarks/results/Benchmark_02_full_benchmark_plot.png
+include Benchmarks/results/Benchmark_03_*accuracy_timestep*.csv
+include Benchmarks/results/Benchmark_03_*accuracy_timestep*.png
+include Benchmarks/results/*_settings.json
+include Benchmarks/results/*_optimal_dividers.json
+recursive-include Examples *.py *.md
+include Examples/results/Example_01_two_level_basic.png
+include Examples/results/Example_02_four_level_interferogram.png
 include check_environment.py
 recursive-include gqis *.cu
 recursive-include tests *.py

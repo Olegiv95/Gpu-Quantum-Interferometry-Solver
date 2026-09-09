@@ -9,8 +9,9 @@ valuable and remain visible in the Git history.
 Search existing issues first. Bug and numerical-error reports should include a
 minimal reproducing model, relevant console output, the output of `gqis-check`,
 model and grid settings, and CUDA/CuPy versions. When relevant, report
-convergence after refining the fixed fourth-order Runge-Kutta (RK4) grid and comparison with QuTiP or
-another trusted reference.
+the selected solver and convergence after refining the time grid. The
+[accuracy benchmark](BENCHMARKS.md#accuracy-calibrated-dividers) provides examples of these comparisons.
+For general ODE problems, include the SymPy derivatives and initial conditions passed to `odesolve_2D`.
 
 Do not share credentials or confidential data. Please open an issue before
 implementing a substantial application programming interface (API) change or changing a numerical convention.
@@ -51,10 +52,11 @@ interface changes.
 
 Keep pull requests focused and explain their purpose, behavior changes, and
 validation. Changes to equation generation, time grids, initial states, caching,
-or the CUDA kernel need focused tests and, before merging, comparison with QuTiP
-in benchmark `diff` mode. Use `--qutip-output-density-divider 1` and a
-converged `--solver-steps-per-period`. If CUDA validation is unavailable, state
-that so a maintainer can perform it.
+or the CUDA kernel benefit from focused regression checks and a numerical comparison.
+Use [Benchmark 03](BENCHMARKS.md#accuracy-calibrated-dividers) for Lindblad accuracy sweeps;
+for general ODEs, use an analytic solution or an appropriate numerical reference.
+Report the method, step size and observable being compared. If CUDA validation is unavailable,
+state that so a maintainer can perform it.
 
 For performance changes, report hardware, software versions, grid, precision,
 solver steps, and whether timings are measured or extrapolated. Do not commit

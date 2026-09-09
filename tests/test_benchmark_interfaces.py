@@ -1,5 +1,6 @@
 from argparse import Namespace
 from itertools import combinations
+import json
 import sys
 
 import numpy as np
@@ -8,12 +9,29 @@ import sympy as sp
 
 import Benchmark_01_two_level as benchmark_01
 import Benchmark_02_four_level_Interferometry as benchmark_02
-from Benchmark_full_tools import (collect_equipment_info, extrapolate_loglog,
+import Benchmark_03_accuracy_timestep_sweep as benchmark_03
+from Benchmark_full_tools import (accuracy_divider_for_solver, collect_equipment_info,
+                                  extrapolate_loglog, load_accuracy_dividers,
                                   should_extrapolate_next,
                                   sympy_to_julia_fp32,
                                   )
 
 EXPECTED_SOLVERS = {"gpu", "python_cpu", "python_ode_cpu", "qutip_cpu", "julia_gpu"}
+
+
+def test_accuracy_divider_file_aliases_and_fallbacks(tmp_path):
+    path = tmp_path / "dividers.json"
+    path.write_text(json.dumps({
+        "format": "gqis_accuracy_dividers_v1",
+        "problem": "two_level",
+        "solver_dividers": {"gqis_rk4": 8, "julia_gpu_fp32": 6},
+    }), encoding="utf-8")
+    dividers = load_accuracy_dividers(path, expected_problem="two_level")
+
+    assert accuracy_divider_for_solver(dividers, "gpu") == 8
+    assert accuracy_divider_for_solver(dividers, "julia_gpu") == 6
+    assert accuracy_divider_for_solver(dividers, "qutip_cpu") == 10
+    assert accuracy_divider_for_solver(dividers, "gqis_dp5") == 1
 
 
 def test_two_level_diff_mode_accepts_every_solver_pair():
@@ -46,7 +64,7 @@ def test_four_level_mode_shorthands():
 def test_benchmark_metadata_records_numerical_package_versions():
     metadata = collect_equipment_info()
     assert metadata["python"]
-    assert metadata["gqis"] == "0.1.1"
+    assert metadata["gqis"] == "0.2.0"
     assert metadata["numpy"]
     assert metadata["sympy"]
     assert metadata["matplotlib"]
@@ -160,3 +178,24 @@ def test_four_level_julia_helper_uses_common_subexpressions(tmp_path):
     assert code.count("cos(") == 1
     assert "0.5f0" in code
     assert not any(operator in code for operator in (".^", ".*", "./"))
+
+
+def test_accuracy_julia_helper_uses_common_observable_transform(tmp_path):
+    assert benchmark_03.observable_output(-0.25, "four_level") == pytest.approx(0.25)
+    assert benchmark_03.observable_output(-0.25, "two_level") == pytest.approx(-0.25)
+    settings = benchmark_03.user_settings()
+    settings.update({"grid_side_dimension": 2, "simulation_periods": 1})
+
+    settings["problem"] = "four_level"
+    four_cfg = benchmark_03._accuracy_config(settings, 8, reference=False)
+    four_helper = tmp_path / "four_level.jl"
+    benchmark_03.write_julia_helper(four_helper, four_cfg)
+    four_code = four_helper.read_text(encoding="utf-8")
+    assert "out[j, i] = abs(sol[idx][end][" in four_code
+
+    settings["problem"] = "two_level"
+    two_cfg = benchmark_03._accuracy_config(settings, 8, reference=False)
+    two_helper = tmp_path / "two_level.jl"
+    benchmark_03.write_julia_helper(two_helper, two_cfg)
+    two_code = two_helper.read_text(encoding="utf-8")
+    assert "out[j, i] = sol[idx][end][" in two_code

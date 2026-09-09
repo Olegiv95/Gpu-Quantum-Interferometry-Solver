@@ -12,6 +12,23 @@ semantic version numbers.
 
 - Collect validation and benchmark results from additional NVIDIA GPUs.
 
+## [0.2.0] - 2026-09-09
+
+### Added
+
+- General SymPy ODE interface, `odesolve_2D`, with final-state, averaged and sampled-evolution outputs.
+- Live Duffing phase-space flow with device-resident state, direct GPU-prepared RGBA display,
+  an interactive frame-rate cap, timing logs and optional MP4 export.
+- Absolute initial time (`t_in`) and device-array outputs (`return_device`) in both solver APIs.
+- Selectable fixed-step CUDA integrators alongside the default RK4; see the [API reference](GQIS_API.md).
+- [Benchmark 03 accuracy sweeps](BENCHMARKS.md#accuracy-calibrated-dividers), saved references,
+  accuracy-calibrated scaling runs and CSV-based figure generation.
+
+### Changed
+
+- Moved tutorials and benchmarks into `Examples/` and `Benchmarks/`, with outputs in their `results/` folders.
+- Separated Example 06 rendering helpers from its ODE demonstration.
+
 ## [0.1.1] - 2026-08-26
 
 ### Changed
@@ -39,6 +56,7 @@ semantic version numbers.
 - Installable `gqis` package, environment checker, automated tests, public
   documentation, and MIT license.
 
-[Unreleased]: https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/releases/tag/v0.1.0

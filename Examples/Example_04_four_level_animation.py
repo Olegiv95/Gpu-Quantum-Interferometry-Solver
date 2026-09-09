@@ -1,5 +1,6 @@
 """Example 04: four-level animation tutorial using the GQIS backend."""
 
+from pathlib import Path
 import time
 
 import matplotlib.pyplot as plt
@@ -8,6 +9,15 @@ import sympy as sp
 from matplotlib.animation import FFMpegWriter, FuncAnimation
 
 from gqis import mesolve_2D
+
+
+def example_output_path(filename) -> Path:
+    """Place relative output names in this example directory's results folder."""
+    path = Path(filename).expanduser()
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parent / "results" / path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def tanh_space(start, stop, num, stretch_factor=3.0):
@@ -313,11 +323,12 @@ def main() -> None:
     ani = FuncAnimation(fig, update, frames=len(frame_indices), interval=20, blit=False)
 
     if save_mp4:
+        video_path = example_output_path(video_filename)
         writer = FFMpegWriter(fps=video_fps, codec="libx264", bitrate=-1,
                               extra_args=["-preset", ffmpeg_preset, "-crf",
                                           str(ffmpeg_crf), "-pix_fmt", "yuv420p"])
-        ani.save(video_filename, writer=writer, dpi=video_dpi)
-        print(f"\nSaved: {video_filename}")
+        ani.save(video_path, writer=writer, dpi=video_dpi)
+        print(f"\nSaved: {video_path}")
         print(f"Animation calculation and MP4 export time: {time.time() - start_total:.2f}s")
     else:
         print(f"Interactive animation setup time: {time.time() - start_total:.2f}s; "
@@ -377,6 +388,7 @@ def user_settings() -> dict:
         "solver_steps_per_period": 250,
         "grid_size": 512,  # square grid side per animation frame
         "save_mp4": True,  # False shows interactive animation only
+        # Relative filenames are saved in Examples/results/.
         "video_filename": "Example_04_four_level_animation.mp4",
         "video_fps": 5,  # playback rate, not the number of calculated frames
         "video_dpi": 120,  # saved video resolution scale

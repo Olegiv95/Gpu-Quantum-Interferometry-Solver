@@ -36,7 +36,7 @@ The short Python Package Index (PyPI) command works after the release has been u
 GitHub release directly, use:
 
 ```text
-python -m pip install "gqis[cuda12] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.1.1"
+python -m pip install "gqis[cuda12] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.2.0"
 gqis-check --installation-test
 ```
 
@@ -174,7 +174,7 @@ section](#optional-external-programs) below.
 Before the PyPI release, or to install an exact tagged source revision, use:
 
 ```text
-python -m pip install "gqis[cuda12,examples] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.1.1"
+python -m pip install "gqis[cuda12,examples] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.2.0"
 ```
 
 From a local clone, install normally or in editable development mode:
@@ -188,16 +188,22 @@ An editable installation imports the package directly from the clone, so code
 changes become available without reinstalling. A normal installation is better
 for testing the built package as an end user would receive it.
 
+Version 0.2.0 includes the [general ODE interface and Duffing example](README.md#general-ode-sweeps),
+additional integrators and [accuracy sweeps](BENCHMARKS.md#accuracy-calibrated-dividers).
+The tagged commands require the `v0.2.0` tag to be published; until then, install from the local source checkout.
+Use `v0.1.1` explicitly only when reproducing that older release.
+
 ## Dependency Policy And Tested Versions
 
 `pyproject.toml` is the package dependency source of truth. It declares minimum
 compatible versions so pip does not reject an older version unnecessarily.
 `requirements.txt` is a CUDA 12-oriented environment recipe.
 
-The versions below were validated during the GQIS 0.1.0 and 0.1.1 release
-preparations. Other versions may work, but they should be checked with
-`gqis-check --installation-test` and a numerical comparison before scientific
-use.
+The versions below record configurations tested during the GQIS 0.1.0 and 0.1.1
+release preparations; they are not an exclusive list of compatible versions.
+Other compatible versions can be used within the declared dependency ranges.
+For troubleshooting, `gqis-check --installation-test` reports the local configuration
+and runs a small installation check.
 
 | Dependency | Declared requirement | Tested version |
 | --- | --- | --- |

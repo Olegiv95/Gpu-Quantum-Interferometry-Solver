@@ -9,6 +9,10 @@ The physical model is symbolic: the Hamiltonian, drive, collapse operators, and 
 expressions in which selected physical parameters remain named symbols instead of immediately becoming fixed numbers.
 GQIS converts this model into the equations and CUDA code used for the parameter sweep.
 
+The same CUDA engine also accepts general SymPy-defined ordinary differential equations through `odesolve_2D`.
+This supports non-quantum applications such as nonlinear oscillators and initial-condition maps, with final-state,
+time-average and sampled-evolution outputs. See [General ODE Sweeps](#general-ode-sweeps).
+
 ## Why GQIS Was Created
 
 High-resolution quantum interferometry requires a parameter sweep that repeats the same time-evolution calculation for
@@ -93,7 +97,7 @@ Five mandatory positional arguments are:
 4. `mean_operator`: `N x N` operator associated with the physical quantity whose expectation value is requested.
 5. `tlist`: one-dimensional, uniformly spaced time grid beginning at zero.
 
-If `tlist` contains `M` time samples, the solver performs `M - 1` fixed fourth-order Runge-Kutta (RK4) steps. The example
+If `tlist` contains `M` time samples, the solver performs `M - 1` fixed steps, using fourth-order Runge-Kutta (RK4) by default. The example
 above returns one time-averaged expectation value of `mean_operator` for every combination of parameter values from the
 two sweep arrays.
 
@@ -101,30 +105,76 @@ See the [complete `mesolve_2D` application programming interface (API)
 reference](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md) for symbolic constants,
 initial-state sweeps, output modes, sampled time traces, kernel reuse, precision, timings, and code-generation controls.
 
+### Choosing A Solver
+
+Both APIs offer `rk4` (default), `lserk4`, `dp5`, `tsit5`, `anas5`, `ab5`, `alshina6` and `dop853`.
+Set `solver="tsit5"`, for example, to change the integration method. These are fixed-step implementations:
+RK4 is a useful starting point, low-storage LSRK4 reduces work-vector storage, and higher-order methods can
+reach tighter accuracy with coarser steps. The [solver comparison table](GQIS_API.md#available-fixed-step-solvers)
+summarizes their costs and uses; [Benchmark 03](BENCHMARKS.md#accuracy-calibrated-dividers) compares the time
+needed to satisfy chosen error limits.
+
+## General ODE Sweeps
+
+For a model already written as first-order ODEs, supply its derivatives, state symbols and initial values directly.
+For example, a driven double-well Duffing oscillator can be swept over damping and drive amplitude:
+
+```python
+import numpy as np
+import sympy as sp
+from gqis import odesolve_2D
+
+x, v, t, damping, amplitude = sp.symbols("x v t damping amplitude", real=True)
+result = odesolve_2D(
+    [v, -damping*v + x - x**3 + amplitude*sp.cos(t)],
+    [x, v], [0.1, 0], np.linspace(0, 20, 4097),
+    var_arrays={damping: np.linspace(0.1, 0.5, 64), amplitude: np.linspace(0.1, 0.4, 64)},
+    solver="rk4", output_mode="final")
+```
+
+`result` contains final position and velocity at each parameter pair, with shape `(64, 64, 2)`.
+Use `output_mode="mean"` for averages, or `return_time_trace=True` for sampled evolution.
+Both public APIs share the fixed-step integrators and symbolic optimizations; no quantum operators are needed here.
+
+[Example 06](Examples/Example_06_symbolic_ode_sweep.py) evolves a dense Duffing initial-condition cloud live on the GPU
+and displays its phase-space flow, with optional MP4 export. The [ODE API reference](GQIS_API.md#odesolve_2d-direct-sympy-ode-sweeps)
+describes output shapes and sampling options. See [accuracy calibration](BENCHMARKS.md#accuracy-calibrated-dividers)
+for the step-size comparison workflow; its bundled models are Lindblad systems, while a general ODE can be
+checked by refining its time grid and comparing with a suitable reference.
+
+For development builds, install the source checkout in [editable mode](INSTALLATION_TEST.md#source-and-development-installation).
+
 ## Examples
 
 | Script | Demonstration |
 | --- | --- |
-| `Example_01_two_level_basic.py` | Basic two-level interferogram. |
-| `Example_02_four_level_interferogram.py` | Coupled qubit-resonator interferogram. |
-| `Example_03_two_level_animation.py` | Two-level animation that reuses the generated equations and compiled kernel between frames. |
-| `Example_04_four_level_animation.py` | Four-level animation that changes selected physical constants without recompilation. |
-| `Example_05_initial_condition_sweep_gate_fidelity.py` | Initial-state sweep and gate-fidelity comparison. |
+| `Examples/Example_01_two_level_basic.py` | Basic two-level interferogram. |
+| `Examples/Example_02_four_level_interferogram.py` | Coupled qubit-resonator interferogram. |
+| `Examples/Example_03_two_level_animation.py` | Two-level animation that reuses the generated equations and compiled kernel between frames. |
+| `Examples/Example_04_four_level_animation.py` | Four-level animation that changes selected physical constants without recompilation. |
+| `Examples/Example_05_initial_condition_sweep_gate_fidelity.py` | Initial-state sweep and gate-fidelity comparison. |
+| `Examples/Example_06_symbolic_ode_sweep.py` | Live Duffing phase-space flow, GPU rasterization and optional MP4 export through the general ODE API. |
+
+[Example 06](Examples/Example_06_symbolic_ode_sweep.py) demonstrates the general ODE API with a live
+Duffing attractor animation. The simulation stays on the GPU, with fast display and optional video export;
+see its [animation guide](Examples/Example_06.md) for display settings and timing logs.
 
 Run an example from the repository root:
 
 ```bash
-python Example_01_two_level_basic.py
+python Examples/Example_01_two_level_basic.py
 ```
 
 The examples print the actual preparation and calculation time for their selected grid, time grid, and physical
 parameters. Animation examples print per-frame times, plus total video calculation/export time when saving. Reduce
 `grid_size` in the `user_settings()` block for a quicker run or for a GPU with less memory.
+Relative output filenames are written to `Examples/results/`. Presentation media in that directory can be committed,
+while optional numerical-data exports remain ignored by Git.
 
 <table>
   <tr>
-    <td width="50%"><img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Example_01_two_level_basic.png" alt="Two-level interferogram"></td>
-    <td width="50%"><img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Example_02_four_level_interferogram.png" alt="Four-level interferogram"></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Examples/results/Example_01_two_level_basic.png" alt="Two-level interferogram"></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Examples/results/Example_02_four_level_interferogram.png" alt="Four-level interferogram"></td>
   </tr>
   <tr align="center">
     <td><strong>Example 01:</strong> two-level interferogram</td>
@@ -154,7 +204,7 @@ Output modes include a time-averaged expectation value, the expectation value at
 density matrix, and an optional sampled time trace of the expectation value; see the [API
 output-mode
 reference](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md#initial-state-and-output)
-for details. [Example 05](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/Example_05_initial_condition_sweep_gate_fidelity.py)
+for details. [Example 05](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/Examples/Example_05_initial_condition_sweep_gate_fidelity.py)
 uses `output_mode="final_rho"` for final-state gate-fidelity calculations. GQIS does not interpret physical units or basis
 labels; define all model quantities in compatible units and one consistent basis.
 
@@ -178,7 +228,7 @@ The Hamiltonian coefficients and time variable must use mutually consistent unit
    a coupled system of independent real ODEs, eliminates repeated operations, precomputes parameter-only
    combinations where possible, and emits CUDA C expressions for the right-hand side (RHS), meaning the time
    derivatives in the ODE system.
-2. **CUDA execution kernel:** uses a minimal fixed-step RK4 implementation with one parameter set per GPU thread. In
+2. **CUDA execution kernel:** uses the selected fixed-step method, with RK4 as the default and one parameter set per GPU thread. In
    averaged and final-output modes, it retains only the state and intermediate values needed for integration, calculates
    the requested expectation values during evolution, and returns the time average or final reduced density matrix
    without storing the complete time evolution in GPU memory.
@@ -214,7 +264,10 @@ $f(t_n,y_n)$ is the vector of all derivatives evaluated at that time and state. 
 $M$ time samples contains $t_0,\ldots,t_{M-1}$ and therefore defines $M-1$ integration intervals, each with duration
 $h=t_{n+1}-t_n$.
 
-This RK4 update is applied by every GPU thread to its own evolution with its parameter set.
+With RK4 selected, each GPU thread applies this update to its own evolution and parameter set.
+Other available methods include LSRK4, DP5, Tsit5, Anas5, AB5, Alshina6 and DOP853; see the
+[API reference](GQIS_API.md) for their costs and intended uses. For general ODEs, `odesolve_2D`
+accepts SymPy derivatives and initial conditions directly, using the same CUDA execution path.
 
 For a new model, these components perform the following pipeline:
 
@@ -246,7 +299,7 @@ For a new model, these components perform the following pipeline:
     <td colspan="6"></td>
   </tr>
   <tr align="center">
-    <td><strong>9.</strong> Evolve with RK4 and<br>calculate expectation values</td>
+    <td><strong>9.</strong> Evolve with the selected method and<br>calculate expectation values</td>
     <td>&rarr;</td>
     <td><strong>10.</strong> Return the 2D<br>NumPy result</td>
     <td colspan="4"></td>
@@ -274,23 +327,25 @@ Important implementation choices are:
 The benchmark scripts support the solver rather than define its interface. They compare GQIS output with trusted CPU
 solvers and show how calculation time changes with the size of the parameter grid:
 
-- `Benchmark_01_two_level.py`: driven qubit model
-- `Benchmark_02_four_level_Interferometry.py`: coupled qubit-resonator model
+- `Benchmarks/Benchmark_01_two_level.py`: driven qubit model
+- `Benchmarks/Benchmark_02_four_level_Interferometry.py`: coupled qubit-resonator model
+- `Benchmarks/Benchmark_03_accuracy_timestep_sweep.py`: accuracy versus step size and calculation time for both models
 
-On the reference NVIDIA GeForce RTX 3080 desktop GPU, the largest measured `32768 x 32768` grids contain 1.07 billion
-independent parameter sets,
-with 10,240 RK4 steps per simulation. GQIS completed these runs in about 1 minute 44 seconds for the two-level model and
-7 minutes 1 second for the four-level model. Across the linear scaling region, where calculation time increases in
-proportion to the number of simulations, the average reported speedups were about 69,000 times and 24,000 times over
-QuTiP timings extrapolated from smaller measured grids for the two- and four-level models, respectively.
+On the reference NVIDIA GeForce RTX 3080 desktop GPU, the largest measured `32768 x 32768` grids contain
+1.07 billion independent parameter sets. GQIS(RK4) completed the two-level run in **98.43 seconds** with
+10,240 steps per simulation, and the four-level run in **303.85 seconds** with 5,840 steps per simulation.
+These time grids were selected through accuracy calibration.
+Across grids from `4096 x 4096` to `32768 x 32768`, average point-by-point speedups were approximately
+46,900 times and 50,700 times over extrapolated QuTiP timings for the two- and four-level models, respectively.
+See the [benchmark results](BENCHMARKS.md#reference-results) for timing definitions and measured/extrapolated status.
 
 The compact GQIS kernel retains the reduced state and RK4 working values instead of storing each complete time
 evolution. In the tested large sweeps, this execution design used less video random-access memory (VRAM) than the Julia
 comparison solver.
 
 <p align="center">
-  <a href="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Benchmark_01_full_benchmark.png">
-    <img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Benchmark_01_full_benchmark.png" alt="Two-level calculation-time scaling benchmark" width="900">
+  <a href="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Benchmarks/results/Benchmark_01_full_benchmark_plot.png">
+    <img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Benchmarks/results/Benchmark_01_full_benchmark_plot.png" alt="Two-level calculation-time scaling benchmark" width="900">
   </a>
 </p>
 <p align="center"><em>Two-level scaling reference. Click the figure for the full-resolution result.</em></p>
@@ -301,17 +356,27 @@ and mark extrapolated data. See [benchmark validation,
 methodology, and complete reference results](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md)
 before interpreting or reproducing these numbers.
 
-> **Numerical accuracy disclaimer:** GQIS 0.1.1 is an alpha release. The current CUDA solver uses fixed-step
-> fourth-order Runge-Kutta (RK4) integration on the user-supplied uniform time grid. Verify time-grid convergence by
-> repeating calculations with smaller steps. For important results, compare against a trusted adaptive reference solver,
-> which automatically adjusts its internal time steps. RK4 is not suitable for every problem, and its accuracy and
-> stability depend on the time-step size. QuTiP is the primary reference used by the included validation benchmarks.
+Accuracy depends on the selected solver and the step size supplied by the user. The
+[Benchmark 03 accuracy results and calibration workflow](BENCHMARKS.md#accuracy-calibrated-dividers)
+show how error and calculation time vary with time-grid resolution in the two- and four-level examples.
+The same benchmark can help you choose a solver and step size that meet the accuracy needs of your own model.
+
+In the saved 64×64 two-level comparison against QuTiP, fine-grid GQIS FP32 results reached absolute RMS differences
+of about `3–4 × 10⁻⁶` and maximum differences of about `3.5 × 10⁻⁵` in the measured observable. These are results
+for that model and averaging window, rather than a universal FP32 accuracy floor. See
+[precision and Julia comparison notes](BENCHMARKS.md#precision-and-julia-comparison-notes) for roundoff,
+stock and modified Julia stepping, and preparation-time definitions.
+
+Start with the [64×64 Benchmark 03 preset](Benchmarks/presets/Benchmark_03_two_level_64.json).
+[Reproducing accuracy figures](BENCHMARKS.md#reproducing-accuracy-figures) explains launching presets,
+reusing references and rebuilding plots from saved CSV files.
 
 ## Project Layout
 
 - `gqis/` contains the solver, public interface, environment checker, and CUDA kernel template.
-- `Example_*.py` contains runnable tutorials.
-- `Benchmark_*.py` contains numerical comparisons and scaling measurements.
+- `Examples/` contains runnable tutorials; their generated files go to `Examples/results/`.
+- `Benchmarks/` contains numerical comparisons and scaling measurements; their generated files go to
+  `Benchmarks/results/`.
 - `GQIS_API.md`, `INSTALLATION_TEST.md`, and `BENCHMARKS.md` provide detailed guidance.
 - `tests/` and `.github/workflows/ci.yml` contain automated checks.
 

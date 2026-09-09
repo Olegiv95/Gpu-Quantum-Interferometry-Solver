@@ -1,5 +1,6 @@
 """Example 01: basic two-level interferogram with GQIS ``mesolve_2D``."""
 
+from pathlib import Path
 import time
 
 import matplotlib.pyplot as plt
@@ -7,6 +8,26 @@ import numpy as np
 import sympy as sp
 
 from gqis import mesolve_2D
+
+
+def example_output_path(filename) -> Path:
+    """Place relative output names in this example directory's results folder."""
+    path = Path(filename).expanduser()
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parent / "results" / path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def save_map_csv(filename, eps_axis, A_axis, values):
+    """Save Origin-friendly XYZ data without creating another full-size grid."""
+    path = example_output_path(filename)
+    with path.open("w", encoding="utf-8", newline="") as output:
+        output.write("epsilon_over_Delta,A_over_Delta,qubit_occupation\n")
+        for A_value, row in zip(A_axis, values):
+            data = np.column_stack((eps_axis, np.full(eps_axis.size, A_value), row))
+            np.savetxt(output, data, delimiter=",", fmt="%.9g")
+    print(f"Saved numerical data: {path}")
 
 
 def gpu_time_evolution(A_list, eps_list, tlist, delta, w, gamma1, gamma2):
@@ -76,6 +97,9 @@ def main() -> None:
     p_mat = gpu_time_evolution(A_list, eps_list, tlist, delta, w, gamma1, gamma2)
     print(f"GPU solve time: {time.time() - solve_start:.2f}s")  # Print solving time
 
+    if settings["save_data"]:
+        save_map_csv(settings["data_filename"], eps_list / delta, A_list / delta, p_mat)
+
     # Plot ----------------------------------------------------------------
     fig, ax = plt.subplots(figsize=(8, 8))
     im = ax.imshow(p_mat, aspect="auto", cmap="jet", origin="lower",
@@ -112,6 +136,10 @@ def user_settings() -> dict:
         "grid_size": 512,  # square grid side; total simulations = grid_size**2
         # Increase if mesolve_2D reports non-finite output.
         "solver_steps_per_period": 256,
+        # Optional numerical-data export. Relative names go to Examples/results/.
+        # CSV contains Origin-friendly XYZ columns and is ignored by Git.
+        "save_data": False,
+        "data_filename": "Example_01_two_level_basic_data.csv",
     }
 
 

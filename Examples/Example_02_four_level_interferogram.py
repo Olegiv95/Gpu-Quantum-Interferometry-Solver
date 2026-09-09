@@ -1,5 +1,6 @@
 """Example 02: four-level interferogram (minimal GPU tutorial)."""
 
+from pathlib import Path
 import time
 
 import matplotlib.pyplot as plt
@@ -7,6 +8,27 @@ import numpy as np
 import sympy as sp
 
 from gqis import mesolve_2D
+
+
+def example_output_path(filename) -> Path:
+    """Place relative output names in this example directory's results folder."""
+    path = Path(filename).expanduser()
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parent / "results" / path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def save_map_csv(filename, eps_axis, A_axis, linear_values, db_values):
+    """Save Origin-friendly XYZ data without creating another full-size grid."""
+    path = example_output_path(filename)
+    with path.open("w", encoding="utf-8", newline="") as output:
+        output.write("epsilon_over_Delta,A_over_Delta,response_linear,response_dB\n")
+        for A_value, linear_row, db_row in zip(A_axis, linear_values, db_values):
+            data = np.column_stack((eps_axis, np.full(eps_axis.size, A_value),
+                                    linear_row, db_row))
+            np.savetxt(output, data, delimiter=",", fmt="%.9g")
+    print(f"Saved numerical data: {path}")
 
 
 def gpu_time_evolution(A_list, eps_list, tlist, delta, w, gamma1, gamma2, kappa, Ap, g1, wr2,
@@ -144,6 +166,10 @@ def main() -> None:
     # Convert the response to dB for display and plot A vertically, eps horizontally.
     map_db = 10.0 * np.log10(np.clip(p_mat, 1e-15, None))
 
+    if settings["save_data"]:
+        save_map_csv(settings["data_filename"], eps_list / wq1, A_list / wq1,
+                     p_mat, map_db)
+
     fig, ax = plt.subplots(figsize=(8, 8))
     im = ax.imshow(map_db, aspect="auto", cmap="jet", origin="lower",
                    extent=[eps_list[0] / wq1, eps_list[-1] / wq1, 0.0, A_max_abs / wq1])
@@ -185,6 +211,10 @@ def user_settings() -> dict:
         "grid_size": 512,  # square grid side; total simulations = grid_size**2
         # Increase if mesolve_2D reports non-finite output.
         "solver_steps_per_period": 256,
+        # Optional numerical-data export. Relative names go to Examples/results/.
+        # CSV contains Origin-friendly XYZ columns and is ignored by Git.
+        "save_data": False,
+        "data_filename": "Example_02_four_level_interferogram_data.csv",
     }
 
 

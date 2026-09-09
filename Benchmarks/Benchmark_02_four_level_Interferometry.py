@@ -22,10 +22,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sympy as sp
 
-from Benchmark_full_tools import (benchmark_sides, collect_equipment_info, extrapolate_loglog,
+from Benchmark_full_tools import (accuracy_divider_for_solver, benchmark_output_path,
+                                  benchmark_sides, collect_equipment_info,
+                                  extrapolate_loglog, load_accuracy_dividers,
                                   parse_solver_list, plot_benchmark, print_equipment_info,
-                                  save_benchmark_csv, should_extrapolate_next,
-                                  sympy_to_julia_fp32, terminate_process_tree,
+                                  run_calibrated_csv_update, save_benchmark_csv,
+                                  should_extrapolate_next, sympy_to_julia_fp32,
+                                  terminate_process_tree,
                                   )
 from gqis import build_reduced_lindblad_rhs, mesolve_2D
 
@@ -523,7 +526,8 @@ def run_julia_gpu_solver(cfg: FourCfg, julia_cmd: str = "julia",
             print(f"julia_gpu timings: prep={prep_time:.3f}s julia_solve={solve_time:.3f}s "
                   f"subprocess_total={compute_time:.3f}s")
         out = np.loadtxt(out_csv, delimiter=",", dtype=np.float32)
-    return out, SolverTiming(total=solve_time, prep=prep_time, compute=solve_time)
+    return out, SolverTiming(total=solve_time, prep=max(0.0, prep_time + compute_time - solve_time),
+                              compute=solve_time)
 
 
 def run_solver(name: str, cfg: FourCfg, julia_cmd: str, timeout_s: Optional[float] = None):
@@ -540,8 +544,8 @@ def run_solver(name: str, cfg: FourCfg, julia_cmd: str, timeout_s: Optional[floa
     raise ValueError(f"Unknown solver '{name}'")
 
 
-def build_cpu_cfg(cfg: FourCfg, num_t_divider: int) -> FourCfg:
-    """Use a coarser time grid for CPU reference solvers."""
+def build_divided_cfg(cfg: FourCfg, num_t_divider: float) -> FourCfg:
+    """Return the same physical problem on a divided uniform time grid."""
     if num_t_divider <= 1:
         return cfg
     cpu_num_steps = max(1, int(round(cfg.num_steps / num_t_divider)))
@@ -638,18 +642,28 @@ def warmup_gpu_solver_for_benchmark(cfg: FourCfg, side: int) -> float:
 
 def run_full_benchmark(cfg: FourCfg, *, julia_cmd: str, solvers: tuple[str, ...], min_side: int,
                        max_side: int, time_limit: float, output_filename: str, show_plot: bool,
-                       python_cpu_divider: int, python_ode_cpu_divider: int,
-                       qutip_cpu_divider: int, simulation_periods: float,
-                       solver_steps_per_period: int) -> list[dict]:
+                       python_cpu_divider: float, python_ode_cpu_divider: float,
+                       qutip_cpu_divider: float, simulation_periods: float,
+                       solver_steps_per_period: int,
+                       solver_dividers: dict[str, float] | None = None) -> list[dict]:
     """Run a timing sweep over square grids and extrapolate slow backends."""
     sides = benchmark_sides(min_side, max_side)
     rows = []
     histories: dict[str, list[tuple[int, float]]] = {s: [] for s in solvers}
     stopped: dict[str, bool] = {s: False for s in solvers}
     gpu_first_rhs_stage_s = np.nan
+    gpu_startup_s = np.nan
+    if solver_dividers is None:
+        solver_dividers = {"gpu": 1.0, "julia_gpu": 1.0,
+                           "python_cpu": float(python_cpu_divider),
+                           "python_ode_cpu": float(python_ode_cpu_divider),
+                           "qutip_cpu": float(qutip_cpu_divider)}
 
     if "gpu" in solvers:
-        gpu_first_rhs_stage_s = warmup_gpu_solver_for_benchmark(cfg, sides[0])
+        startup_start = time.perf_counter()
+        gpu_first_rhs_stage_s = warmup_gpu_solver_for_benchmark(
+            build_divided_cfg(cfg, solver_dividers.get("gpu", 1.0)), sides[0])
+        gpu_startup_s = time.perf_counter() - startup_start
 
     for solver_name in solvers:
         print(f"\nFull benchmark solver: {solver_name}")
@@ -682,11 +696,11 @@ def run_full_benchmark(cfg: FourCfg, *, julia_cmd: str, solvers: tuple[str, ...]
                                                    dtype=np.float32),
                                A_list=np.linspace(float(cfg.A_list[0]), float(cfg.A_list[-1]), side,
                                                  dtype=np.float32), progress=False)
-            side_cpu_cfgs = {"python_cpu": build_cpu_cfg(side_cfg, python_cpu_divider),
-                             "python_ode_cpu": build_cpu_cfg(side_cfg, python_ode_cpu_divider),
-                             "qutip_cpu": build_cpu_cfg(side_cfg, qutip_cpu_divider)}
+            side_solver_cfgs = {
+                name: build_divided_cfg(side_cfg, solver_dividers.get(name, 1.0))
+                for name in solvers}
             try:
-                effective_cfg = side_cpu_cfgs.get(solver_name, side_cfg)
+                effective_cfg = side_solver_cfgs[solver_name]
                 if solver_name == "gpu":
                     _p_mat, timing = run_solver_with_status(solver_name, effective_cfg, julia_cmd)
                 else:
@@ -714,8 +728,10 @@ def run_full_benchmark(cfg: FourCfg, *, julia_cmd: str, solvers: tuple[str, ...]
                          "prep_s": float(timing.prep), "calc_s": float(timing.compute),
                          "status": status})
 
-    out_csv = Path(f"{output_filename}.csv")
-    out_png = Path(f"{output_filename}.png")
+    output_stem = benchmark_output_path(
+        output_filename, script_dir=Path(__file__).resolve().parent)
+    out_csv = Path(f"{output_stem}.csv")
+    out_png = Path(f"{output_stem}.png")
     metadata = collect_equipment_info()
     metadata.update({
         "system_levels": str(cfg.N), "benchmark_solvers": ",".join(solvers),
@@ -726,6 +742,11 @@ def run_full_benchmark(cfg: FourCfg, *, julia_cmd: str, solvers: tuple[str, ...]
         "python_cpu_step_density_divider": str(python_cpu_divider),
         "python_ode_output_density_divider": str(python_ode_cpu_divider),
         "qutip_output_density_divider": str(qutip_cpu_divider),
+        "solver_time_grid_dividers": ";".join(
+            f"{name}:{solver_dividers.get(name, 1.0):g}" for name in solvers),
+        "solver_steps_per_trajectory_by_solver": ";".join(
+            f"{name}:{build_divided_cfg(cfg, solver_dividers.get(name, 1.0)).num_steps}"
+            for name in solvers),
         "gpu_precision": "fp32", "python_cpu_precision": "fp64",
         "python_ode_cpu_precision": "fp64", "qutip_cpu_precision": "fp64",
         "julia_gpu_precision": "fp32", "cpu_workers": str(cfg.workers),
@@ -742,13 +763,11 @@ def run_full_benchmark(cfg: FourCfg, *, julia_cmd: str, solvers: tuple[str, ...]
     })
     if np.isfinite(gpu_first_rhs_stage_s):
         metadata["gpu_first_rhs_stage_s"] = f"{gpu_first_rhs_stage_s:.9g}"
+    if np.isfinite(gpu_startup_s):
+        metadata["gpu_startup_s_gpu"] = f"{gpu_startup_s:.9g}"
     print_equipment_info(metadata)
     save_benchmark_csv(rows, out_csv, metadata=metadata)
     reference_lines = []
-    if np.isfinite(gpu_first_rhs_stage_s):
-        reference_lines.append({"y": gpu_first_rhs_stage_s,
-                                "label": f"GPU first RHS/codegen {gpu_first_rhs_stage_s:.3g}s",
-                                "color": "0.25", "linestyle": ":"})
     plot_benchmark(rows, solvers, out_png,
                    title="Calculation time scaling for different numerical approaches "
                          "(4-level system)",
@@ -776,6 +795,8 @@ def selected_solvers(mode: str, solver: str, solver_b: str) -> set[str]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Four-level interferometry benchmark.")
+    parser.add_argument("--accuracy-dividers-file", help="Benchmark 03 calibration JSON")
+    parser.add_argument("--accuracy-settings", help="matching settings JSON for a legacy calibration")
     parser.add_argument("mode_or_solver", nargs="?",
                         help="single/all/diff/full_benchmark or a solver name")
     parser.add_argument("--mode", choices=["single", "all", "diff", "full_benchmark"],
@@ -845,6 +866,38 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     settings = user_settings()
+    calibration_file = args.accuracy_dividers_file or settings["accuracy_dividers_file"]
+    requested_mode = args.mode or args.mode_or_solver or settings["mode"]
+    if calibration_file and requested_mode == "full_benchmark":
+        action = str(settings.get("full_benchmark_action", "full")).strip().lower()
+        if action not in {"full", "update"}:
+            raise ValueError("full_benchmark_action must be 'full' or 'update'.")
+
+        if action == "update":
+            output_stem = args.output_filename or settings["Output_filename"]
+            target_csv = (str(output_stem) if str(output_stem).lower().endswith(".csv")
+                          else f"{output_stem}.csv")
+            run_calibrated_csv_update(
+                calibration_file, problem="four_level", target_csv=target_csv,
+                runs=(settings["benchmark_update_preset"],),
+                script_dir=Path(__file__).resolve().parent,
+                settings_file=args.accuracy_settings,
+                julia_cmd=args.julia_cmd or settings["julia_cmd"],
+                time_limit=args.bench_solver_time_limit or settings["bench_solver_time_limit"],
+                backup_csv=True, refresh_extrapolated_points=True, update_plot=True,
+                show_plot=not args.no_plot)
+            return
+
+        from Benchmark_accuracy_calibration import run_calibrated_sweep
+        run_calibrated_sweep(
+            calibration_file, problem="four_level", settings_file=args.accuracy_settings,
+            solvers=args.full_solvers or settings.get("accuracy_solvers"),
+            min_side=args.bench_min_side_size or settings["bench_min_side_size"],
+            max_side=args.bench_max_side_size or settings["bench_max_side_size"],
+            time_limit=args.bench_solver_time_limit or settings["bench_solver_time_limit"],
+            output_filename=args.output_filename or settings["Output_filename"],
+            julia_cmd=args.julia_cmd or settings["julia_cmd"], show_plot=not args.no_plot)
+        return
 
     mode = settings["mode"]
     solver = settings.get("solver", "gpu")
@@ -919,6 +972,7 @@ def main() -> None:
     python_cpu_num_t_divider = settings["python_cpu_step_density_divider"]
     python_ode_cpu_num_t_divider = settings["python_ode_output_density_divider"]
     qutip_cpu_num_t_divider = settings["qutip_output_density_divider"]
+    accuracy_dividers_file = calibration_file
 
     if args.solver_steps_per_period is not None:
         solver_steps_per_period = int(args.solver_steps_per_period)
@@ -940,9 +994,21 @@ def main() -> None:
     if args.qutip_cpu_num_t_divider is not None:
         qutip_cpu_num_t_divider = int(args.qutip_cpu_num_t_divider)
 
+    accuracy_dividers = None
+    if accuracy_dividers_file:
+        accuracy_dividers = load_accuracy_dividers(
+            accuracy_dividers_file, expected_problem="four_level",
+            script_dir=Path(__file__).resolve().parent)
+        python_cpu_num_t_divider = accuracy_divider_for_solver(
+            accuracy_dividers, "python_cpu")
+        python_ode_cpu_num_t_divider = accuracy_divider_for_solver(
+            accuracy_dividers, "python_ode_cpu")
+        qutip_cpu_num_t_divider = accuracy_divider_for_solver(
+            accuracy_dividers, "qutip_cpu")
+        print(f"Loaded accuracy dividers: {accuracy_dividers_file}")
     if (python_cpu_num_t_divider <= 0 or python_ode_cpu_num_t_divider <= 0
             or qutip_cpu_num_t_divider <= 0):
-        raise ValueError("CPU time-grid divider values must be positive integers.")
+        raise ValueError("CPU time-grid divider values must be positive numbers.")
     mode, solver = normalize_mode_solver(mode, solver)
     active_solvers = selected_solvers(mode, solver, solver_b)
     if mode == "full_benchmark":
@@ -974,9 +1040,15 @@ def main() -> None:
                   Ap=Ap, g1=g1, wr2=wr2, A_list=A_list, eps_list=eps_list, tlist=tlist,
                   warmup_time=warmup_time, workers=workers, timings=bool(args.timings),
                   regime_name=regime, progress=not args.no_progress)
-    cpu_cfgs = {"python_cpu": build_cpu_cfg(cfg, python_cpu_num_t_divider),
-                "python_ode_cpu": build_cpu_cfg(cfg, python_ode_cpu_num_t_divider),
-                "qutip_cpu": build_cpu_cfg(cfg, qutip_cpu_num_t_divider)}
+    solver_dividers = {
+        name: (accuracy_divider_for_solver(accuracy_dividers, name)
+               if accuracy_dividers is not None else
+               {"python_cpu": python_cpu_num_t_divider,
+                "python_ode_cpu": python_ode_cpu_num_t_divider,
+                "qutip_cpu": qutip_cpu_num_t_divider}.get(name, 1.0))
+        for name in SOLVER_NAMES}
+    cpu_cfgs = {name: build_divided_cfg(cfg, divider)
+                for name, divider in solver_dividers.items()}
 
     total_steps = len(A_list) * len(eps_list) * cfg.num_steps
     print(f"regime={regime} wd_mhz={wd_mhz:.1f} "
@@ -988,7 +1060,10 @@ def main() -> None:
           f"(steps={cpu_cfgs['python_ode_cpu'].num_steps}), "
           f"qutip_cpu={qutip_cpu_num_t_divider} "
           f"(steps={cpu_cfgs['qutip_cpu'].num_steps})")
-    print(f"Total trajectory-step updates = {len(eps_list)}*{len(A_list)}*"
+    if accuracy_dividers is not None:
+        print("Calibrated solver dividers: " + ", ".join(
+            f"{name}={divider:g}" for name, divider in solver_dividers.items()))
+    print(f"Base trajectory-step updates = {len(eps_list)}*{len(A_list)}*"
           f"{cfg.num_steps} = {total_steps:.4e}")
 
     results: Dict[str, np.ndarray] = {}
@@ -1005,7 +1080,8 @@ def main() -> None:
                            python_ode_cpu_divider=python_ode_cpu_num_t_divider,
                            qutip_cpu_divider=qutip_cpu_num_t_divider,
                            simulation_periods=simulation_periods,
-                           solver_steps_per_period=solver_steps_per_period)
+                           solver_steps_per_period=solver_steps_per_period,
+                           solver_dividers=solver_dividers)
         raise SystemExit(0)
 
     if mode == "single":
@@ -1079,8 +1155,15 @@ def user_settings() -> dict:
     # mode_settings = {"mode": "diff", "solver": "gpu", "solver_b": "qutip_cpu"}
     # mode_settings = {"mode": "all"}
 
+    # Presets for full_benchmark_action = "update". Uncomment one line to use it.
+    update_preset = {"solver": "julia_gpu_fp32_fopt", "min_side": 16, "max_side": 2048}
+    # update_preset = {"solver": "qutip_cpu", "min_side": 16, "max_side": 256}
+    # update_preset = {"solver": "gqis_rk4", "min_side": 16, "max_side": 32768}
+
     return {
         **mode_settings,
+        "full_benchmark_action": "update",  # "full"   = run the normal complete scaling benchmark.,"update" = rerun only update_preset below and replace those timings
+        "benchmark_update_preset": update_preset,
         "julia_cmd": "julia",  # Julia executable name or full path
         # Physics parameters.
         "regime": "wd500",  # "wd500" or "wd1500"
@@ -1112,9 +1195,16 @@ def user_settings() -> dict:
         "qutip_output_density_divider": adaptive_cpu_output_density_divider,
         # Full-benchmark sweep limits.
         "bench_min_side_size": 16,  # smallest square-grid side dimension for benchmark
-        "bench_max_side_size": 8192 * 2,  # biggest square-grid side dimension for benchmark
-        "bench_solver_time_limit": 200.0,  # terminate calculation above this duration in seconds
-        "Output_filename": "Benchmark_02_full_benchmark",  # base filename for CSV and PNG output
+        "bench_max_side_size": 8192 * 4,  # biggest square-grid side dimension for benchmark
+        "bench_solver_time_limit": 200.0*4,  # terminate calculation above this duration in seconds
+        # Relative output names are saved in Benchmarks/results/.
+        "Output_filename": "Benchmark_02_full_benchmark",  # base name for CSV and PNG
+        # Optional four-level Benchmark-03 JSON. Missing GPU solvers use 1x;
+        # missing CPU solvers use 10x.
+        "accuracy_dividers_file": "results\Benchmark_03_four_level_accuracy_timestep_sweep_optimal_dividers.json",
+        # None uses the calibration's target list. Otherwise use Benchmark 03
+        # names, e.g. ("gqis_rk4", "gqis_dop853", "julia_gpu_fp32_fopt").
+        "accuracy_solvers": ("gqis_rk4","gqis_dop853","julia_gpu_fp32_fopt","qutip_cpu"),
     }
 
 
