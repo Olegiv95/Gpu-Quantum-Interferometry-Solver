@@ -95,7 +95,8 @@ def odesolve_2D(rhs, state_symbols, y0, tlist, *, var_arrays=None, const_values=
     if any(sp.simplify(sp.im(e)) != 0 for e in [*expressions, *(initial or [])]):
         raise ValueError("ODE states and RHS must be real; split complex states into real/imaginary parts.")
     obs = obs.xreplace(replacements)
-    remap = lambda mapping: {replacements[s]: value for s, value in mapping.items()}
+    def remap(mapping):
+        return {replacements[s]: value for s, value in mapping.items()}
     sweeps = remap(sweeps)
     if not sweeps:
         sweeps = {sp.Symbol("ode_dummy", real=True): np.zeros(1)}

@@ -1162,7 +1162,8 @@ def user_settings() -> dict:
 
     return {
         **mode_settings,
-        "full_benchmark_action": "update",  # "full"   = run the normal complete scaling benchmark.,"update" = rerun only update_preset below and replace those timings
+        # "full" runs the complete sweep; "update" replaces only update_preset timings.
+        "full_benchmark_action": "update",
         "benchmark_update_preset": update_preset,
         "julia_cmd": "julia",  # Julia executable name or full path
         # Physics parameters.

@@ -39,7 +39,8 @@ class CalibrationTests(unittest.TestCase):
         self.assertEqual(calibration.calibrated_config("gqis_rk4", cfg, loaded).solver_steps_per_period, 256)
         dop = calibration.calibrated_config("gqis_dop853", cfg, loaded)
         self.assertEqual((dop.solver_steps_per_period, dop.num_steps), (102, 204))
-        self.assertEqual(calibration.calibrated_config("julia_gpu_fp32_fopt", cfg, loaded).solver_steps_per_period, 2048)
+        julia = calibration.calibrated_config("julia_gpu_fp32_fopt", cfg, loaded)
+        self.assertEqual(julia.solver_steps_per_period, 2048)
         self.assertEqual(calibration.calibrated_config("qutip_cpu", cfg, loaded).solver_steps_per_period, 205)
 
     def test_legacy_manifest_and_problem_checks(self):

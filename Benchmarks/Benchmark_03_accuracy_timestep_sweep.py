@@ -36,9 +36,10 @@ MANUAL_CUPY_CACHE = PROJECT_ROOT / ".gqis_manual_test_kernel_cache"
 MANUAL_CUPY_CACHE.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("CUPY_CACHE_DIR", str(MANUAL_CUPY_CACHE))
 
-from Benchmark_full_tools import (benchmark_output_path, print_equipment_info,
+# Set the cache environment before these imports can load CuPy.
+from Benchmark_full_tools import (benchmark_output_path, print_equipment_info,  # noqa: E402
                                   sympy_to_julia_fp32)
-from gqis import build_reduced_lindblad_rhs, mesolve_2D
+from gqis import build_reduced_lindblad_rhs, mesolve_2D  # noqa: E402
 
 JULIA_SOLVER_MODES = {"julia_gpu_fp64": "fp64", "julia_gpu_fp32": "fp32",
                       "julia_gpu_fp32_opt": "fp64_only_step",
@@ -351,18 +352,21 @@ def solve_one_point_python_rk4(A: float, eps0: float, cfg: BenchConfig) -> float
     if cfg.problem == "two_level":
         complex_dtype = np.complex64 if cfg.cpu_precision == "fp32" else np.complex128
         rho = np.array([1.0, 0.0, 0.0, 0.0], dtype=complex_dtype)
-        rhs = lambda tt, state: drho_two_level(
-            state, tt, A, eps0, cfg, scalar_dtype, complex_dtype)
-        observe = lambda tt, state: scalar_dtype(np.real(state[3]))
+        def rhs(tt, state):
+            return drho_two_level(state, tt, A, eps0, cfg, scalar_dtype, complex_dtype)
+
+        def observe(tt, state):
+            return scalar_dtype(np.real(state[3]))
     else:
         if _WORKER_DRHO_FUN is None or _WORKER_OBS_FUN is None or _WORKER_RHO_LEN is None:
             raise RuntimeError("Generic CPU RHS was not initialized.")
         rho = np.zeros(_WORKER_RHO_LEN, dtype=scalar_dtype)
         rho[0] = scalar_dtype(1.0)
-        rhs = lambda tt, state: np.asarray(
-            _WORKER_DRHO_FUN(tt, eps0, A, *state), dtype=scalar_dtype)
-        observe = lambda tt, state: scalar_dtype(
-            _WORKER_OBS_FUN(tt, eps0, A, *state))
+        def rhs(tt, state):
+            return np.asarray(_WORKER_DRHO_FUN(tt, eps0, A, *state), dtype=scalar_dtype)
+
+        def observe(tt, state):
+            return scalar_dtype(_WORKER_OBS_FUN(tt, eps0, A, *state))
 
     accum = scalar_dtype(0.0)
     with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
@@ -401,11 +405,12 @@ def solve_one_point_python_ode(A: float, eps0: float, cfg: BenchConfig) -> float
             raise RuntimeError("Generic CPU RHS was not initialized.")
         rho0 = np.zeros(_WORKER_RHO_LEN, dtype=np.float64)
         rho0[0] = 1.0
-        rhs = lambda t, rho: np.asarray(_WORKER_DRHO_FUN(t, eps0, A, *rho), dtype=np.float64)
+        def rhs(t, rho):
+            return np.asarray(_WORKER_DRHO_FUN(t, eps0, A, *rho), dtype=np.float64)
     else:
         rho0 = np.array([1.0 + 0j, 0.0 + 0j, 0.0 + 0j, 0.0 + 0j], dtype=complex_dtype)
-        rhs = lambda t, rho: drho_two_level(
-            rho, t, A, eps0, cfg, scalar_dtype, complex_dtype)
+        def rhs(t, rho):
+            return drho_two_level(rho, t, A, eps0, cfg, scalar_dtype, complex_dtype)
 
     sol = solve_ivp(rhs, (float(tlist[0]), float(tlist[-1])), rho0, method="RK45", t_eval=tlist,
                     rtol=cfg.adaptive_rtol, atol=cfg.adaptive_atol)
@@ -476,8 +481,8 @@ def solve_one_point_four_level_qutip(A: float, eps0: float, cfg: BenchConfig) ->
     tlist = np.asarray(cfg.tlist, dtype=float)
 
     if cfg.qutip_drive_mode == "analytic":
-        splitting = lambda t: np.sqrt(cfg.delta**2
-                                      + (eps0 + A * np.cos(cfg.w * t))**2)
+        def splitting(t):
+            return np.sqrt(cfg.delta**2 + (eps0 + A * np.cos(cfg.w * t))**2)
         H = [qt.Qobj(hp), [qt.Qobj(hc11u), lambda t: 1.0 / splitting(t)],
              [qt.Qobj(hq11), lambda t: splitting(t) - cfg.resonator_frequency]]
     else:
@@ -586,9 +591,9 @@ def write_julia_helper(path: Path, cfg: BenchConfig) -> None:
                              optimizations="basic")
 
     state_type = "Float64" if cfg.julia_time_precision == "fp64" else "Float32"
-    julia_expr = lambda expr: (re.sub(r"(?<=\d)f(?=[+-]?\d)", "e",
-                                      sympy_to_julia_fp32(expr))
-                                if state_type == "Float64" else sympy_to_julia_fp32(expr))
+    def julia_expr(expr):
+        return (re.sub(r"(?<=\d)f(?=[+-]?\d)", "e", sympy_to_julia_fp32(expr))
+                if state_type == "Float64" else sympy_to_julia_fp32(expr))
     rhs_lines = [f"u{i} = u[{i + 1}]" for i in range(len(rho_syms))]
     rhs_lines += [f"{symbol} = {state_type}({julia_expr(expr)})"
                   for symbol, expr in common]

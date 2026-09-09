@@ -1340,13 +1340,15 @@ def _solve_symbolic_system(H, Drive, Col_Ops, mean_operator, tlist,
             trace_obs_line = final_line_kernel.replace("avg.x",
                                                        "time_trace_results[trace_offset].x")
             trace_obs_line = trace_obs_line.replace("avg.y", "time_trace_results[trace_offset].y")
+            trace_store = ("for (int i=0; i<N; ++i) time_trace_results[trace_offset * N + i] = rho[i];"
+                           if _state_trace else trace_obs_line)
             trace_line_out = (
                 "if ((step % time_trace_stride) == 0) {\n"
                 "                    const int trace_idx = step / time_trace_stride;\n"
                 "                    if (trace_idx < num_time_trace) {\n"
                 "                        const size_t trace_offset = (size_t)result_idx * "
                 "num_time_trace + trace_idx;\n"
-                f"                        {('for (int i=0; i<N; ++i) time_trace_results[trace_offset * N + i] = rho[i];' if _state_trace else trace_obs_line)}\n"
+                f"                        {trace_store}\n"
                 "                    }\n"
                 "                }")
             mean_line_out = (f"{mean_line_out}\n                {trace_line_out}"
@@ -1363,7 +1365,8 @@ def _solve_symbolic_system(H, Drive, Col_Ops, mean_operator, tlist,
             result_arg_decl = f"    {complex_type}* __restrict__ results"
             result_arg_comment = " // averaged/final expectation value"
         if return_time_trace:
-            result_arg_decl += (f",\n    {scalar_type if _state_trace else complex_type}* __restrict__ time_trace_results,"
+            trace_type = scalar_type if _state_trace else complex_type
+            result_arg_decl += (f",\n    {trace_type}* __restrict__ time_trace_results,"
                                 "\n    const int time_trace_stride,"
                                 "\n    const int num_time_trace")
         else:
