@@ -85,6 +85,46 @@ Output density affects sampled averaging; array-based QuTiP drives also require 
 For more Benchmark 03 options, see [presets and saved runs](#reproducing-accuracy-figures),
 [calibration files](#calibration-files-and-compatibility), and [time-grid details](#time-grids-and-legacy-option-names).
 
+## Benchmark 03 Results
+
+The saved figures show observable error and calculation time as time resolution changes.
+For QuTiP, steps per period means requested output intervals; internal integration is adaptive.
+Calculation times belong to these accuracy runs, separately from the scaling measurements.
+
+### Small Two-Level Grid accuracy scaling: Independent QuTiP Reference
+
+The `64 x 64` sweep compares GQIS with a QuTiP reference using 2048 output intervals per period.
+At fine resolution, the recorded GQIS methods agree with QuTiP to roughly `3-4e-6` RMS in the observable.
+
+![Benchmark 03: two-level convergence against QuTiP](Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_sweep_GQIS_vs_QuTiP_plot.png)
+
+[Results (CSV)](Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_sweep_GQIS_vs_QuTiP.csv)
+
+### Dense Two-Level Grid accuracy scaling:
+
+The `2048 x 2048` sweep uses GQIS RK4 at 4096 steps per period as the reference,
+with RMS/maximum-error limits of `1e-3`/`1e-2`. Among the coarsest accepted GQIS points,
+DOP853 has the shortest recorded time: **0.33592 s** at **43 steps per period**.
+The measured QuTiP point takes about **12 h 9 min** and satisfies both limits.
+
+![Benchmark 03: dense two-level convergence](<Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_dense grid_sweep.png>)
+
+[Results (CSV)](<Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_dense grid_sweep.csv>)
+
+### Dense Four-Level Grid accuracy scaling:
+
+The `2048 x 2048` sweep uses the same reference resolution and error limits as the dense two-level sweep.
+Here RK4 has the shortest recorded GQIS time among the coarsest accepted points:
+**0.98360 s** at **146 steps per period**. DOP853 needs only **43 steps per period** but takes
+**1.5141 s**, illustrating that fewer steps do not necessarily mean a shorter calculation.
+
+![Benchmark 03: dense four-level convergence](<Benchmarks/results/Benchmark_03_four_level_accuracy_timestep_dense grid_sweep.png>)
+
+[Results (CSV)](<Benchmarks/results/Benchmark_03_four_level_accuracy_timestep_dense grid_sweep.csv>)
+
+The dense-grid errors measure agreement with a finer GQIS reference; the small-grid QuTiP result
+provides the independent solver comparison. Each figure shows the methods recorded in its saved run.
+
 ## Plot Saved CSV Data
 
 Both plot helpers rebuild figures without running a solver. Edit their `user_settings()` and run:
@@ -137,11 +177,7 @@ reference. Keep the reference filename and physical/numerical settings consisten
 can take more than 12 hours. GQIS saves after each solver sweep; Julia and QuTiP save after each point,
 so completed portions can be plotted before the whole run finishes.
 
-Saved examples:
-
-- Two-level QuTiP comparison: [CSV](Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_sweep_GQIS_vs_QuTiP.csv), [figure](Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_sweep_GQIS_vs_QuTiP_plot.png).
-- Dense two-level sweep: [CSV](<Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_dense grid_sweep.csv>), [figure](<Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_dense grid_sweep.png>).
-- Dense four-level sweep: [CSV](<Benchmarks/results/Benchmark_03_four_level_accuracy_timestep_dense grid_sweep.csv>), [figure](<Benchmarks/results/Benchmark_03_four_level_accuracy_timestep_dense grid_sweep.png>).
+See [Benchmark 03 results](#benchmark-03-results) for the three saved convergence figures and their CSV data.
 
 ## Calibration Files And Compatibility
 
@@ -320,13 +356,24 @@ The calibrated grids differ by solver. Per simulation, the two-level CSV records
 5,840 RK4 steps, 1,720 DOP853 steps, 5,840 Julia steps and 8,200 QuTiP output intervals.
 QuTiP's internal adaptive integration steps are distinct from these output intervals.
 
-### Two-Level Reference
+### Two-Level time scaling:
+
+Benchmark 01 shows calculation time for driven two-level interferograms as the number of parameter
+sets increases. GQIS approaches linear scaling on large grids, reaching 1.07 billion simulations
+in about **1 min 38 s** with RK4. Circles mark measurements; squares and dashed extensions mark
+extrapolated timings. The transferred QuTiP measurement at `2048 x 2048` took about **12 h 9 min**.
 
 [Timing data (CSV)](./Benchmarks/results/Benchmark_01_full_benchmark.csv) | [Figure file (PNG)](./Benchmarks/results/Benchmark_01_full_benchmark_plot.png)
 
 ![Two-level full benchmark](./Benchmarks/results/Benchmark_01_full_benchmark_plot.png)
 
-### Four-Level Reference
+### Four-Level time scaling:
+
+Benchmark 02 shows the same scaling comparison for the coupled qubit-resonator model. The larger
+state makes each simulation more expensive; GQIS RK4 completes the largest grid of 1.07 billion
+parameter sets in about **5 min 4 s**. Circles mark measurements; squares and dashed extensions
+mark extrapolated timings. This figure uses the current calibrated runs; the historical
+`256 x 256` QuTiP measurement discussed above is a separate result.
 
 [Timing data (CSV)](./Benchmarks/results/Benchmark_02_full_benchmark.csv) | [Figure file (PNG)](./Benchmarks/results/Benchmark_02_full_benchmark_plot.png)
 
