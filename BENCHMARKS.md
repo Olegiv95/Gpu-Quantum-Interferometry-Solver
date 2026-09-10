@@ -116,7 +116,7 @@ The measured QuTiP point takes about **12 h 9 min** and satisfies both limits.
 The `2048 x 2048` sweep uses the same reference resolution and error limits as the dense two-level sweep.
 Here RK4 has the shortest recorded GQIS time among the coarsest accepted points:
 **0.98360 s** at **146 steps per period**. DOP853 needs only **43 steps per period** but takes
-**1.5141 s**, illustrating that fewer steps do not necessarily mean a shorter calculation.
+**1.5141 s**, illustrating that even vastly different solvers, fourth-order for RK4 and eighth-order for DOP853, can provide quite similar performance when calibrated to the same accuracy limits.
 
 ![Benchmark 03: dense four-level convergence](<Benchmarks/results/Benchmark_03_four_level_accuracy_timestep_dense grid_sweep.png>)
 
