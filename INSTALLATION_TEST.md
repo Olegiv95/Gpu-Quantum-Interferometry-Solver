@@ -13,6 +13,10 @@ comparisons across different NVIDIA graphics processing units (GPUs).
 - Python 3.10 or newer
 - Git when installing directly from GitHub
 
+Continuous integration tests Python 3.10 through 3.12. On Windows, GQIS has been tested with both a locally
+installed CUDA Toolkit and CUDA runtime libraries installed by pip through CuPy's `ctk` option.
+See [CUDA Version Selection](#cuda-version-selection) for the tested configurations and commands.
+
 Confirm that the NVIDIA driver is visible:
 
 ```text
@@ -50,6 +54,53 @@ Environment check: PASS
 No separate environment is needed when this test passes. If installation or
 dependency checks fail, use one of the optional clean-environment procedures
 below to distinguish a GQIS issue from a conflict in the existing environment.
+
+## CUDA Version Selection
+
+The commands above use the locally tested CUDA 12 configuration:
+
+```text
+python -m pip install "gqis[cuda12]"
+```
+
+Replace `cuda12` with `cuda11` or `cuda13` when using a different CUDA major
+version.
+
+The `cuda12` installation option installs the matching CuPy package. By
+default, this installation expects the corresponding CUDA Toolkit libraries
+to be available on the system.
+
+Alternatively, CuPy 14 can download and install the required NVIDIA CUDA
+runtime libraries through pip when its `ctk` option is used. This avoids a
+system-wide CUDA Toolkit, but a compatible NVIDIA driver is still required:
+
+```text
+python -m pip install "cupy-cuda12x[ctk]"
+python -m pip install "gqis[cuda12]"
+gqis-check --installation-test
+```
+
+Both configurations have passed the GQIS installation test on Windows: the
+local CUDA Toolkit configuration with the reference NVIDIA GeForce RTX 3080
+desktop GPU and the pip-installed CUDA configuration with an NVIDIA GeForce
+RTX 4060 Laptop GPU. The clean `ctk`
+test environment occupied approximately 2.5 GB because it included the CUDA
+runtime libraries.
+
+Install only one CuPy distribution (`cupy`, `cupy-cuda11x`, `cupy-cuda12x`, or `cupy-cuda13x`)
+in an environment because these packages provide the same Python module. CUDA 11 and CUDA 13
+installation options have not been tested on the reference desktop system.
+
+## Summary
+
+For a compatible CUDA 12 environment, install `gqis[cuda12]` and run
+`gqis-check --installation-test`. A passing small-grid CUDA calculation confirms that the
+installed package can launch its solver. That smoke test does not establish convergence for
+your scientific model; use time-grid refinement and a reference comparison for that purpose.
+
+The remaining sections cover optional clean environments, extra dependencies,
+[source development](#source-and-development-installation),
+[automated tests and package builds](#automated-tests-and-package-build), and updates.
 
 ## Optional: Clean Conda Environment
 
@@ -110,42 +161,6 @@ If `python` opens the Microsoft Store or reports that Python was not found,
 use Anaconda Prompt instead or invoke the installed Python executable by its
 full path.
 
-## CUDA Version Selection
-
-The commands above use the locally tested CUDA 12 configuration:
-
-```text
-python -m pip install "gqis[cuda12]"
-```
-
-Replace `cuda12` with `cuda11` or `cuda13` when using a different CUDA major
-version.
-
-The `cuda12` installation option installs the matching CuPy package. By
-default, this installation expects the corresponding CUDA Toolkit libraries
-to be available on the system.
-
-Alternatively, CuPy 14 can download and install the required NVIDIA CUDA
-runtime libraries through pip when its `ctk` option is used. This avoids a
-system-wide CUDA Toolkit, but a compatible NVIDIA driver is still required:
-
-```text
-python -m pip install "cupy-cuda12x[ctk]"
-python -m pip install "gqis[cuda12]"
-gqis-check --installation-test
-```
-
-Both configurations have passed the GQIS installation test on Windows: the
-local CUDA Toolkit configuration with the reference NVIDIA GeForce RTX 3080
-desktop GPU and the pip-installed CUDA configuration with an NVIDIA GeForce
-RTX 4060 Laptop GPU. The clean `ctk`
-test environment occupied approximately 2.5 GB because it included the CUDA
-runtime libraries.
-
-Do not install `cupy`, `cupy-cuda11x`, `cupy-cuda12x`, and `cupy-cuda13x`
-together in one environment. CUDA 11 and CUDA 13 installation options are
-provided but have not been tested on the reference desktop system.
-
 ## Optional Dependencies
 
 Install the dependencies used by the repository's reference example scripts:
@@ -189,7 +204,7 @@ changes become available without reinstalling. A normal installation is better
 for testing the built package as an end user would receive it.
 
 Version 0.2.0 includes the [general ODE interface and Duffing example](README.md#general-ode-sweeps),
-additional integrators and [accuracy sweeps](BENCHMARKS.md#accuracy-calibrated-dividers).
+additional integrators and [accuracy sweeps](BENCHMARKS.md#benchmark-03-accuracy-and-convergence).
 The tagged commands require the `v0.2.0` tag to be published; until then, install from the local source checkout.
 Use `v0.1.1` explicitly only when reproducing that older release.
 

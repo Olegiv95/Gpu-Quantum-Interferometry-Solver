@@ -164,10 +164,7 @@ def user_settings() -> dict:
         "additional_csv_files": (),
         "additional_measured_points": (),
         # Add only points measured with the same model and solver time-grid
-        # settings as the primary CSV. Example:
-        "additional_measured_points": ({"solver": "qutip_cpu", "side_dimension": 2048,
-              "time_s": 43747.3, "status": "measured"},
-         ),
+        # settings as the primary CSV. See BENCHMARKS.md for a manual-point example.
         "save_merged_csv": False,  # True saves the data including added points
         "merged_csv_file": None,  # None writes <CSV stem>_merged.csv; preserves the input
         "refresh_extrapolated_points": True,

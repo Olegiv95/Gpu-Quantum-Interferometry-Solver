@@ -31,8 +31,11 @@ from Benchmark_full_tools import (accuracy_divider_for_solver, benchmark_output_
                                   terminate_process_tree,
                                   )
 from gqis import build_reduced_lindblad_rhs, mesolve_2D
+from gqis.cuda_solvers import available_solvers
 
-SOLVER_NAMES = {"gpu", "python_cpu", "python_ode_cpu", "qutip_cpu", "julia_gpu"}
+GQIS_SOLVERS = tuple(f"gqis_{name}" for name in available_solvers())
+SOLVERS = ("gpu", *GQIS_SOLVERS, "python_cpu", "python_ode_cpu", "qutip_cpu", "julia_gpu")
+SOLVER_NAMES = set(SOLVERS)
 BENCH_EXTRAPOLATION_POINTS = 2
 
 
@@ -168,7 +171,7 @@ def _build_four_level_symbolic(cfg: FourCfg):
     return H, drive_expr, col_ops, mean_op, eps, A, t, Drive
 
 
-def run_gpu_solver(cfg: FourCfg) -> Tuple[np.ndarray, SolverTiming]:
+def run_gpu_solver(cfg: FourCfg, *, solver: str = "rk4") -> Tuple[np.ndarray, SolverTiming]:
     total_start = time.time()
     prep_start = time.time()
     H, drive_expr, col_ops, mean_op, eps_sym, A_sym, _, _ = _build_four_level_symbolic(cfg)
@@ -179,6 +182,7 @@ def run_gpu_solver(cfg: FourCfg) -> Tuple[np.ndarray, SolverTiming]:
                                   var_arrays={eps_sym: np.asarray(cfg.eps_list, dtype=np.float32),
                                               A_sym: np.asarray(cfg.A_list, dtype=np.float32)},
                                   warmup_time=cfg.warmup_time, timings=cfg.timings,
+                                  solver=solver, solver_frequency=cfg.w_abs,
                                   return_timing_info=True)
     compute_time = time.time() - compute_start
     p = np.abs(np.real(np.asarray(out))).T
@@ -531,8 +535,8 @@ def run_julia_gpu_solver(cfg: FourCfg, julia_cmd: str = "julia",
 
 
 def run_solver(name: str, cfg: FourCfg, julia_cmd: str, timeout_s: Optional[float] = None):
-    if name == "gpu":
-        return run_gpu_solver(cfg)
+    if name == "gpu" or name in GQIS_SOLVERS:
+        return run_gpu_solver(cfg, solver="rk4" if name == "gpu" else name.removeprefix("gqis_"))
     if name == "python_cpu":
         return run_python_cpu_solver(cfg)
     if name == "python_ode_cpu":
@@ -626,16 +630,17 @@ def run_full_solver_with_timeout(name: str, cfg: FourCfg, julia_cmd: str,
     return payload
 
 
-def warmup_gpu_solver_for_benchmark(cfg: FourCfg, side: int) -> float:
+def warmup_gpu_solver_for_benchmark(cfg: FourCfg, side: int, name: str = "gpu") -> float:
     """Run one unmeasured GPU solve so measured GPU points reuse compiled RHS."""
     warm_cfg = replace(cfg,
                        eps_list=np.linspace(float(cfg.eps_list[0]), float(cfg.eps_list[-1]), side,
                                            dtype=np.float32),
                        A_list=np.linspace(float(cfg.A_list[0]), float(cfg.A_list[-1]), side,
                                          dtype=np.float32), progress=False)
-    print(f"gpu: warmup/precalculation  grid={len(warm_cfg.eps_list)}x{len(warm_cfg.A_list)}  "
+    print(f"{name}: warmup/precalculation  grid={len(warm_cfg.eps_list)}x{len(warm_cfg.A_list)}  "
           f"steps={warm_cfg.num_steps}")
-    _p_mat, timing = run_gpu_solver(warm_cfg)
+    _p_mat, timing = run_gpu_solver(
+        warm_cfg, solver="rk4" if name == "gpu" else name.removeprefix("gqis_"))
     gc.collect()
     return float(timing.rhs_stage)
 
@@ -652,18 +657,21 @@ def run_full_benchmark(cfg: FourCfg, *, julia_cmd: str, solvers: tuple[str, ...]
     histories: dict[str, list[tuple[int, float]]] = {s: [] for s in solvers}
     stopped: dict[str, bool] = {s: False for s in solvers}
     gpu_first_rhs_stage_s = np.nan
-    gpu_startup_s = np.nan
+    gpu_startup = {}
+    gpu_names = {name for name in solvers if name == "gpu" or name in GQIS_SOLVERS}
     if solver_dividers is None:
         solver_dividers = {"gpu": 1.0, "julia_gpu": 1.0,
                            "python_cpu": float(python_cpu_divider),
                            "python_ode_cpu": float(python_ode_cpu_divider),
                            "qutip_cpu": float(qutip_cpu_divider)}
 
-    if "gpu" in solvers:
+    for name in (name for name in solvers if name in gpu_names):
         startup_start = time.perf_counter()
-        gpu_first_rhs_stage_s = warmup_gpu_solver_for_benchmark(
-            build_divided_cfg(cfg, solver_dividers.get("gpu", 1.0)), sides[0])
-        gpu_startup_s = time.perf_counter() - startup_start
+        rhs_stage = warmup_gpu_solver_for_benchmark(
+            build_divided_cfg(cfg, solver_dividers.get(name, 1.0)), sides[0], name)
+        gpu_startup[name] = time.perf_counter() - startup_start
+        if not np.isfinite(gpu_first_rhs_stage_s):
+            gpu_first_rhs_stage_s = rhs_stage
 
     for solver_name in solvers:
         print(f"\nFull benchmark solver: {solver_name}")
@@ -701,14 +709,14 @@ def run_full_benchmark(cfg: FourCfg, *, julia_cmd: str, solvers: tuple[str, ...]
                 for name in solvers}
             try:
                 effective_cfg = side_solver_cfgs[solver_name]
-                if solver_name == "gpu":
+                if solver_name in gpu_names:
                     _p_mat, timing = run_solver_with_status(solver_name, effective_cfg, julia_cmd)
                 else:
                     timing = run_full_solver_with_timeout(solver_name, effective_cfg, julia_cmd,
                                                           time_limit)
                 status = "measured"
                 histories[solver_name].append((side, timing.total))
-                if (solver_name == "gpu" and not np.isfinite(gpu_first_rhs_stage_s)
+                if (solver_name in gpu_names and not np.isfinite(gpu_first_rhs_stage_s)
                         and np.isfinite(timing.rhs_stage)):
                     gpu_first_rhs_stage_s = float(timing.rhs_stage)
                 if timing.total >= time_limit:
@@ -763,8 +771,8 @@ def run_full_benchmark(cfg: FourCfg, *, julia_cmd: str, solvers: tuple[str, ...]
     })
     if np.isfinite(gpu_first_rhs_stage_s):
         metadata["gpu_first_rhs_stage_s"] = f"{gpu_first_rhs_stage_s:.9g}"
-    if np.isfinite(gpu_startup_s):
-        metadata["gpu_startup_s_gpu"] = f"{gpu_startup_s:.9g}"
+    for name, startup_s in gpu_startup.items():
+        metadata[f"gpu_startup_s_{name}"] = f"{startup_s:.9g}"
     print_equipment_info(metadata)
     save_benchmark_csv(rows, out_csv, metadata=metadata)
     reference_lines = []
@@ -1022,7 +1030,7 @@ def main() -> None:
     if "python_ode_cpu" in active_solvers and python_ode_cpu_num_t_divider > 1:
         print("Note: python_ode_cpu uses SciPy solve_ivp adaptively, but output is "
               "sampled on the reduced tlist. "
-              "Use --python-ode-output-density-divider 1 for strict validation.")
+              "Refine output density and adaptive tolerances separately to check convergence.")
     if "qutip_cpu" in active_solvers and qutip_cpu_num_t_divider > 1:
         print("Note: qutip_cpu is adaptive internally, but time-dependent coefficient arrays "
               "are sampled on the reduced tlist. Validate accuracy when using a large divider.")
@@ -1094,7 +1102,7 @@ def main() -> None:
         raise SystemExit(0)
 
     if mode == "all":
-        solver_order = ("gpu", "python_cpu", "python_ode_cpu", "qutip_cpu", "julia_gpu")
+        solver_order = SOLVERS
         for s in solver_order:
             try:
                 p, t = run_solver_with_status(s, cfg, julia_cmd, cpu_cfgs=cpu_cfgs)
@@ -1141,12 +1149,22 @@ def user_settings() -> dict:
     adaptive_cpu_output_density_divider = 10
 
     # Solver options:
-    # "gpu" : GQIS fixed-step CUDA solver.
+    # GQIS fixed-step CUDA solvers (available in every mode):
+    # "gqis_rk4"     : classical fourth-order Runge-Kutta.
+    # "gqis_lserk4"  : low-storage fourth-order Runge-Kutta.
+    # "gqis_dp5"     : fifth-order Dormand-Prince.
+    # "gqis_tsit5"   : fifth-order Tsitouras.
+    # "gqis_anas5"   : frequency-fitted Anas5, using the model's drive frequency.
+    # "gqis_ab5"     : fifth-order Adams-Bashforth.
+    # "gqis_alshina6": sixth-order Alshina.
+    # "gqis_dop853"  : eighth-order Dormand-Prince.
+    # "gpu"         : alias for "gqis_rk4".
+    # Other backends:
     # "python_cpu" : fixed-step Python RK4 reference solver.
     # "python_ode_cpu" : adaptive SciPy RK45 CPU solver.
     # "qutip_cpu": adaptive QuTiP CPU reference solver.
     # "julia_gpu": external Julia DifferentialEquations/DiffEqGPU solver.
-    # Replace any solver below from the list above to change it
+    # Choose a name above for "solver", "solver_b", or the "solvers" list below.
 
     # Select one complete benchmark mode configuration.
     mode_settings = {"mode": "full_benchmark", "solvers": "gpu,qutip_cpu,julia_gpu"}

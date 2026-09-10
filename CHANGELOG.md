@@ -21,13 +21,16 @@ semantic version numbers.
   an interactive frame-rate cap, timing logs and optional MP4 export.
 - Absolute initial time (`t_in`) and device-array outputs (`return_device`) in both solver APIs.
 - Selectable fixed-step CUDA integrators alongside the default RK4; see the [API reference](GQIS_API.md).
-- [Benchmark 03 accuracy sweeps](BENCHMARKS.md#accuracy-calibrated-dividers), saved references,
+- [Benchmark 03 accuracy sweeps](BENCHMARKS.md#benchmark-03-accuracy-and-convergence), saved references,
   accuracy-calibrated scaling runs and CSV-based figure generation.
 
 ### Changed
 
 - Moved tutorials and benchmarks into `Examples/` and `Benchmarks/`, with outputs in their `results/` folders.
 - Separated Example 06 rendering helpers from its ODE demonstration.
+- Made all eight GQIS methods selectable in Benchmark 01/02 comparison and scaling modes.
+- Reorganized benchmark/API guides and made README links absolute for the PyPI description.
+- Removed a hard-coded two-level measurement from the scaling plotter's default four-level plot.
 
 ## [0.1.1] - 2026-08-26
 

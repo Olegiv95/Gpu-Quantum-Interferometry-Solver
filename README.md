@@ -5,22 +5,22 @@ driven open quantum systems. GQIS evaluates independent simulations in parallel 
 (GPU), supporting workloads from tutorial-scale examples to parameter grids containing millions or even billions of
 simulations.
 
-The physical model is symbolic: the Hamiltonian, drive, collapse operators, and measured operator are written as SymPy
+The physical model is written symbolically: the Hamiltonian, drive, collapse operators, and measured operator are SymPy
 expressions in which selected physical parameters remain named symbols instead of immediately becoming fixed numbers.
-GQIS converts this model into the equations and CUDA code used for the parameter sweep.
+GQIS converts this model into the system of equations and CUDA code used for the parameter sweep.
 
-The same CUDA engine also accepts general SymPy-defined ordinary differential equations through `odesolve_2D`.
-This supports non-quantum applications such as nonlinear oscillators and initial-condition maps, with final-state,
+The same CUDA engine also accepts general SymPy-defined ordinary differential equations (ODEs).
+This supports applications such as nonlinear oscillators and initial-condition maps, with final-state,
 time-average and sampled-evolution outputs. See [General ODE Sweeps](#general-ode-sweeps).
 
 ## Why GQIS Was Created
 
 High-resolution quantum interferometry requires a parameter sweep that repeats the same time-evolution calculation for
-many combinations of physical parameters, with each combination producing one point in a two-dimensional map. Fitting a
+many combinations of physical parameters, with each combination of parameters producing one point in a two-dimensional map. Fitting a
 model to experimental data often requires the complete map to be recalculated for many candidate parameter sets. The
-slowness of these central processing unit (CPU) calculations motivated this project: one sufficiently resolved
+slowness of these calculations on a central processing unit (CPU) motivated this project: one sufficiently resolved
 interferogram could take from 30 minutes to several hours. Repeating that calculation during parameter fitting could
-therefore take days or weeks, while reducing the resolution risked missing narrow interference features.
+therefore take days or weeks, while reducing the resolution risked missing narrow interference fringes.
 
 Many quantum-dynamics packages evaluated during GQIS development were designed primarily to evolve one parameter set
 per solver call. Large parameter sweeps consequently required Python code to launch and coordinate many separate solver
@@ -40,9 +40,7 @@ Controlled timing comparisons are reported in [Validation And Performance](#vali
 ## Installation
 
 GQIS requires Python 3.10 or newer, an NVIDIA CUDA-capable GPU, a compatible NVIDIA driver, and CUDA libraries matching
-the selected CuPy package. Continuous integration tests Python 3.10 through 3.12. On Windows, GQIS has been tested both
-with a locally installed CUDA Toolkit and with CUDA runtime libraries downloaded and installed by pip through CuPy's
-`ctk` option.
+the selected CuPy package.
 
 With a local CUDA 12 Toolkit, install:
 
@@ -71,12 +69,15 @@ optional dependencies, including Matplotlib:
 pip install "gqis[cuda12,examples]"
 ```
 
-See the [installation and GPU test
-guide](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/INSTALLATION_TEST.md) for optional isolated
-environments, troubleshooting, source installs, optional dependencies, tested versions, FFmpeg, Julia, automated tests,
-and updates.
+See the [installation and GPU test guide](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/INSTALLATION_TEST.md) for tested configurations, source installs,
+optional dependencies, and troubleshooting.
 
 ## Minimal Use
+
+Supply the model, time grid, and sweep axes; optional settings use defaults. Initial-state and output options
+can be changed as needed. See the [API reference](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md) for all arguments and defaults.
+
+### Lindblad Equation Parameter Sweep
 
 Import the packaged solver and pass a symbolic model plus one or two numerical sweep axes:
 
@@ -97,24 +98,11 @@ Five mandatory positional arguments are:
 4. `mean_operator`: `N x N` operator associated with the physical quantity whose expectation value is requested.
 5. `tlist`: one-dimensional, uniformly spaced time grid beginning at zero.
 
-If `tlist` contains `M` time samples, the solver performs `M - 1` fixed steps, using fourth-order Runge-Kutta (RK4) by default. The example
+The solver evolves to the final time in `tlist` on the supplied uniform grid, using fourth-order Runge-Kutta (RK4) by default. The example
 above returns one time-averaged expectation value of `mean_operator` for every combination of parameter values from the
 two sweep arrays.
 
-See the [complete `mesolve_2D` application programming interface (API)
-reference](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md) for symbolic constants,
-initial-state sweeps, output modes, sampled time traces, kernel reuse, precision, timings, and code-generation controls.
-
-### Choosing A Solver
-
-Both APIs offer `rk4` (default), `lserk4`, `dp5`, `tsit5`, `anas5`, `ab5`, `alshina6` and `dop853`.
-Set `solver="tsit5"`, for example, to change the integration method. These are fixed-step implementations:
-RK4 is a useful starting point, low-storage LSRK4 reduces work-vector storage, and higher-order methods can
-reach tighter accuracy with coarser steps. The [solver comparison table](GQIS_API.md#available-fixed-step-solvers)
-summarizes their costs and uses; [Benchmark 03](BENCHMARKS.md#accuracy-calibrated-dividers) compares the time
-needed to satisfy chosen error limits.
-
-## General ODE Sweeps
+### General ODE Sweeps
 
 For a model already written as first-order ODEs, supply its derivatives, state symbols and initial values directly.
 For example, a driven double-well Duffing oscillator can be swept over damping and drive amplitude:
@@ -136,13 +124,20 @@ result = odesolve_2D(
 Use `output_mode="mean"` for averages, or `return_time_trace=True` for sampled evolution.
 Both public APIs share the fixed-step integrators and symbolic optimizations; no quantum operators are needed here.
 
-[Example 06](Examples/Example_06_symbolic_ode_sweep.py) evolves a dense Duffing initial-condition cloud live on the GPU
-and displays its phase-space flow, with optional MP4 export. The [ODE API reference](GQIS_API.md#odesolve_2d-direct-sympy-ode-sweeps)
-describes output shapes and sampling options. See [accuracy calibration](BENCHMARKS.md#accuracy-calibrated-dividers)
+[Example 06](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/Examples/Example_06_symbolic_ode_sweep.py) evolves a dense Duffing initial-condition cloud live on the GPU
+and displays its phase-space flow, with optional MP4 export. The [ODE API reference](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md#odesolve_2d-direct-sympy-ode-sweeps)
+describes output shapes and sampling options. See [accuracy calibration](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md#benchmark-03-accuracy-and-convergence)
 for the step-size comparison workflow; its bundled models are Lindblad systems, while a general ODE can be
 checked by refining its time grid and comparing with a suitable reference.
 
-For development builds, install the source checkout in [editable mode](INSTALLATION_TEST.md#source-and-development-installation).
+### Choosing A Solver
+
+Both APIs offer `rk4` (default), `lserk4`, `dp5`, `tsit5`, `anas5`, `ab5`, `alshina6` and `dop853`.
+Set `solver="tsit5"`, for example, to change the integration method. These are fixed-step implementations:
+RK4 is a useful starting point, low-storage LSRK4 reduces work-vector storage, and higher-order methods can
+reach tighter accuracy with coarser steps. The [solver comparison table](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md#available-fixed-step-solvers)
+summarizes their costs and uses; [Benchmark 03](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md#benchmark-03-accuracy-and-convergence) compares the time
+needed to satisfy chosen error limits.
 
 ## Examples
 
@@ -155,9 +150,9 @@ For development builds, install the source checkout in [editable mode](INSTALLAT
 | `Examples/Example_05_initial_condition_sweep_gate_fidelity.py` | Initial-state sweep and gate-fidelity comparison. |
 | `Examples/Example_06_symbolic_ode_sweep.py` | Live Duffing phase-space flow, GPU rasterization and optional MP4 export through the general ODE API. |
 
-[Example 06](Examples/Example_06_symbolic_ode_sweep.py) demonstrates the general ODE API with a live
+[Example 06](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/Examples/Example_06_symbolic_ode_sweep.py) demonstrates the general ODE API with a live
 Duffing attractor animation. The simulation stays on the GPU, with fast display and optional video export;
-see its [animation guide](Examples/Example_06.md) for display settings and timing logs.
+see its [animation guide](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/Examples/Example_06.md) for display settings and timing logs.
 
 Run an example from the repository root:
 
@@ -165,11 +160,8 @@ Run an example from the repository root:
 python Examples/Example_01_two_level_basic.py
 ```
 
-The examples print the actual preparation and calculation time for their selected grid, time grid, and physical
-parameters. Animation examples print per-frame times, plus total video calculation/export time when saving. Reduce
-`grid_size` in the `user_settings()` block for a quicker run or for a GPU with less memory.
-Relative output filenames are written to `Examples/results/`. Presentation media in that directory can be committed,
-while optional numerical-data exports remain ignored by Git.
+Reduce `grid_size` in the `user_settings()` block for a quicker run or for a GPU with less memory.
+Example outputs are saved to `Examples/results/`.
 
 <table>
   <tr>
@@ -184,7 +176,7 @@ while optional numerical-data exports remain ignored by Git.
 
 ## Supported Models And Outputs
 
-The user supplies the physical model and requested output. A solver call
+The user supplies the physical model (Hamiltonian, collapse operators) and requested output. A solver call
 can contain:
 
 - any finite-dimensional SymPy Hamiltonian, optionally containing named symbols mapped to one or more time-dependent
@@ -266,10 +258,10 @@ $h=t_{n+1}-t_n$.
 
 With RK4 selected, each GPU thread applies this update to its own evolution and parameter set.
 Other available methods include LSRK4, DP5, Tsit5, Anas5, AB5, Alshina6 and DOP853; see the
-[API reference](GQIS_API.md) for their costs and intended uses. For general ODEs, `odesolve_2D`
+[API reference](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md) for their costs and intended uses. For general ODEs, `odesolve_2D`
 accepts SymPy derivatives and initial conditions directly, using the same CUDA execution path.
 
-For a new model, these components perform the following pipeline:
+For a new model, these components perform the following pipeline (with `odesolve_2D` starting from stage 4):
 
 <table>
   <tr align="center">
@@ -332,14 +324,26 @@ solvers and show how calculation time changes with the size of the parameter gri
 - `Benchmarks/Benchmark_03_accuracy_timestep_sweep.py`: accuracy versus step size and calculation time for both models
 
 On the reference NVIDIA GeForce RTX 3080 desktop GPU, the largest measured `32768 x 32768` grids contain
-1.07 billion independent parameter sets. GQIS(RK4) completed the two-level run in **98.43 seconds** with
-10,240 steps per simulation, and the four-level run in **303.85 seconds** with 5,840 steps per simulation.
+1.07 billion independent parameter sets. GQIS(RK4) completed the two-level run in about **1 min 38 s** with
+10,240 steps per simulation, and the four-level run in about **5 min 4 s** with 5,840 steps per simulation.
 These time grids were selected through accuracy calibration.
+At the largest measured two-level QuTiP grid (`2048 x 2048`), QuTiP took about **12 h 9 min**
+and GQIS(RK4) took **0.36223 s**, a measured speedup of approximately **120,800 times**.
+The QuTiP measurement comes from the dense Benchmark 03 sweep and was transferred to the scaling figure.
+
+The largest measured four-level QuTiP grid is `256 x 256`, preserved in the
+[v0.1.1 benchmark CSV](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/v0.1.1/Benchmark_02_full_benchmark.csv).
+QuTiP took about **12 min 11 s**, versus **0.033861 s** GQIS calculation time: approximately
+**21,600 times** speedup. This historical benchmark used 10,240 RK4 steps per simulation.
+The current calibrated four-level CSV uses 5,840 steps and records approximately **32,300 times**
+speedup at `64 x 64`. These comparisons exclude GQIS preparation; the historical result is separate
+from the current scaling averages below.
+
 Across grids from `4096 x 4096` to `32768 x 32768`, average point-by-point speedups were approximately
 46,900 times and 50,700 times over extrapolated QuTiP timings for the two- and four-level models, respectively.
-See the [benchmark results](BENCHMARKS.md#reference-results) for timing definitions and measured/extrapolated status.
+See the [benchmark results](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md#reference-results) for timing definitions and measured/extrapolated status.
 
-The compact GQIS kernel retains the reduced state and RK4 working values instead of storing each complete time
+The compact GQIS kernel retains the reduced state and solver (RK4 by default) working values instead of storing each complete time
 evolution. In the tested large sweeps, this execution design used less video random-access memory (VRAM) than the Julia
 comparison solver.
 
@@ -350,26 +354,22 @@ comparison solver.
 </p>
 <p align="center"><em>Two-level scaling reference. Click the figure for the full-resolution result.</em></p>
 
-Comparing every solver or running a full scaling sweep can take considerable time. The scripts print progress, enforce
-a configurable solver time limit, save comma-separated values (CSV) data and Portable Network Graphics (PNG) figures,
-and mark extrapolated data. See [benchmark validation,
-methodology, and complete reference results](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md)
-before interpreting or reproducing these numbers.
-
 Accuracy depends on the selected solver and the step size supplied by the user. The
-[Benchmark 03 accuracy results and calibration workflow](BENCHMARKS.md#accuracy-calibrated-dividers)
+[Benchmark 03 accuracy results and calibration workflow](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md#benchmark-03-accuracy-and-convergence)
 show how error and calculation time vary with time-grid resolution in the two- and four-level examples.
 The same benchmark can help you choose a solver and step size that meet the accuracy needs of your own model.
 
-In the saved 64×64 two-level comparison against QuTiP, fine-grid GQIS FP32 results reached absolute RMS differences
+In the saved 64×64 two-level comparison against QuTiP, fine-grid GQIS FP32 results reached absolute RMS (root mean square) differences
 of about `3–4 × 10⁻⁶` and maximum differences of about `3.5 × 10⁻⁵` in the measured observable. These are results
 for that model and averaging window, rather than a universal FP32 accuracy floor. See
-[precision and Julia comparison notes](BENCHMARKS.md#precision-and-julia-comparison-notes) for roundoff,
+[precision and Julia comparison notes](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md#precision-and-julia-comparison-notes) for roundoff,
 stock and modified Julia stepping, and preparation-time definitions.
 
-Start with the [64×64 Benchmark 03 preset](Benchmarks/presets/Benchmark_03_two_level_64.json).
-[Reproducing accuracy figures](BENCHMARKS.md#reproducing-accuracy-figures) explains launching presets,
+Start with the [64×64 Benchmark 03 preset](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/Benchmarks/presets/Benchmark_03_two_level_64.json).
+[Reproducing accuracy figures](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md#reproducing-accuracy-figures) explains launching presets,
 reusing references and rebuilding plots from saved CSV files.
+
+Benchmarks involving QuTiP, CPU ODE solvers, or Julia can take substantial time to run.
 
 ## Project Layout
 

@@ -10,7 +10,7 @@ Search existing issues first. Bug and numerical-error reports should include a
 minimal reproducing model, relevant console output, the output of `gqis-check`,
 model and grid settings, and CUDA/CuPy versions. When relevant, report
 the selected solver and convergence after refining the time grid. The
-[accuracy benchmark](BENCHMARKS.md#accuracy-calibrated-dividers) provides examples of these comparisons.
+[accuracy benchmark](BENCHMARKS.md#benchmark-03-accuracy-and-convergence) provides examples of these comparisons.
 For general ODE problems, include the SymPy derivatives and initial conditions passed to `odesolve_2D`.
 
 Do not share credentials or confidential data. Please open an issue before
@@ -53,7 +53,7 @@ interface changes.
 Keep pull requests focused and explain their purpose, behavior changes, and
 validation. Changes to equation generation, time grids, initial states, caching,
 or the CUDA kernel benefit from focused regression checks and a numerical comparison.
-Use [Benchmark 03](BENCHMARKS.md#accuracy-calibrated-dividers) for Lindblad accuracy sweeps;
+Use [Benchmark 03](BENCHMARKS.md#benchmark-03-accuracy-and-convergence) for Lindblad accuracy sweeps;
 for general ODEs, use an analytic solution or an appropriate numerical reference.
 Report the method, step size and observable being compared. If CUDA validation is unavailable,
 state that so a maintainer can perform it.

@@ -39,8 +39,10 @@ from Benchmark_full_tools import (accuracy_divider_for_solver, add_time_referenc
                                   terminate_process_tree,
                                   )
 from gqis import build_reduced_lindblad_rhs, mesolve_2D
+from gqis.cuda_solvers import available_solvers
 
-SOLVERS = ("gpu", "python_cpu", "python_ode_cpu", "qutip_cpu", "julia_gpu")
+GQIS_SOLVERS = tuple(f"gqis_{name}" for name in available_solvers())
+SOLVERS = ("gpu", *GQIS_SOLVERS, "python_cpu", "python_ode_cpu", "qutip_cpu", "julia_gpu")
 SOLVER_SET = set(SOLVERS)
 JULIA_HELPER_NAME = "Benchmark_01_two_level_basic_julia_gpu.jl"
 LAST_GPU_RHS_STAGE_S = np.nan
@@ -286,7 +288,7 @@ def add_map_to_axis(ax: plt.Axes, data: np.ndarray, cfg: BenchConfig, title: str
 # -----------------------------------------------------------------------------
 
 
-def run_gpu_solver(cfg: BenchConfig) -> tuple[np.ndarray, float]:
+def run_gpu_solver(cfg: BenchConfig, *, solver: str = "rk4") -> tuple[np.ndarray, float]:
     global LAST_GPU_RHS_STAGE_S
     start = time.time()
     fp64 = cfg.gpu_precision == "fp64"
@@ -298,6 +300,7 @@ def run_gpu_solver(cfg: BenchConfig) -> tuple[np.ndarray, float]:
                                      var_arrays={eps: np.asarray(cfg.eps_list, dtype=scalar_dtype),
                                                  A: np.asarray(cfg.A_list, dtype=scalar_dtype)},
                                      const_values=const_values, output_mode="mean", fp64=fp64,
+                                     solver=solver, solver_frequency=cfg.w,
                                      timings=cfg.timings, warmup_time=cfg.warmup_time,
                                      return_timing_info=True)
     LAST_GPU_RHS_STAGE_S = float((timing_info or {}).get("rhs_stage_s", np.nan))
@@ -669,6 +672,8 @@ def solver_dispatch(args: argparse.Namespace) -> dict[
                 for name in ACCURACY_SOLVER_SET}
     return {
         "gpu": run_gpu_solver,
+        **{name: (lambda cfg, name=name: run_gpu_solver(cfg, solver=name.removeprefix("gqis_")))
+           for name in GQIS_SOLVERS},
         "python_cpu": run_python_cpu_solver,
         "python_ode_cpu": run_python_ode_cpu_solver,
         "qutip_cpu": run_qutip_cpu_solver,
@@ -728,7 +733,8 @@ def selected_solvers(mode: str, args: argparse.Namespace) -> tuple[str, ...]:
     raise ValueError("mode must be one of: single, all, diff, full_benchmark")
 
 
-def warmup_gpu_solver_for_benchmark(base_cfg: BenchConfig, args: argparse.Namespace) -> None:
+def warmup_gpu_solver_for_benchmark(base_cfg: BenchConfig, args: argparse.Namespace,
+                                    name: str = "gpu") -> None:
     """Run one unmeasured GPU solve before full_benchmark timing.
 
     This removes one-time GQIS overhead such as symbolic RHS preparation,
@@ -743,11 +749,11 @@ def warmup_gpu_solver_for_benchmark(base_cfg: BenchConfig, args: argparse.Namesp
                        A_list=np.linspace(float(base_cfg.A_list[0]),
                                          float(base_cfg.A_list[-1]), side,
                                          dtype=base_cfg.A_list.dtype), progress=False)
-    warm_cfg = config_for_solver("gpu", warm_cfg, args)
+    warm_cfg = config_for_solver(name, warm_cfg, args)
 
-    print(f"gpu: warmup/precalculation  grid={warm_cfg.nx}x{warm_cfg.ny}  "
+    print(f"{name}: warmup/precalculation  grid={warm_cfg.nx}x{warm_cfg.ny}  "
           f"steps={warm_cfg.num_steps}")
-    _p_mat, _elapsed = run_gpu_solver(warm_cfg)
+    _p_mat, _elapsed = solver_dispatch(args)[name](warm_cfg)
     gc.collect()
 
 
@@ -810,11 +816,13 @@ def run_full_benchmark(base_cfg: BenchConfig, args: argparse.Namespace,
                 gpu_startup[name] += gpu_first_rhs_stage_s
             if index == 0:
                 gpu_first_rhs_stage_s = preparation
-    elif "gpu" in solvers:
-        startup_start = time.perf_counter()
-        warmup_gpu_solver_for_benchmark(base_cfg, args)
-        gpu_startup["gpu"] = time.perf_counter() - startup_start
-        gpu_first_rhs_stage_s = LAST_GPU_RHS_STAGE_S
+    else:
+        for name in (name for name in solvers if name in gpu_names):
+            startup_start = time.perf_counter()
+            warmup_gpu_solver_for_benchmark(base_cfg, args, name)
+            gpu_startup[name] = time.perf_counter() - startup_start
+            if not np.isfinite(gpu_first_rhs_stage_s):
+                gpu_first_rhs_stage_s = LAST_GPU_RHS_STAGE_S
 
     for name in solvers:
         print(f"\nFull benchmark solver: {name}")
@@ -1210,7 +1218,7 @@ def main() -> None:
     if "python_ode_cpu" in solvers and args.python_ode_cpu_spp_divider > 1:
         print("Note: python_ode_cpu uses SciPy solve_ivp adaptively, but output is "
               "sampled on the reduced tlist. "
-              "Use --python-ode-output-density-divider 1 for strict validation.")
+              "Refine output density and adaptive tolerances separately to check convergence.")
     if "qutip_cpu" in solvers and args.qutip_cpu_spp_divider > 1:
         print("Note: qutip_cpu is adaptive internally, but the coefficient array is "
               "sampled on the reduced tlist.")
@@ -1286,12 +1294,22 @@ def user_settings() -> dict:
     adaptive_cpu_output_density_divider = 10
 
     # Solver options:
-    # "gpu" : GQIS fixed-step CUDA solver.
+    # GQIS fixed-step CUDA solvers (available in every mode):
+    # "gqis_rk4"     : classical fourth-order Runge-Kutta.
+    # "gqis_lserk4"  : low-storage fourth-order Runge-Kutta.
+    # "gqis_dp5"     : fifth-order Dormand-Prince.
+    # "gqis_tsit5"   : fifth-order Tsitouras.
+    # "gqis_anas5"   : frequency-fitted Anas5, using the model's drive frequency.
+    # "gqis_ab5"     : fifth-order Adams-Bashforth.
+    # "gqis_alshina6": sixth-order Alshina.
+    # "gqis_dop853"  : eighth-order Dormand-Prince.
+    # "gpu"         : alias for "gqis_rk4".
+    # Other backends:
     # "python_cpu" : fixed-step Python RK4 reference solver.
     # "python_ode_cpu" : adaptive SciPy RK45 CPU solver.
     # "qutip_cpu": adaptive QuTiP CPU reference solver.
     # "julia_gpu": external Julia DifferentialEquations/DiffEqGPU solver.
-    # Replace any solver below from the list above to change it
+    # Choose a name above for "solver", "solver_b", or the "solvers" list below.
 
     # Select one complete benchmark mode configuration.
     mode_settings = {"mode": "full_benchmark", "solvers": "gpu,qutip_cpu,julia_gpu"}

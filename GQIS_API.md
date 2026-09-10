@@ -64,75 +64,16 @@ of integration steps discarded from the mean, not a duration; it does not trim t
 At `warmup_time=1`, the mean falls back to the final result. `return_timing_info=True`
 appends a timing dictionary to the return values, as for `mesolve_2D`.
 
-`solver`, `solver_frequency`, `fp64`, `unroll`, caching, runtime constants and code-generation
-options below also apply. Defaults are RK4 and FP32. Nonlinear expressions are not expanded
-or collected by default. Common expressions are reused, parameter-only combinations are
-hoisted out of integration, and time-only expressions are evaluated in the shared stage-drive
-routine. Runtime-constant-only combinations use the existing CPU precomputation path.
-Only the selected integrator is emitted. `cse_batch_size` can limit temporary lifetimes and
-help reduce register pressure for larger systems.
-Full-state means require an extra accumulator vector; evolution storage scales with
-`nx * ny * nsamples * nstate`, so use sparse sampling on large grids.
-
-### Continuing On The GPU
-
-Both APIs accept `t_in=0.0` and `return_device=False`. With `return_device=True`, result and
-trace arrays are CuPy arrays; trace times remain small NumPy metadata arrays. Pass the returned
-state back through `y0_values` (ODE) or `rho0_values` (Lindblad) without downloading it. Finite-value
-checks still synchronize a scalar status; they do not copy the full state. For example:
-
-```python
-state = odesolve_2D(rhs, states, y0, elapsed_times, t_in=10.0, return_device=True, **model_options)
-state = odesolve_2D(rhs, states, None, elapsed_times,
-                    y0_values=state, t_in=10.0 + elapsed_times[-1],
-                    return_device=True, **model_options)
-```
-
-Here `states` is the ordered state-symbol list and `model_options` contains the same sweep axes,
-constants and solver settings for both calls. Request full-state output when continuing a trajectory.
-Stage times use `t_in + elapsed_stage_time`, with elapsed time derived from the integer step index.
-Zero and nonzero offsets share one runtime-parameterized kernel, cached after first use.
-Changing `t_in` does not require another compilation.
-FP32 still rounds the
-absolute time to its representable precision; use FP64 when small intervals at large times need it.
+For solver and precision choices, see [solver options](#solver-and-precision-options).
+Full-state means need an accumulator vector; sampled evolution storage grows with trajectory
+count, sample count and state dimension. Use sparse trace sampling for large sweeps.
 
 ## `mesolve_2D`
-
-```python
-mesolve_2D(
-    H, Drive, Col_Ops, mean_operator, tlist,
-    var_arrays=None, const_values=None,
-    kernel_template_file=None, *,
-    RHSreuse=True, runtime_consts=None, keep_symbolic_consts=None,
-    auto_runtime_consts=False, output_mode="mean", solver="rk4",
-    solver_frequency=None, unroll=False, fp64=False,
-    pre_expand=True, collect_rho=True, factor_terms=False,
-    cse_batch_size=None, cse_simplify=True,
-    hoist_rho_independent=True, nvrtc_options=(), timings=False,
-    return_timing_info=False, warmup_time=0.0, rho0=None,
-    rho0_var_arrays=None, rho0_values=None, return_time_trace=False,
-    time_trace_every=None, time_trace_samples_per_period=None,
-    solver_samples_per_period=None, Actual_Kernel_Save=False,
-    beep_on_error=False, ignore_non_finite_output=False,
-    t_in=0.0, return_device=False,
-)
-```
 
 Build and solve a finite-dimensional Lindblad master equation over one or two parameter axes. One CUDA thread
 integrates one parameter combination with the selected fixed-step method. GQIS symbolically generates the
 right-hand side (RHS), meaning the time derivatives, of the reduced ordinary differential equation (ODE) system and
 compiles it as a CUDA kernel.
-
-Notation used below:
-
-- `N` is the Hilbert-space dimension: the number of basis states or quantum
-  levels represented by the Hamiltonian. Therefore `H`, every collapse
-  operator, `mean_operator`, and a symbolic initial density matrix are `N x N`.
-- `M` is the number of time samples in `tlist`. These samples define `M - 1`
-  solver steps from `tlist[0]` through `tlist[-1]`.
-- `num_X` and `num_Y` are the numbers of independent simulations along the two
-  parameter-sweep axes. They are unrelated to the time samples.
-- `1D` means a one-dimensional array.
 
 ### Minimal Call
 
@@ -153,6 +94,15 @@ one sweep array is required. This call returns shape `(len(eps_values), 1)`; a
 two-axis call uses `var_arrays={eps: eps_values, A: amplitude_values}` and
 returns shape `(len(eps_values), len(amplitude_values))`.
 
+Notation used below:
+
+- `N` is the Hilbert-space dimension: the number of basis states or quantum
+  levels represented by the Hamiltonian. Therefore `H`, every collapse
+  operator, `mean_operator`, and a symbolic initial density matrix are `N x N`.
+- `num_X` and `num_Y` are the numbers of independent simulations along the two
+  parameter-sweep axes. They are unrelated to the time samples.
+- `1D` means a one-dimensional array.
+
 ### Physical Model
 
 | Parameter | Type | Meaning |
@@ -161,7 +111,7 @@ returns shape `(len(eps_values), len(amplitude_values))`.
 | `Drive` | SymPy expression or `dict[Symbol, Expr]` | Time-dependent signal. A single expression supplies the conventional `Symbol("Drive")` placeholder used by `H`. A dictionary explicitly maps multiple Hamiltonian placeholder symbols to separate signals. Expressions may use `t`, sweep parameters, and constants. |
 | `Col_Ops` | sequence of `N x N` SymPy matrices | Lindblad collapse operators. Use `[]` for closed-system evolution. Every operator must have the same shape as `H`. |
 | `mean_operator` | `N x N` SymPy matrix | Operator whose expectation value is averaged, returned at the final time, or sampled as a trace. It must match `H`. |
-| `tlist` | 1D array | Finite, strictly increasing, uniformly spaced elapsed times beginning at zero. `M` samples define exactly `M - 1` solver steps through absolute time `t_in + tlist[-1]`. |
+| `tlist` | 1D array | Finite, strictly increasing, uniformly spaced elapsed times beginning at zero. `np.linspace(0, duration, n_steps + 1)` supplies `n_steps` updates ending at absolute time `t_in + duration`. |
 | `t_in` | `0.0` | Absolute initial time of the supplied state. Drive evaluations and returned trace times include this offset. |
 | `return_device` | `False` | Return CuPy result/trace arrays instead of copying them to NumPy. Trace times remain NumPy metadata. |
 
@@ -171,17 +121,12 @@ returns shape `(len(eps_values), len(amplitude_values))`.
 | --- | --- | --- |
 | `var_arrays` | `dict[Symbol, 1D array]` | One or two sweep axes are required. Dictionary insertion order maps the first array to result axis X and the second to Y. For a single parameter point, supply a one-element dummy axis. Array values and lengths can change while reusing the generated ODE. |
 | `const_values` | `dict[Symbol, number]` | Constants substituted as numbers while generating the ODE and CUDA code. If one of these values changes on a later call, GQIS normally generates and compiles a new ODE kernel. |
-| `runtime_consts` | `dict[Symbol, number]` | Values for constants intentionally left symbolic in the generated ODE. They are uploaded for each call, so they can change while the previously generated and compiled ODE kernel is reused. A value here overrides the same symbol in `const_values`. This is useful for animations and repeated calculations. |
-| `keep_symbolic_consts` | iterable, `"all"`, `"auto"`, `"const_values"`, or `None` | Selects which `const_values` symbols remain symbolic instead of being inserted as fixed numbers. This allows selected constants to change between animation frames while reusing the generated ODE and compiled kernel. `"all"`, `"auto"`, and `"const_values"` select every `const_values` key. |
-| `auto_runtime_consts` | `False` | Keep every `const_values` key symbolic so all constant values can change between repeated calls without regenerating the ODE. |
-| `rho0_var_arrays` | `dict[Symbol, 1D array]` | Sweep values for symbols used only in the symbolic `rho0` matrix. They are merged with `var_arrays`; the total remains limited to two sweep axes. These arrays select different initial states for independent simulations, not for different time samples. |
-| `rho0_values` | numeric array or `None` | Alternative to symbolic `rho0`: one explicit reduced initial state per simulation point. Shape is `(num_X, N*N-1)` for one sweep axis or `(num_X, num_Y, N*N-1)` for two axes. The last dimension stores density-matrix components, not time samples. Values can change without recompilation. Cannot be combined with `rho0`. |
 
 ### Initial State And Output
 
 | Parameter | Type/default | Meaning |
 | --- | --- | --- |
-| `rho0` | `N x N` SymPy matrix, reduced expression list, or `None` | Initial density matrix at `t=t_in`. It may contain symbols swept through `rho0_var_arrays` or `var_arrays`, and it may use runtime constants. `None` initializes state `|0><0|`. For matrix input, GQIS reads the first `N-1` diagonal populations and the upper-triangular coherences; unit trace and the lower triangle are reconstructed. |
+| `rho0` | `N x N` SymPy matrix, reduced expression list, or `None` | Initial density matrix at `t=t_in`. It may contain symbols swept through `rho0_var_arrays` or `var_arrays`, and it may use runtime constants. `None` initializes state `\|0><0\|`. For matrix input, GQIS reads the first `N-1` diagonal populations and the upper-triangular coherences; unit trace and the lower triangle are reconstructed. |
 | `output_mode` | `"mean"` | `"mean"` averages the expectation value after each post-warmup solver step; `"final"` returns the expectation value at the final time; `"final_rho"` returns the final reduced real density vector in the ordering described under `build_independent_rho`. |
 | `warmup_time` | `0.0` | Initial fraction of time excluded from the time average, in `[0, 1]`. This can suppress transient dependence on the initial state without shortening the simulated evolution. A value of `1` leaves no averaging window and returns the final expectation value. |
 | `return_time_trace` | `False` | Also return sampled expectation values and their absolute times. Samples begin at `t=t_in+dt`, after the first integration step. |
@@ -208,24 +153,16 @@ calculated numerically or are easier to provide as arbitrary reduced vectors.
 Both initial-state representations specify one state at `t=t_in` for every independent GPU
 simulation; neither contains a state for every time sample.
 
-### Code Generation And Execution
+### Solver And Precision Options
+
+These options apply to both APIs. Begin with the default RK4 and refine the uniform time grid;
+compare methods when you need lower runtime at your target accuracy.
 
 | Parameter | Type/default | Meaning |
 | --- | --- | --- |
-| `kernel_template_file` | `None` | Uses the canonical CUDA template packaged with GQIS. Supply an explicit path only to test or develop a custom kernel template; relative explicit paths are checked in the current directory and then inside the installed package. |
-| `RHSreuse` | `True` | Reuse the generated symbolic RHS independently of the solver-specific compiled CUDA kernel. Different fixed-step solvers therefore share one symbolic RHS while retaining separate kernels. Sweep arrays, numerical initial states supplied through `rho0_values`, and numerical values assigned to selected constants kept symbolic may change between calls. `False` regenerates both stages on every call. |
 | `solver` | `"rk4"` | Uniform fixed-step CUDA integrator: `"rk4"`, `"lserk4"`, `"dp5"`, `"ab5"`, `"anas5"`, `"tsit5"`, `"alshina6"`, or `"dop853"`. Only the selected solver body is inserted into the generated CUDA source. `"rk4"` remains the default. No solver performs adaptive step acceptance. |
 | `solver_frequency` | `None` | Non-negative angular frequency `w` for fixed-step `"anas5"`. Before launch, its fitted coefficient is calculated from `v = w*dt` and then remains constant throughout the kernel. This does not enable adaptive stepping. Anas5 defaults to `w=1` when omitted; supply the dominant frequency for meaningful fitted behavior. Other solvers ignore it. |
-| `unroll` | `False` | `True` forces `#pragma unroll` on solver vector loops. `False` leaves the decision to NVRTC, preserving the existing behavior and avoiding mandatory unrolling when larger density vectors would create excessive register pressure. Changing this option produces a separately compiled cached kernel. |
 | `fp64` | `False` | Use 64-bit floating-point (FP64) state, sweep arrays, constants, generated math, and output instead of the faster 32-bit floating-point (FP32) path. |
-| `pre_expand` | `True` | Expand symbolic RHS expressions before code generation. |
-| `collect_rho` | `True` | Collect RHS terms by reduced density variables. |
-| `factor_terms` | `False` | Factor symbolic terms before common-subexpression elimination (CSE). This can reduce operations but increase preparation time. |
-| `cse_batch_size` | `None` | Equations per common-subexpression-elimination batch. `None` performs global CSE; smaller batches can lower CUDA register pressure. |
-| `cse_simplify` | `True` | Simplify expressions during CSE emission. |
-| `hoist_rho_independent` | `True` | Move state-independent expressions to per-thread static or per-RK-stage drive calculations. |
-| `nvrtc_options` | empty tuple | Additional NVIDIA Runtime Compilation (NVRTC) options passed to `cupy.RawKernel`. A string or iterable of strings is accepted. |
-| `Actual_Kernel_Save` | `False` | `True` saves `<caller>_Kernel.cu`; a string saves to that explicit path. Generated kernels are debugging artifacts and are ignored by the repository. |
 
 ### Available Fixed-Step Solvers
 
@@ -251,8 +188,136 @@ permits. DOP853 uses the eighth-order update without the embedded error estimate
 Anas5(w) uses the supplied frequency and fixed step size to set its fitted coefficient.
 
 Accuracy depends on the chosen method and user-supplied step size. The
-[Benchmark 03 accuracy sweeps](BENCHMARKS.md#accuracy-calibrated-dividers) show this dependence
+[Benchmark 03 accuracy sweeps](BENCHMARKS.md#benchmark-03-accuracy-and-convergence) show this dependence
 for the two- and four-level examples and provide a workflow for choosing a time grid for your own problem.
+
+### Returns
+
+Without optional trace/timing values, the result is a NumPy array:
+
+- `output_mode="mean"` or `"final"`: complex shape `(num_X, num_Y)`.
+- `output_mode="final_rho"`: real shape `(num_X, num_Y, N*N-1)`.
+- A one-axis sweep retains a singleton Y dimension.
+
+With `return_time_trace=True`, the return is
+`(result, trace, trace_t)`, where `trace` has complex shape
+`(num_X, num_Y, num_trace)`. With `return_timing_info=True`, `timing_info` is
+appended to that tuple; without a trace the return is `(result, timing_info)`.
+
+### Validation And Limitations
+
+- At least one sweep array is required, even for a single simulation; use a
+  one-element dummy axis when no physical parameter is swept.
+- GQIS validates matrix dimensions, time-grid structure, option combinations,
+  explicit initial-state array shapes, and finite output values.
+- GQIS does not test whether a supplied symbolic or reduced initial state is
+  positive semidefinite. The caller is responsible for providing a physical
+  density matrix. For matrix input, the last population and lower triangle are
+  reconstructed rather than independently validated.
+- The elapsed time grid is uniform and begins at zero. Absolute stage times add `t_in`
+  to the elapsed time derived from the integer step index.
+- Kernel reuse is process-local; the compiled-kernel cache is not written to
+  disk. A new Python process compiles its first model again.
+- Practical Hilbert-space size is limited by symbolic-generation cost, NVRTC
+  compilation, CUDA register pressure, and GPU memory.
+
+## Summary
+
+Use `mesolve_2D` for a symbolic Lindblad model and `odesolve_2D` for real first-order ODEs.
+Supply the equations, uniform elapsed-time grid and sweep axes; choose initial values and the
+required final, mean or sampled output. Both APIs default to fixed-step RK4 and FP32.
+Check convergence for the observable you need before increasing the parameter-grid size.
+
+The remaining sections describe optional continuation, caching, diagnostics and symbolic helpers.
+
+## Optional Execution And Inspection
+
+### Continuing On The GPU
+
+Both APIs accept `t_in=0.0` and `return_device=False`. With `return_device=True`, result and
+trace arrays are CuPy arrays; trace times remain small NumPy metadata arrays. Pass the returned
+state back through `y0_values` (ODE) or `rho0_values` (Lindblad) without downloading it. Finite-value
+checks still synchronize a scalar status; they do not copy the full state. For example:
+
+```python
+state = odesolve_2D(rhs, states, y0, elapsed_times, t_in=10.0, return_device=True, **model_options)
+state = odesolve_2D(rhs, states, None, elapsed_times,
+                    y0_values=state, t_in=10.0 + elapsed_times[-1],
+                    return_device=True, **model_options)
+```
+
+Here `states` is the ordered state-symbol list and `model_options` contains the same sweep axes,
+constants and solver settings for both calls. Request full-state output when continuing a trajectory.
+Stage times use `t_in + elapsed_stage_time`, with elapsed time derived from the integer step index.
+Zero and nonzero offsets share one runtime-parameterized kernel, cached after first use.
+Changing `t_in` does not require another compilation.
+FP32 still rounds the
+absolute time to its representable precision; use FP64 when small intervals at large times need it.
+
+### ODE Code Generation
+
+`solver`, `solver_frequency`, `fp64`, `unroll`, caching, runtime constants and code-generation
+options below also apply. Defaults are RK4 and FP32. Nonlinear expressions are not expanded
+or collected by default. Common expressions are reused, parameter-only combinations are
+hoisted out of integration, and time-only expressions are evaluated in the shared stage-drive
+routine. Runtime-constant-only combinations use the existing CPU precomputation path.
+Only the selected integrator is emitted. `cse_batch_size` can limit temporary lifetimes and
+help reduce register pressure for larger systems.
+Full-state means require an extra accumulator vector; evolution storage scales with
+`nx * ny * nsamples * nstate`, so use sparse sampling on large grids.
+
+### Full Lindblad Call Signature
+
+The complete signature includes the optional controls described below:
+
+```python
+mesolve_2D(
+    H, Drive, Col_Ops, mean_operator, tlist,
+    var_arrays=None, const_values=None,
+    kernel_template_file=None, *,
+    RHSreuse=True, runtime_consts=None, keep_symbolic_consts=None,
+    auto_runtime_consts=False, output_mode="mean", solver="rk4",
+    solver_frequency=None, unroll=False, fp64=False,
+    pre_expand=True, collect_rho=True, factor_terms=False,
+    cse_batch_size=None, cse_simplify=True,
+    hoist_rho_independent=True, nvrtc_options=(), timings=False,
+    return_timing_info=False, warmup_time=0.0, rho0=None,
+    rho0_var_arrays=None, rho0_values=None, return_time_trace=False,
+    time_trace_every=None, time_trace_samples_per_period=None,
+    solver_samples_per_period=None, Actual_Kernel_Save=False,
+    beep_on_error=False, ignore_non_finite_output=False,
+    t_in=0.0, return_device=False,
+)
+```
+
+### Repeated Sweeps And Explicit Initial States
+
+Keep changing constants symbolic to reuse compiled equations across frames or fitting iterations.
+For an independent numerical initial state at every sweep point, use `rho0_values`.
+
+| Parameter | Type/default | Meaning |
+| --- | --- | --- |
+| `runtime_consts` | `dict[Symbol, number]` | Values for constants intentionally left symbolic in the generated ODE. They are uploaded for each call, so they can change while the previously generated and compiled ODE kernel is reused. A value here overrides the same symbol in `const_values`. This is useful for animations and repeated calculations. |
+| `keep_symbolic_consts` | iterable, `"all"`, `"auto"`, `"const_values"`, or `None` | Selects which `const_values` symbols remain symbolic instead of being inserted as fixed numbers. This allows selected constants to change between animation frames while reusing the generated ODE and compiled kernel. `"all"`, `"auto"`, and `"const_values"` select every `const_values` key. |
+| `auto_runtime_consts` | `False` | Keep every `const_values` key symbolic so all constant values can change between repeated calls without regenerating the ODE. |
+| `rho0_var_arrays` | `dict[Symbol, 1D array]` | Sweep values for symbols used only in the symbolic `rho0` matrix. They are merged with `var_arrays`; the total remains limited to two sweep axes. These arrays select different initial states for independent simulations, not for different time samples. |
+| `rho0_values` | numeric array or `None` | Alternative to symbolic `rho0`: one explicit reduced initial state per simulation point. Shape is `(num_X, N*N-1)` for one sweep axis or `(num_X, num_Y, N*N-1)` for two axes. The last dimension stores density-matrix components, not time samples. Values can change without recompilation. Cannot be combined with `rho0`. |
+
+### Code Generation And Execution
+
+| Parameter | Type/default | Meaning |
+| --- | --- | --- |
+| `kernel_template_file` | `None` | Uses the canonical CUDA template packaged with GQIS. Supply an explicit path only to test or develop a custom kernel template; relative explicit paths are checked in the current directory and then inside the installed package. |
+| `RHSreuse` | `True` | Reuse the generated symbolic RHS independently of the solver-specific compiled CUDA kernel. Different fixed-step solvers therefore share one symbolic RHS while retaining separate kernels. Sweep arrays, numerical initial states supplied through `rho0_values`, and numerical values assigned to selected constants kept symbolic may change between calls. `False` regenerates both stages on every call. |
+| `unroll` | `False` | `True` forces `#pragma unroll` on solver vector loops. `False` leaves the decision to NVRTC, preserving the existing behavior and avoiding mandatory unrolling when larger density vectors would create excessive register pressure. Changing this option produces a separately compiled cached kernel. |
+| `pre_expand` | `True` | Expand symbolic RHS expressions before code generation. |
+| `collect_rho` | `True` | Collect RHS terms by reduced density variables. |
+| `factor_terms` | `False` | Factor symbolic terms before common-subexpression elimination (CSE). This can reduce operations but increase preparation time. |
+| `cse_batch_size` | `None` | Equations per common-subexpression-elimination batch. `None` performs global CSE; smaller batches can lower CUDA register pressure. |
+| `cse_simplify` | `True` | Simplify expressions during CSE emission. |
+| `hoist_rho_independent` | `True` | Move state-independent expressions to per-thread static or per-RK-stage drive calculations. |
+| `nvrtc_options` | empty tuple | Additional NVIDIA Runtime Compilation (NVRTC) options passed to `cupy.RawKernel`. A string or iterable of strings is accepted. |
+| `Actual_Kernel_Save` | `False` | `True` saves `<caller>_Kernel.cu`; a string saves to that explicit path. Generated kernels are debugging artifacts and are ignored by the repository. |
 
 ### Diagnostics
 
@@ -286,36 +351,6 @@ compiled kernel are reused. Without `keep_symbolic_consts={gamma}`, the value is
 inserted directly into the generated equations and changing it requires new
 symbolic generation and compilation. `runtime_consts={gamma: value}` can also
 supply or override the value of a constant kept symbolic this way.
-
-### Returns
-
-Without optional trace/timing values, the result is a NumPy array:
-
-- `output_mode="mean"` or `"final"`: complex shape `(num_X, num_Y)`.
-- `output_mode="final_rho"`: real shape `(num_X, num_Y, N*N-1)`.
-- A one-axis sweep retains a singleton Y dimension.
-
-With `return_time_trace=True`, the return is
-`(result, trace, trace_t)`, where `trace` has complex shape
-`(num_X, num_Y, num_trace)`. With `return_timing_info=True`, `timing_info` is
-appended to that tuple; without a trace the return is `(result, timing_info)`.
-
-### Validation And Limitations
-
-- At least one sweep array is required, even for a single simulation; use a
-  one-element dummy axis when no physical parameter is swept.
-- GQIS validates matrix dimensions, time-grid structure, option combinations,
-  explicit initial-state array shapes, and finite output values.
-- GQIS does not test whether a supplied symbolic or reduced initial state is
-  positive semidefinite. The caller is responsible for providing a physical
-  density matrix. For matrix input, the last population and lower triangle are
-  reconstructed rather than independently validated.
-- The elapsed time grid is uniform and begins at zero. Absolute stage times add `t_in`
-  to the elapsed time derived from the integer step index.
-- Kernel reuse is process-local; the compiled-kernel cache is not written to
-  disk. A new Python process compiles its first model again.
-- Practical Hilbert-space size is limited by symbolic-generation cost, NVRTC
-  compilation, CUDA register pressure, and GPU memory.
 
 ## Density-Matrix Helpers
 

@@ -1,283 +1,267 @@
 # Benchmark Validation And Performance
 
-The benchmark scripts validate the GPU Quantum Interferometry Solver (GQIS) against independent numerical solvers and
-show how calculation time changes with parameter-grid size. They are supporting evidence for the solver, not the
-primary GQIS interface. The runnable examples and [Lindblad and general ODE APIs](./GQIS_API.md)
-describe normal use.
+Use Benchmark 01/02 to compare solver results and measure parameter-sweep scaling.
+Use Benchmark 03 to choose a solver and time resolution that satisfy RMS (root-mean-square)
+and maximum-error limits against a numerical reference. The bundled problems are Lindblad systems;
+normal package use, including general ODE sweeps, is described in the [API reference](GQIS_API.md).
 
-## Models
+## Benchmark 01 And 02: Comparison And Scaling
 
-- `Benchmarks/Benchmark_01_two_level.py` evaluates a driven two-level system.
-- `Benchmarks/Benchmark_02_four_level_Interferometry.py` evaluates a coupled qubit-resonator model represented by four basis
-  states.
-- `Benchmarks/Benchmark_03_accuracy_timestep_sweep.py` finds the coarsest tested time grid on which each selected
-  solver still satisfies user-defined RMS and maximum-error limits. It can run either built-in model.
+Both scripts have the same workflow and options; only the physical model differs:
 
-Benchmarks 01 and 02 offer the same solver choices. Central processing unit (CPU) solvers run on the computer processor;
-graphics processing unit (GPU) solvers run on the NVIDIA GPU.
-
-| Solver | Method |
+| Script in `Benchmarks/` | Physical model |
 | --- | --- |
-| `gpu` | GQIS fixed-step fourth-order Runge-Kutta (RK4) solver on CUDA. |
-| `python_cpu` | Transparent fixed-step Python RK4 reference. |
-| `python_ode_cpu` | Adaptive SciPy `solve_ivp` embedded fourth/fifth-order Runge-Kutta (RK45) method on CPU. |
-| `qutip_cpu` | Adaptive QuTiP `mesolve` reference on CPU. |
-| `julia_gpu` | Julia DifferentialEquations/DiffEqGPU solver using the same reduced density-matrix ordinary differential equation (ODE) system as GQIS. |
+| `Benchmark_01_two_level.py` | Driven two-level interferometry |
+| `Benchmark_02_four_level_Interferometry.py` | Coupled qubit-resonator interferometry |
 
-These are the default Benchmark 01/02 names. Benchmark 03 and calibrated scaling runs also accept
-`gqis_rk4`, `gqis_lserk4`, `gqis_dp5`, `gqis_tsit5`, `gqis_anas5`, `gqis_ab5`, `gqis_alshina6`
-and `gqis_dop853`. Their [methods and per-step costs](GQIS_API.md#available-fixed-step-solvers) are
-documented in the API reference. Select several in Benchmark 03's `target_solvers` to compare them in one run.
-
-## Running Benchmarks
-
-The user-editable block near the bottom of each script documents the model, grid, solver, and output settings. Run the
-default configuration with:
+Edit `user_settings()` near the bottom of either script to choose the model parameters, grid,
+solver, duration and output filename. Command-line arguments override those settings.
+Run from the repository root, for example:
 
 ```bash
-python Benchmarks/Benchmark_01_two_level.py
-python Benchmarks/Benchmark_02_four_level_Interferometry.py
+python Benchmarks/Benchmark_01_two_level.py --mode single --solver gqis_tsit5
+python Benchmarks/Benchmark_02_four_level_Interferometry.py --mode diff --solver gqis_dop853 --solver-b qutip_cpu
 ```
 
-The available modes are:
-
-| Mode | Purpose |
+| Mode | Result |
 | --- | --- |
-| `single` | Run one selected solver. |
-| `diff` | Run any two solvers and report map differences and timings. |
-| `all` | Attempt every available solver. |
-| `full_benchmark` | Measure calculation time over powers-of-two square-grid sizes and save comma-separated values (CSV) data and a Portable Network Graphics (PNG) figure. |
+| `single` | One solver's interferogram and timing |
+| `diff` | Two interferograms, timings, MSE, RMS and maximum absolute difference |
+| `all` | Attempt all listed backends, including every GQIS method (`gpu` repeats RK4) |
+| `full_benchmark` | Timings over powers-of-two square grids, saved as CSV and PNG |
 
-For example, compare GQIS with QuTiP using the settings selected in the benchmark file:
+All four modes accept these solver names:
 
-```bash
-python Benchmarks/Benchmark_02_four_level_Interferometry.py --mode diff --solver gpu --solver-b qutip_cpu
-```
+| Name | Implementation |
+| --- | --- |
+| `gqis_rk4`, `gqis_lserk4`, `gqis_dp5`, `gqis_tsit5`, `gqis_anas5`, `gqis_ab5`, `gqis_alshina6`, `gqis_dop853` | GQIS fixed-step CUDA methods; `gpu` is an RK4 default alias |
+| `python_cpu` | Python fixed-step RK4 reference on CPU |
+| `python_ode_cpu` | Adaptive SciPy `solve_ivp`, RK45, on CPU |
+| `qutip_cpu` | Adaptive QuTiP `mesolve` on CPU |
+| `julia_gpu` | Julia DifferentialEquations/DiffEqGPU on the reduced physical ODE system |
 
-`diff` mode prints mean-square deviation (MSE), root-mean-square deviation (RMS), maximum absolute deviation, and both
-solver times. Increase `solver_steps_per_period` until the GQIS result is converged. Use divider `1` for QuTiP or SciPy
-when validating every solver on the same requested time grid for evaluating time-dependent coefficients and recording
-output.
+See [method choices and costs](GQIS_API.md#available-fixed-step-solvers) for the GQIS methods.
+Anas5 uses the model's drive angular frequency as its fitted frequency.
 
-Run either script with `--help` for its complete command-line options. Those options override `user_settings()`.
-
-## Accuracy-Calibrated Dividers
-
-Benchmark 03 compares RMS and maximum observable error against a reference while varying the
-user-defined time step. Together with calculation times, this shows which methods and time grids
-meet the chosen error limits. The preferred working point can change with the model and tolerances.
-
-Available accuracy sweeps:
-
-- Two-level comparison with QuTiP: [figure](Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_sweep_GQIS_vs_QuTiP_plot.png), [CSV](Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_sweep_GQIS_vs_QuTiP.csv).
-- Dense two-level grid: [figure](<Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_dense grid_sweep.png>), [CSV](<Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_dense grid_sweep.csv>).
-- Dense four-level grid: [figure](<Benchmarks/results/Benchmark_03_four_level_accuracy_timestep_dense grid_sweep.png>), [CSV](<Benchmarks/results/Benchmark_03_four_level_accuracy_timestep_dense grid_sweep.csv>).
-
-Benchmark 03 can save its accepted time-grid choices by enabling:
-
-```python
-"save_optimal_dividers": True,
-"optimal_dividers_file": None,
-```
-
-Set `"comparison_output": "mean"` for the usual time-averaged interferogram, or use `"final"` to compare the
-same observable at the final calculated state. Final-state results and reference caches receive a `_final` filename
-suffix, so they do not overwrite the standard mean-output results.
-
-`Benchmarks/Benchmark_03_plot_from_csv.py` regenerates the figure without repeating any calculation. Its `include_solvers`
-setting selects which curves are shown, and `show_results_table=False` produces a compact figure for the repository.
-The complete table is useful while inspecting a run, but it is not required in a published figure when the CSV is
-provided beside it. `table_times_only=True` removes the RMS and maximum-error rows, while
-`show_best_summary_row=True` adds a compact dark-olive row containing each solver's largest accepted divider and measured time.
-The same coarsest accepted grid is highlighted in the full table, regardless of timing fluctuations.
-The first two panels show steps per period on a base-2 logarithmic axis by default; use `time_grid_axis="divider"`
-to show divider factors instead. Set `divider_axis_scale="equidistant"` to give
-each tested divider equal spacing, and set `divider_axis_labels="all"` to label every tested divider instead of the
-default compact power-of-two labels. These settings are available in both Benchmark 03 and its CSV plotting helper.
-
-Every Benchmark 03 run also writes a complete `<output_stem>_settings.json` manifest. Keep one manifest beside each
-published CSV and PNG instead of copying the Python benchmark for each figure. For example, the low-grid two-level,
-high-resolution two-level, and high-resolution four-level figures can each have a descriptive output stem and its own
-small settings manifest while continuing to use the same benchmark implementation. Reproduce one with:
+For scaling becnhmark, select several backends with `--full-solvers`:
 
 ```bash
-python Benchmarks/Benchmark_03_accuracy_timestep_sweep.py --settings Benchmarks/results/<name>_settings.json
+python Benchmarks/Benchmark_01_two_level.py full_benchmark --full-solvers gqis_rk4,gqis_tsit5,gqis_dop853,qutip_cpu
 ```
 
-To record the currently edited user settings for an already completed result without starting any calculation, run
-`Benchmark_03_accuracy_timestep_sweep.py --save-settings-only <name>_settings.json`.
+The scripts' configured `accuracy_dividers_file` loads a matching Benchmark 03 calibration.
+Set that setting to `None` to use the manually configured time grids. A calibrated scaling run uses the
+calibration's model, duration, adaptive settings and solver-specific step counts; only the parameter-grid size changes.
+See [calibration files](#calibration-files-and-compatibility) for overrides and older files.
 
-`Benchmarks/Benchmark_01_02_plot_from_csv.py` rebuilds either scaling figure directly from its CSV. Change `csv_file`,
-`include_solvers`, table visibility, title, and output options in its user settings. New measurements can be supplied in
-`additional_csv_files` or `additional_measured_points`; a matching solver and side dimension replaces the old point in
-the graph without modifying the original CSV or running a solver. With `refresh_extrapolated_points=True`, later dashed
-estimates between measured points are interpolated between their nearest measured neighbors in log-log space;
-estimates beyond the last measurement use the last two measured points. Both remain marked as estimates.
-Combine measurements only when the physical model and the
-solver-specific time-grid settings match the primary CSV.
+Scaling CSVs record hardware, software, numerical settings and measured/extrapolated status in
+`Benchmarks/results/`. Circles denote measurements; squares denote estimates after a solver reaches
+or is predicted to exceed `bench_solver_time_limit`. CPU and Julia measurements run in terminable
+subprocesses. GQIS runs in the warmed parent process; its time limit is checked after a solve completes.
+Use `--help` for all CLI options and [timing details](#timing-boundaries-and-preparation) when interpreting performance.
 
-`None` writes `<output_stem>_optimal_dividers.json`. For each tested solver that passes both limits, the file records
-the coarsest accepted grid (largest tested divider), its divider, actual steps per period, time, and errors. New files include the
-complete Benchmark 03 settings and are refreshed after each solver finishes its sweep.
+## Benchmark 03: Accuracy And Convergence
 
-Benchmark 01 or 02 can load the matching calibration through its user settings:
-
-```python
-"accuracy_dividers_file": "Benchmark_03_two_level_accuracy_timestep_sweep_optimal_dividers.json",
-```
-
-Relative paths are searched from the working directory, `Benchmarks/results/`, beside the benchmark script, and in
-its parent directory.
-A calibration file must match the selected two-level or four-level model. If a solver has no accepted entry,
-GPU methods fall back to divider `1` and CPU methods to divider `10`. In the current Benchmark 01/02 solver names,
-`gpu` uses the `gqis_rk4` entry and `julia_gpu` uses `julia_gpu_fp32`.
-
-In `full_benchmark` mode, loading a calibration uses Benchmark 03's model, duration, solver implementations, Julia
-precision variants, and adaptive settings. Only the parameter-grid size changes. The saved steps per period are used
-directly, so Benchmark 01/02's default base density cannot change the calibrated timestep. By default, the sweep uses
-the calibration's target list; set `accuracy_solvers` or `--full-solvers` to choose a subset using Benchmark 03 names.
-Fallback settings are printed explicitly because they have not passed the calibration's accuracy test.
-
-For example, from the repository directory:
-
-```text
-python Benchmarks/Benchmark_01_two_level.py full_benchmark --accuracy-dividers-file Benchmark_03_two_level_2048_optimal_dividers.json --full-solvers gqis_rk4,gqis_dop853,julia_gpu_fp32_fopt,qutip_cpu
-python Benchmarks/Benchmark_02_four_level_Interferometry.py full_benchmark --accuracy-dividers-file Benchmark_03_four_level_2048_optimal_dividers.json
-```
-
-Older divider files remain usable. Their selected points are preserved, and the matching `<stem>_settings.json` is
-loaded alongside them. If it is missing for a two-level calibration, Benchmark 01's configured two-level profile is
-used automatically, with Benchmark 03's adaptive settings and the calibration's saved step counts. For a four-level
-file without a settings snapshot, or to select a specific manifest, pass `--accuracy-settings <matching-settings.json>`.
-Existing calibration files retain their recorded selection; regenerate them to apply the current coarsest-accepted-grid rule.
-
-To add a long measurement, edit `additional_measured_points` in `Benchmark_01_02_plot_from_csv.py`, for example:
-
-```python
-"additional_measured_points": (
-    {"solver": "qutip_cpu", "side_dimension": 2048, "time_s": 43747.3, "status": "measured"},
-),
-"save_merged_csv": True,
-```
-
-This replaces any extrapolated point with the same solver and grid size, regenerates the graph, and saves a separate
-`<CSV stem>_merged.csv`. The source CSV is preserved. Use the 43747.3-second measurement only with a matching two-level
-model, duration, QuTiP settings and output density (32 output intervals per period in that recorded run).
-
-Generate a separate calibration for each physical model and chosen accuracy limits. The resulting Benchmark 01/02
-timings then compare solvers at documented accuracy constraints rather than at an assumed common step density.
-
-> Running `all` or `full_benchmark` can take considerable time, especially with adaptive CPU solvers. Full benchmark
-> mode terminates measurements that exceed its configured limit and extrapolates larger grids instead of leaving a
-> timed-out process running.
-
-## Reproducing Accuracy Figures
-
-The [preset guide](Benchmarks/presets/README.md) describes the three shared Benchmark 03 profiles:
-a small two-level comparison with QuTiP, a dense two-level sweep, and a dense four-level sweep.
-Each profile uses the same benchmark script, with its settings stored separately.
-
-Start with the [64×64 two-level preset](Benchmarks/presets/Benchmark_03_two_level_64.json):
+Benchmark 03 varies time resolution and compares the resulting observable map with a reference.
+Choose `problem`, `target_solvers`, `reference_solver`, reference resolution, and RMS/maximum-error
+limits in `user_settings()` or a JSON settings file. Increase reference accuracy until the reference
+is sufficiently converged for the limits you want to test.
 
 ```bash
 python Benchmarks/Benchmark_03_accuracy_timestep_sweep.py --settings Benchmarks/presets/Benchmark_03_two_level_64.json
 ```
 
-On Windows, [Run_Benchmark_03_two_level_64.bat](Benchmarks/Run_Benchmark_03_two_level_64.bat)
-starts that calculation; [Plot_Benchmark_03_two_level_64.bat](Benchmarks/Plot_Benchmark_03_two_level_64.bat)
-rebuilds its figure from CSV without rerunning solvers. Matching launchers exist for both dense-grid profiles.
+Use `comparison_output="mean"` for a time-averaged interferogram or `"final"` for the final observable.
+The sweep records errors and times, highlights the **coarsest tested grid passing both limits**, and can
+save that selection for Benchmark 01/02 with `save_optimal_dividers=True`.
+The coarsest accepted grid is not necessarily the fastest measured point when timings fluctuate.
 
-Enable `save_reference_map` on the first calculation and `load_reference_map` on subsequent runs to reuse
-the reference; keep the reference filename and model settings consistent. A dense QuTiP calculation can take
-more than 12 hours. GQIS results are saved after each solver sweep, while Julia and QuTiP results are saved
-after each completed point, so partial results remain usable.
+Time resolution is shown as **steps per driving period**. For adaptive SciPy and QuTiP backends,
+this quantity describes requested **output intervals per period**, not internal integration steps.
+Adaptive tolerances control internal error. A dense GQIS integration grid is not required for adaptive
+output: refine adaptive tolerances and output density separately until the compared observable converges.
+Output density affects sampled averaging; array-based QuTiP drives also require converged coefficient interpolation.
 
-For publication, retain the exact settings snapshot beside each selected CSV and figure. A preset is a
-starting configuration, not a substitute for the settings of an earlier measurement.
+For more Benchmark 03 options, see [presets and saved runs](#reproducing-accuracy-figures),
+[calibration files](#calibration-files-and-compatibility), and [time-grid details](#time-grids-and-legacy-option-names).
 
-## Numerical Comparison Notes
+## Plot Saved CSV Data
 
-- GQIS defaults to fixed-step RK4; an accuracy calibration can select other GQIS methods. `python_cpu` uses RK4.
-  Without a loaded accuracy calibration, GQIS uses divider `1` and the CPU
-  methods use their configured fallback dividers.
-- `python_ode_cpu` and `qutip_cpu` choose adaptive internal steps. Their default divider of `10` reduces the requested
-  number of time samples used to evaluate time-dependent coefficients and record output; it does not change the internal
-  adaptive accuracy target. Set the divider to `1` when all solvers must receive the same requested time grid.
-- If a time list contains `M` samples, it defines `M - 1` integration intervals. `N` always denotes the number of
-  simulated quantum levels, not the time-grid length.
-- The Julia solver solves the same trace- and Hermiticity-reduced physical ODE system as GQIS. Its scaling value is the
-  synchronized Julia solve time; symbolic and Julia-side single-threaded CPU preparation are excluded. Consequently,
-  the plotted value is a synchronized solve-call measurement, including work done inside that call, rather than
-  an isolated GPU-kernel measurement. Preparation/overhead is displayed separately when recorded in the CSV.
-- The accuracy sweeps complement the hardware- and model-specific timings by showing performance at the chosen error limits.
+Both plot helpers rebuild figures without running a solver. Edit their `user_settings()` and run:
+
+```bash
+python Benchmarks/Benchmark_01_02_plot_from_csv.py
+python Benchmarks/Benchmark_03_plot_from_csv.py
+```
+
+Common settings are `csv_file`, `include_solvers` (empty selects all), `show_results_table`,
+`show_plot`, and `output_file`. With `output_file=None`, the figure is saved beside the CSV as
+`<CSV stem>_plot.png`. Select solver identifiers as stored in the CSV.
+
+**Benchmark 01/02 plotter:** draws calculation time versus simulation count. It also supports
+`title`, `dpi`, `solver_labels`, `show_side_dimensions`, and `show_startup_times`.
+See [adding measurements](#adding-measurements-to-a-scaling-plot) and
+[preparation curves](#timing-boundaries-and-preparation) for optional changes.
+
+**Benchmark 03 plotter:** draws accuracy and time versus steps per period. `table_times_only=True`
+hides error rows; `show_best_summary_row=True` shows each solver's coarsest accepted grid and time.
+`show_results_table=False` gives a compact figure. See [axis controls](#time-grids-and-legacy-option-names)
+for alternative spacing and labels.
+
+## Summary
+
+Compare maps with Benchmark 01/02 `diff`; choose accurate time grids with Benchmark 03;
+then use those grids in Benchmark 01/02 `full_benchmark`. Replot the saved CSV when only figure
+formatting changes. Keep each result's settings with its CSV and figure so the calculation can be reproduced.
+
+## Reproducing Accuracy Figures
+
+The [Benchmark 03 preset details](Benchmarks/presets/Benchmark03_presets_details.md) describe
+small two-level, dense two-level and dense four-level configurations. Windows launchers such as
+[Run_Benchmark_03_two_level_64.bat](Benchmarks/Run_Benchmark_03_two_level_64.bat) run a preset;
+[Plot_Benchmark_03_two_level_64.bat](Benchmarks/Plot_Benchmark_03_two_level_64.bat) plots its saved CSV.
+Matching launchers exist for both dense profiles.
+
+Benchmark 03 writes `<output_stem>_settings.json` alongside its results. Reproduce a saved run with:
+
+```bash
+python Benchmarks/Benchmark_03_accuracy_timestep_sweep.py --settings Benchmarks/results/<name>_settings.json
+```
+
+A preset is a starting configuration. The saved run's settings describe the actual measurement.
+`--save-settings-only <name>_settings.json` exports the currently selected settings without calculating;
+use that export for an older result only if those settings still match the completed run.
+
+Enable `save_reference_map` on the first run and `load_reference_map` on later runs to reuse the
+reference. Keep the reference filename and physical/numerical settings consistent. Dense QuTiP runs
+can take more than 12 hours. GQIS saves after each solver sweep; Julia and QuTiP save after each point,
+so completed portions can be plotted before the whole run finishes.
+
+Saved examples:
+
+- Two-level QuTiP comparison: [CSV](Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_sweep_GQIS_vs_QuTiP.csv), [figure](Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_sweep_GQIS_vs_QuTiP_plot.png).
+- Dense two-level sweep: [CSV](<Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_dense grid_sweep.csv>), [figure](<Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_dense grid_sweep.png>).
+- Dense four-level sweep: [CSV](<Benchmarks/results/Benchmark_03_four_level_accuracy_timestep_dense grid_sweep.csv>), [figure](<Benchmarks/results/Benchmark_03_four_level_accuracy_timestep_dense grid_sweep.png>).
+
+## Calibration Files And Compatibility
+
+With `save_optimal_dividers=True`, `optimal_dividers_file=None` writes
+`<output_stem>_optimal_dividers.json`. Despite the legacy filename, new files record each accepted
+solver's actual steps per period, errors and time, plus complete Benchmark 03 settings.
+Selections are refreshed after each solver finishes.
+
+Load a matching file in Benchmark 01/02 using `accuracy_dividers_file`, or:
+
+```bash
+python Benchmarks/Benchmark_01_two_level.py full_benchmark --accuracy-dividers-file Benchmark_03_two_level_2048_optimal_dividers.json --full-solvers gqis_rk4,gqis_dop853,julia_gpu_fp32_fopt,qutip_cpu
+```
+
+Calibrated scaling supports Benchmark 03's Julia precision variants as well as the GQIS and CPU names.
+The calibration's target list is used unless `accuracy_solvers` or `--full-solvers` overrides selection.
+Saved steps per period are used directly, independent of Benchmark 01/02's base density.
+Create a separate calibration for each model and accuracy target.
+
+Relative calibration paths are searched in the working directory, `Benchmarks/results/`, beside the
+script and in its parent directory. The model must match. `gpu` maps to `gqis_rk4`, and `julia_gpu`
+maps to `julia_gpu_fp32`. Missing accepted entries use uncalibrated fallbacks: full base density for
+GPU methods and one tenth of base density for CPU methods. The fallback is printed explicitly.
+
+For older two-level calibration files without a settings snapshot, Benchmark 01 uses its configured
+two-level profile with Benchmark 03 adaptive settings. For a four-level file without a snapshot,
+or to select a specific manifest, supply `--accuracy-settings <matching-settings.json>`.
+Existing files retain their recorded choices; regenerate calibration to apply today's selection rule.
+
+## Time Grids And Legacy Option Names
+
+Fixed-step GQIS and Python RK4 evolve through the requested final time. A uniform grid made with
+`np.linspace(0, duration, n_steps + 1)` includes both endpoints and defines `n_steps` updates.
+This is ordinary endpoint counting, not an extra integration convention. Floating-point time
+representation still applies. Adaptive solvers also reach the final time, using their own internal steps.
+
+`solver_steps_per_period` is Benchmark 01/02's base integration density. The existing CPU settings
+`python_cpu_step_density_divider`, `python_ode_output_density_divider`, and
+`qutip_output_density_divider` reduce that base density. For example, base density 2048 divided by
+8 requests 256 intervals per period. Python RK4 uses the intervals as integration steps; SciPy and
+QuTiP use them as output intervals. Keeping the same requested grid is an optional diagnostic,
+not a requirement for accuracy validation.
+
+Benchmark 03's settings and CSV schema retain divider names for compatibility. Actual rounded
+`target_steps_per_period` is the meaningful resolution; the plots use steps per period by default.
+In Benchmark 03 and its plot helper, `time_grid_axis="divider"` restores the alternative axis.
+`divider_axis_scale="equidistant"` spaces tested grids evenly, and `divider_axis_labels="all"`
+labels every tested grid. These legacy-named controls also apply to the steps-per-period axis.
+
+## Adding Measurements To A Scaling Plot
+
+In `Benchmark_01_02_plot_from_csv.py`, use `additional_csv_files` to merge another run or
+`additional_measured_points` to enter measured values. Later entries replace a point with the same
+solver identifier and side dimension. Combine only matching model, duration, precision, solver,
+adaptive settings and solver-specific time grids; the plotter does not verify all these conditions.
+
+For example, after replacing the illustrative time with a measurement from your matching run:
+
+```python
+"additional_measured_points": (
+    {"solver": "qutip_cpu", "side_dimension": 2048, "time_s": 123.4, "status": "measured"},
+),
+"save_merged_csv": True,
+```
+
+The source CSV is preserved; `save_merged_csv=True` writes `<CSV stem>_merged.csv`.
+With `refresh_extrapolated_points=True`, estimates between measured neighbors are interpolated in
+log-log space; estimates beyond the measured range use the last two preceding measurements.
+Updated estimates remain marked as extrapolated.
+
+## Timing Boundaries And Preparation
+
+**Julia:** the calculation timer encloses `solve(...)` and the following `CUDA.synchronize()`.
+The plotted calculation time therefore includes work inside the solve call, including any transfers
+performed by that interface. Symbolic preparation, Julia startup, warm-up, parameter setup and output
+handling outside that interval contribute to preparation instead. The wrapper measures preparation
+as total wrapper/subprocess time minus solve time; each point launches a fresh Julia process.
+
+**GQIS:** scaling measurements use a warmed solve path. Benchmark 01 times its Python GPU wrapper;
+Benchmark 02 records wrapper total and the `mesolve_2D` call separately. The calibrated path times
+its GQIS wrapper. These measurements include host-side work and returned results, rather than only
+the CUDA kernel. The API's `gpu_kernel_s` is a separate, narrower timer.
+
+**CPU:** recorded times include the CPU solver workflow and its multiprocessing overhead.
+QuTiP's plotted time is not a GPU-kernel comparison.
+
+Scaling plots can add dotted `tot time` curves to `calc time` curves with `show_startup_times=True`.
+Julia uses recorded `prep_s`; missing values use the mean available preparation as an estimate.
+New GQIS runs record small-grid startup including a warm-up solve. Adding that startup to each
+measured calculation estimates first use; it is not a measured cold full-grid run.
+Older RHS-only metadata produces a `tot time*` curve identified by a footnote.
+No preparation curve is drawn when preparation data is absent.
+
+`preparation_overrides_s={"julia_gpu_fp32_fopt": seconds}` accepts a value recovered from a matching
+run. `solver_labels` changes displayed names without changing CSV identifiers; retain precision and
+stepping variants in the accompanying description when abbreviating a Julia name.
 
 ## Precision And Julia Comparison Notes
 
-FP32 has about seven significant decimal digits, but this is not a bound on the error of an integrated observable.
-Step-size error, accumulated roundoff, signal evaluation and averaging all contribute. Reducing the step size
-usually improves accuracy until these other contributions or reference error become comparable; higher-order
-methods can reach that region with fewer steps. `fp64=True` selects double precision in either GQIS API when needed.
+FP32 represents roughly seven significant decimal digits. Observable accuracy also depends on
+step-size error, accumulated roundoff, drive evaluation, averaging and reference accuracy.
+Refining the time grid helps until other errors dominate. Both GQIS APIs support `fp64=True`.
 
-In the [64×64 two-level QuTiP comparison](Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_sweep_GQIS_vs_QuTiP.csv),
-at 2048 steps per period, the recorded GQIS methods have absolute RMS differences of approximately `3.1–4.4 × 10⁻⁶`
-and maximum differences of `3.5 × 10⁻⁵`. In the [dense four-level sweep](<Benchmarks/results/Benchmark_03_four_level_accuracy_timestep_dense grid_sweep.csv>),
-the divider-1 GQIS results differ from the finer RK4 reference by roughly `3–4 × 10⁻⁷` RMS and `4–6 × 10⁻⁶` maximum.
-The latter measures agreement with a GQIS reference, not an independent absolute-error bound. These examples
-illustrate achievable observable accuracy and its model dependence; the full sweeps show where coarser steps
-start to exceed the selected tolerances.
+In the saved small two-level QuTiP comparison, GQIS at 2048 steps per period differs by roughly
+`3.1-4.4e-6` RMS and `3.5e-5` maximum. In the dense four-level sweep, GQIS at 2048 steps per period
+differs from the 4096-step-per-period GQIS RK4 reference by roughly `3-4e-7` RMS and `4-6e-6` maximum.
+The latter is agreement with a GQIS reference, not an independent absolute-error bound.
+These are model-specific observations, not universal FP32 accuracy limits.
 
-Stock fixed-step Julia `GPUTsit5` with FP32 time showed time-accumulation drift in the long driven calculations
-investigated here: repeatedly adding `dt` changes the evaluated drive phase, and finer steps need not improve the
-result monotonically. The benchmark's experimental integer-step reconstruction substantially reduced this effect
-while retaining FP32 arithmetic. This concerns the tested implementation and time representation, rather than the
-order of the Tsit5 formula. Both stock and modified variants remain selectable:
+The tested stock Julia `GPUTsit5` showed FP32 time-accumulation drift in long driven calculations.
+Repeated addition of `dt` affected drive phase; finer steps did not always improve agreement.
+The experimental integer-step time reconstruction reduced this effect in the saved tests.
+Benchmark 03 and calibrated scaling retain all variants:
 
-| Benchmark name | Time/state arithmetic |
+| Benchmark name | Time and state arithmetic |
 | --- | --- |
-| `julia_gpu_fp32` | Stock FP32 time and state |
-| `julia_gpu_fp64` | FP64 time and state |
-| `julia_gpu_fp32_opt` | Modified FP64 time accumulator with FP32 stage/state arithmetic |
-| `julia_gpu_fp32_fopt` | Modified integer-step reconstruction of FP32 time, FP32 state |
-
-Julia preparation/overhead is measured as total wrapper/subprocess time minus the synchronized solve call.
-It includes symbolic preparation, process/package startup, compilation and warm-up, parameter setup, and output
-handling outside that call; it is not a separate measurement of `EnsembleProblem` construction alone. The current
-wrapper launches a fresh Julia process per point, repeating startup costs. A persistent process with unchanged
-function/types could reuse compilation and suitable problem data across calls.
-
-Benchmark 01/02 scaling plots show dotted curves in the corresponding solver color for solve time plus
-preparation, rather than horizontal preparation-only lines. Julia uses each point's recorded `prep_s`;
-where it is missing, the mean available preparation is used as an estimate, including for extrapolated points.
-New GQIS runs record the small-grid startup/warm-up duration and add it to each solve time as a first-use
-estimate. It includes the warm-up solve, so it is not a separately measured cold full-grid run. Subsequent
-GQIS methods add shared RHS preparation to their own warm-up duration. Older files with only RHS timing
-produce a `tot time*` curve; the figure footnote identifies the recorded RHS-only contribution.
-If no preparation measurement exists, that solver's dotted curve is omitted. The CSV plotter accepts
-`preparation_overrides_s={"julia_gpu_fp32_fopt": seconds}` for a value recovered from a matching run/log;
-`show_startup_times=False` hides these additional curves. Stored calculation times remain unchanged.
-Use the plotter's `solver_labels` dictionary to set legend/table names, for example
-`{"julia_gpu_fp32_fopt": "Julia", "qutip_cpu": "QuTiP(CPU)"}`. These labels do not change the
-CSV identifiers; retain the Julia precision/stepping variant in the figure caption when using a shortened name.
-Legends use compact `calc time` and `tot time` labels. A note below the table explains the timing boundaries,
-startup estimates and QuTiP's CPU solve-call total; the table retains the original timing values.
-
-DiffEqGPU also provides a [lower-level API for reduced overhead](https://docs.sciml.ai/DiffEqGPU/dev/tutorials/lower_level_api/):
-prepare GPU-compatible problems, keep them on the device, and call `vectorized_solve` directly. This avoids the
-high-level interface's automatic input/output transfers and allows data reuse. Initial compilation and problem
-construction are still needed, and changed parameters require corresponding updates. This is a documented route
-to reduce overhead, not a measured speedup in the current GQIS comparisons; the benchmark still uses
-`EnsembleGPUKernel` through the standard ensemble interface.
-
-## Full Scaling Benchmark
-
-Full benchmark mode measures powers-of-two square grids. Measured plot points use circles. Once a solver exceeds or is
-predicted to exceed the time limit, larger values are extrapolated on a graph with logarithmic scales on both axes and
-plotted as squares using the same solver color. Extrapolation is intended to show scaling estimates, not substitute for
-measured data.
-
-Each generated CSV stores the equipment and software versions, physical and numerical configuration, grid dimensions,
-number of simulations, solver, timing components, and measured/extrapolated status. The benchmark also saves its PNG
-figure automatically so a long run can be compared with the reference results later.
+| `julia_gpu_fp32` | Stock FP32 time and state; drift observed in the tested long runs |
+| `julia_gpu_fp64` | FP64 time and state; slower on the reference GPU |
+| `julia_gpu_fp32_opt` | Modified FP64 time accumulator with FP32 stages/state |
+| `julia_gpu_fp32_fopt` | Modified integer-step reconstruction of FP32 time with FP32 state |
 
 ## Reference Results
 
@@ -289,9 +273,39 @@ Reference desktop system:
 - workload: 10,240 RK4 steps per two-level simulation; 5,840 per four-level simulation
 
 The largest measured `32768 x 32768` grids contain 1.07 billion independent simulations.
-GQIS(RK4) completed them in **98.43 seconds** for the two-level model and **303.85 seconds** for the four-level model.
-The corresponding QuTiP estimates are 3,402,704 seconds (39.4 days) and 8,838,590 seconds (102.3 days);
+GQIS(RK4) completed them in about **1 min 38 s** for the two-level model and **5 min 4 s** for the four-level model.
+The corresponding QuTiP estimates are **39.4 days** and **102.3 days**;
 these largest-grid CPU values are extrapolated, not measured runs.
+
+The largest measured QuTiP comparison is the two-level `2048 x 2048` run:
+**12 h 9 min** (43,747 s). That measurement comes from the
+[Benchmark 03 dense two-level sweep](<Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_dense grid_sweep.csv>)
+and was transferred to the scaling figure. The matching GQIS RK4 time comes from the
+[Benchmark 01 scaling CSV](Benchmarks/results/Benchmark_01_full_benchmark.csv).
+
+| Model and measurement | Grid | QuTiP CPU time | GQIS(RK4) calculation time | Measured speedup |
+| --- | --- | --- | --- | --- |
+| Two-level, Benchmark 03 / current scaling | `2048 x 2048` | 12 h 9 min | 0.36223 s | approximately 120,800 times |
+| Four-level, v0.1.1 benchmark | `256 x 256` | 12 min 11 s | 0.033861 s | approximately 21,600 times |
+| Four-level, current calibrated benchmark | `64 x 64` | 4 min 18 s | 0.0079920 s | approximately 32,300 times |
+
+Displayed times are rounded to at most five significant digits; long durations use hours and
+minutes. Speedups are calculated from the unrounded recorded times. Each ratio compares measured
+QuTiP and GQIS times at the same parameter-grid size, excluding GQIS preparation.
+
+The two-level QuTiP run used 32 requested output intervals per driving period (1,280 over
+40 periods), with adaptive internal integration. The calibrated RK4 run used 256 integration
+steps per period (10,240 total).
+
+The historical four-level row pairs QuTiP with the GQIS `calc_s` value from the same v0.1.1 CSV.
+That benchmark used 10,240 RK4 steps per simulation; the current calibrated four-level benchmark
+uses 5,840. The historical row is a separate measured comparison and is not part of the current
+calibrated scaling CSV or its larger-grid averages.
+
+The original Benchmark 01 CSV still contains the older extrapolated QuTiP value at `2048 x 2048`;
+the table above uses the later Benchmark 03 measurement. The smaller `128 x 128` comparison is
+also measured, but is not the largest measured two-level grid. The larger-grid averages below
+refer to the original scaling CSV values.
 
 For the four grid sizes from `4096 x 4096` through `32768 x 32768`, arithmetic means of the
 point-by-point timing ratios are approximately **46,900× over QuTiP and 17.9× over Julia** for the two-level
@@ -317,14 +331,3 @@ QuTiP's internal adaptive integration steps are distinct from these output inter
 [Timing data (CSV)](./Benchmarks/results/Benchmark_02_full_benchmark.csv) | [Figure file (PNG)](./Benchmarks/results/Benchmark_02_full_benchmark_plot.png)
 
 ![Four-level full benchmark](./Benchmarks/results/Benchmark_02_full_benchmark_plot.png)
-
-## Reporting New Results
-
-Generated files are written to `Benchmarks/results/`. Keep each selected CSV and PNG together. The CSV is the
-authoritative record of hardware, software,
-model, time-grid, precision, CPU-divider, sweep-limit, preparation, calculation, and measured/extrapolated metadata.
-Regenerate both files after solver or benchmark changes before citing performance.
-
-Benchmark CSV, PNG and settings JSON files are no longer ignored by default. Review the files selected for
-each commit and include the results referenced by the documentation. Large reference caches and exploratory
-outputs need not be published; keep each published figure with its matching CSV and settings snapshot.

@@ -16,7 +16,10 @@ from Benchmark_full_tools import (accuracy_divider_for_solver, collect_equipment
                                   sympy_to_julia_fp32,
                                   )
 
-EXPECTED_SOLVERS = {"gpu", "python_cpu", "python_ode_cpu", "qutip_cpu", "julia_gpu"}
+from gqis.cuda_solvers import available_solvers
+
+EXPECTED_SOLVERS = {"gpu", "python_cpu", "python_ode_cpu", "qutip_cpu", "julia_gpu"} | {
+    f"gqis_{name}" for name in available_solvers()}
 
 
 def test_accuracy_divider_file_aliases_and_fallbacks(tmp_path):

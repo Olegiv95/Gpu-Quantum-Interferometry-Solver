@@ -4,17 +4,12 @@ Use the matching `Run_Benchmark_03_*.bat` and `Plot_Benchmark_03_*.bat` files in
 the parent `Benchmarks` directory. The plot launchers read saved CSV data;
 they do not run solvers.
 
-The high-resolution QuTiP calculation may take more than 12 hours at full CPU
-load. Targets run in preset order: GQIS, each Julia variant, then QuTiP where
-included. GQIS results are saved after each solver's complete divider sweep;
-Julia and QuTiP results are appended after every point. Other CPU solvers save
-after their complete sweep. The plot launchers can be used before the test finishes;
-selected solvers without saved results yet are skipped.
+## Choose A Preset
 
 | Preset | Grid and problem | Reference | QuTiP target |
 | --- | --- | --- | --- |
 | `two_level_64` | 64 × 64, two levels | QuTiP Adams | Full sweep, last target |
-| `two_level_2048` | 2048 × 2048, two levels | GQIS RK4 | Largest divider only, last target |
+| `two_level_2048` | 2048 × 2048, two levels | GQIS RK4 | Coarsest output grid only, last target |
 | `four_level_2048` | 2048 × 2048, four levels, wd500 | GQIS RK4 | Not included |
 
 Each JSON file contains a complete settings snapshot. All three use 40 drive
@@ -25,10 +20,29 @@ large-grid reference to retain the established comparison; DOP853 can be
 selected by editing `reference_solver` after validating its reference settings.
 
 Results go to `Benchmarks/results/Benchmark_03_<preset>_metrics.csv` and related
-figure/settings files. Running the same preset again replaces its result files.
+figure/settings files.
+
+Running the same preset again replaces its result files.
+
+## Summary
+
+Choose the model and grid in the table, run the matching launcher, and replot its CSV without
+repeating calculations. Keep the generated settings JSON with each CSV and figure.
+
+## Optional Reference Reuse And Progress
+
+The high-resolution QuTiP calculation may take more than 12 hours at full CPU
+load. Targets run in preset order: GQIS, each Julia variant, then QuTiP where
+included. GQIS results are saved after each solver's complete time-resolution sweep;
+Julia and QuTiP results are appended after every point. Other CPU solvers save
+after their complete sweep. The plot launchers can be used before the test finishes;
+selected solvers without saved results yet are skipped.
+
 Reference saving/loading remains disabled in these snapshots; enable
 `save_reference_map` for a first run and `load_reference_map` for later reuse
 if desired. Cache metadata is checked by the benchmark.
+
+## Optional Interpreter And Plot Settings
 
 The batch files use the Anaconda Python under your Windows user directory when
 available, otherwise `python` from PATH. Set `GQIS_PYTHON` to an executable path
