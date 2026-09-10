@@ -60,6 +60,29 @@ or is predicted to exceed `bench_solver_time_limit`. CPU and Julia measurements 
 subprocesses. GQIS runs in the warmed parent process; its time limit is checked after a solve completes.
 Use `--help` for all CLI options and [timing details](#timing-boundaries-and-preparation) when interpreting performance.
 
+### Two-Level time scaling:
+
+Benchmark 01 shows calculation time for driven two-level interferograms as the number of parameter
+sets increases. GQIS approaches linear scaling on large grids, reaching 1.07 billion simulations
+in about **1 min 38 s** with RK4. Circles mark measurements; squares and dashed extensions mark
+extrapolated timings. The transferred QuTiP measurement at `2048 x 2048` took about **12 h 9 min**.
+
+[Timing data (CSV)](./Benchmarks/results/Benchmark_01_full_benchmark.csv) | [Figure file (PNG)](./Benchmarks/results/Benchmark_01_full_benchmark_plot.png)
+
+![Two-level full benchmark](./Benchmarks/results/Benchmark_01_full_benchmark_plot.png)
+
+### Four-Level time scaling:
+
+Benchmark 02 shows the same scaling comparison for the coupled qubit-resonator model. The larger
+state makes each simulation more expensive; GQIS RK4 completes the largest grid of 1.07 billion
+parameter sets in about **5 min 4 s**. Circles mark measurements; squares and dashed extensions
+mark extrapolated timings. This figure uses the current calibrated runs; the historical
+`256 x 256` QuTiP measurement discussed above is a separate result.
+
+[Timing data (CSV)](./Benchmarks/results/Benchmark_02_full_benchmark.csv) | [Figure file (PNG)](./Benchmarks/results/Benchmark_02_full_benchmark_plot.png)
+
+![Four-level full benchmark](./Benchmarks/results/Benchmark_02_full_benchmark_plot.png)
+
 ## Benchmark 03: Accuracy And Convergence
 
 Benchmark 03 varies time resolution and compares the resulting observable map with a reference.
@@ -356,25 +379,4 @@ The calibrated grids differ by solver. Per simulation, the two-level CSV records
 5,840 RK4 steps, 1,720 DOP853 steps, 5,840 Julia steps and 8,200 QuTiP output intervals.
 QuTiP's internal adaptive integration steps are distinct from these output intervals.
 
-### Two-Level time scaling:
 
-Benchmark 01 shows calculation time for driven two-level interferograms as the number of parameter
-sets increases. GQIS approaches linear scaling on large grids, reaching 1.07 billion simulations
-in about **1 min 38 s** with RK4. Circles mark measurements; squares and dashed extensions mark
-extrapolated timings. The transferred QuTiP measurement at `2048 x 2048` took about **12 h 9 min**.
-
-[Timing data (CSV)](./Benchmarks/results/Benchmark_01_full_benchmark.csv) | [Figure file (PNG)](./Benchmarks/results/Benchmark_01_full_benchmark_plot.png)
-
-![Two-level full benchmark](./Benchmarks/results/Benchmark_01_full_benchmark_plot.png)
-
-### Four-Level time scaling:
-
-Benchmark 02 shows the same scaling comparison for the coupled qubit-resonator model. The larger
-state makes each simulation more expensive; GQIS RK4 completes the largest grid of 1.07 billion
-parameter sets in about **5 min 4 s**. Circles mark measurements; squares and dashed extensions
-mark extrapolated timings. This figure uses the current calibrated runs; the historical
-`256 x 256` QuTiP measurement discussed above is a separate result.
-
-[Timing data (CSV)](./Benchmarks/results/Benchmark_02_full_benchmark.csv) | [Figure file (PNG)](./Benchmarks/results/Benchmark_02_full_benchmark_plot.png)
-
-![Four-level full benchmark](./Benchmarks/results/Benchmark_02_full_benchmark_plot.png)
