@@ -1,0 +1,96 @@
+{
+  "format": "gqis_benchmark_03_settings_v1",
+  "settings": {
+    "GQIS_unroll": false,
+    "acceptable_max_abs": 0.01,
+    "acceptable_rms": 0.001,
+    "adaptive_nsteps": 100000,
+    "comparison_output": "mean",
+    "divider_axis_labels": "powers_of_two",
+    "divider_axis_scale": "log2",
+    "four_level_parameters": {
+      "amplitude_max_over_qubit_frequency": 2.234042553191489,
+      "coupling_over_qubit_frequency": 0.03279650630894309,
+      "eps_max_over_qubit_frequency": 2.09916,
+      "gamma1": 0.002,
+      "gamma_phi": 0.0,
+      "kappa": 0.005,
+      "photon_levels": 2,
+      "probe_amplitude": 2e-05,
+      "qubit_frequency": 5.416499999999999,
+      "regimes": {
+        "wd1500": {
+          "amplitude_factor": 1.4949999999999999,
+          "drive_frequency": 1.5
+        },
+        "wd500": {
+          "amplitude_factor": 1.15,
+          "drive_frequency": 0.5
+        }
+      },
+      "resonator_frequency": 7.6767
+    },
+    "four_level_regime": "wd500",
+    "grid_side_dimension": 2048,
+    "ignore_non_finite_output": true,
+    "julia_cmd": "julia",
+    "load_reference_map": false,
+    "optimal_dividers_file": null,
+    "output_stem": "Benchmark_03_two_level_accuracy_timestep_sweep",
+    "problem": "four_level",
+    "qutip_drive_mode": "analytic",
+    "qutip_largest_divider_only": true,
+    "reference_atol": 1e-12,
+    "reference_file": null,
+    "reference_rtol": 1e-10,
+    "reference_solver": "gqis_rk4",
+    "reference_steps_per_period": 4096,
+    "save_optimal_dividers": true,
+    "save_reference_map": false,
+    "save_settings_manifest": true,
+    "show_best_summary_row": false,
+    "show_plot": true,
+    "show_results_table": true,
+    "show_worker_progress": true,
+    "simulation_periods": 40.0,
+    "step_count_dividers": [
+      1,
+      2,
+      3,
+      4,
+      6,
+      8,
+      10,
+      12,
+      14,
+      16,
+      20,
+      24,
+      32,
+      48,
+      64
+    ],
+    "table_times_only": false,
+    "target_atol": 1e-09,
+    "target_base_steps_per_period": 2048,
+    "target_rtol": 1e-07,
+    "target_solvers": [
+      "gqis_rk4",
+      "gqis_ab5",
+      "gqis_anas5",
+      "gqis_tsit5",
+      "gqis_dop853",
+      "julia_gpu_fp32_fopt",
+      "julia_gpu_fp32"
+    ],
+    "time_grid_axis": "steps_per_period",
+    "two_level_parameters": {
+      "amplitude_max_over_w": 10.0,
+      "delta": 1.0,
+      "eps_max_over_w": 10.0,
+      "gamma1_per_period": 0.05,
+      "gamma_phi_per_period": 0.04,
+      "w_over_delta": 1.14
+    }
+  }
+}

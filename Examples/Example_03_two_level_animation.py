@@ -1,5 +1,6 @@
 """Example 03: two-level animation tutorial using GQIS directly."""
 
+from pathlib import Path
 import time
 
 import matplotlib.pyplot as plt
@@ -8,6 +9,14 @@ import sympy as sp
 from matplotlib.animation import FFMpegWriter, FuncAnimation
 
 from gqis import mesolve_2D
+
+def example_output_path(filename) -> Path:
+    """Place relative output names in this example directory's results folder."""
+    path = Path(filename).expanduser()
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parent / "results" / path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def build_two_level_model():
@@ -211,11 +220,12 @@ def main() -> None:
     ani = FuncAnimation(fig, update, frames=len(frame_indices), interval=20, blit=False)
 
     if save_mp4:
+        video_path = example_output_path(video_filename)
         writer = FFMpegWriter(fps=video_fps, codec="libx264", bitrate=-1,
                               extra_args=["-preset", ffmpeg_preset, "-crf",
                                           str(ffmpeg_crf), "-pix_fmt", "yuv420p"])
-        ani.save(video_filename, writer=writer, dpi=video_dpi)
-        print(f"\nSaved: {video_filename}")
+        ani.save(video_path, writer=writer, dpi=video_dpi)
+        print(f"\nSaved: {video_path}")
         print(f"Animation calculation and MP4 export time: {time.time() - total_start:.2f}s")
     else:
         print(f"Interactive animation setup time: {time.time() - total_start:.2f}s; "
@@ -262,6 +272,7 @@ def user_settings() -> dict:
         # Playback and output settings.
         "playback_mode": "pingpong",  # "forward" or "pingpong" animation
         "save_mp4": True,  # False shows interactive animation only without saving to file
+        # Relative filenames are saved in Examples/results/.
         "video_filename": "Example_03_two_level_animation.mp4",
         "video_fps": 5,  # playback rate, not the number of calculated frames
         "video_dpi": 120,  # saved video resolution scale

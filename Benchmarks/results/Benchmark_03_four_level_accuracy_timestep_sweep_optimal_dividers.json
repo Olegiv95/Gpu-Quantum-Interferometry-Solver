@@ -1,0 +1,68 @@
+{
+  "acceptable_max_abs": 0.01,
+  "acceptable_rms": 0.001,
+  "comparison_output": "mean",
+  "details": {
+    "gqis_ab5": {
+      "divider": 2.0,
+      "max_abs": 0.00016392813995480537,
+      "rms": 9.05658093021522e-06,
+      "steps_per_period": 1024
+    },
+    "gqis_anas5": {
+      "divider": 14.0,
+      "max_abs": 0.0040751355700194836,
+      "rms": 0.00013014476245876036,
+      "steps_per_period": 146
+    },
+    "gqis_dop853": {
+      "divider": 48.0,
+      "max_abs": 0.007055989000946283,
+      "rms": 0.000642220490722205,
+      "steps_per_period": 43
+    },
+    "gqis_rk4": {
+      "divider": 14.0,
+      "max_abs": 0.0066431553568691015,
+      "rms": 0.0009991431773116815,
+      "steps_per_period": 146
+    },
+    "gqis_tsit5": {
+      "divider": 14.0,
+      "max_abs": 0.004020036198198795,
+      "rms": 0.00012485290583335584,
+      "steps_per_period": 146
+    },
+    "julia_gpu_fp32": {
+      "divider": 14.0,
+      "max_abs": 0.004071921110153198,
+      "rms": 0.00012608267077965962,
+      "steps_per_period": 146
+    },
+    "julia_gpu_fp32_fopt": {
+      "divider": 14.0,
+      "max_abs": 0.0040163011290133,
+      "rms": 0.00012448863255142844,
+      "steps_per_period": 146
+    },
+    "qutip_cpu": {
+      "divider": 64.0,
+      "steps_per_period": 32
+    }
+  },
+  "format": "gqis_accuracy_dividers_v1",
+  "problem": "four_level",
+  "reference_solver": "gqis_rk4",
+  "selection": "largest tested divider satisfying both accuracy limits",
+  "solver_dividers": {
+    "gqis_ab5": 2.0,
+    "gqis_anas5": 14.0,
+    "gqis_dop853": 48.0,
+    "gqis_rk4": 14.0,
+    "gqis_tsit5": 14.0,
+    "julia_gpu_fp32": 14.0,
+    "julia_gpu_fp32_fopt": 14.0,
+    "qutip_cpu": 64.0
+  },
+  "target_base_steps_per_period": 2048
+}

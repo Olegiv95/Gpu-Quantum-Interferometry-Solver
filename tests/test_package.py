@@ -100,3 +100,17 @@ def test_nonzero_time_origin_is_rejected_before_gpu_launch():
     hamiltonian, drive, collapse, observable, sweep = _minimal_model()
     with pytest.raises(ValueError, match="begin at zero"):
         mesolve_2D(hamiltonian, drive, collapse, observable, [1.0, 2.0], var_arrays=sweep)
+
+
+def test_unknown_solver_is_rejected_before_gpu_launch():
+    hamiltonian, drive, collapse, observable, sweep = _minimal_model()
+    with pytest.raises(ValueError, match="Unsupported solver"):
+        mesolve_2D(hamiltonian, drive, collapse, observable, [0.0, 1.0],
+                   var_arrays=sweep, solver="not_a_solver")
+
+
+def test_non_boolean_unroll_is_rejected_before_gpu_launch():
+    hamiltonian, drive, collapse, observable, sweep = _minimal_model()
+    with pytest.raises(ValueError, match="unroll must be True or False"):
+        mesolve_2D(hamiltonian, drive, collapse, observable, [0.0, 1.0],
+                   var_arrays=sweep, unroll="False")

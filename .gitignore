@@ -29,14 +29,21 @@ env/
 # Large generated scientific outputs
 *.dat
 *.mp4
-!Example_03_two_level_animation.mp4
 *.avi
 *.mov
 *.gif
 
-# Generated run directories. Keep selected benchmark CSV/PNG files in the repo.
-# PNG and CSV are deliberately not ignored globally so documentation/reference
-# results can be committed; place disposable runs under outputs/.
+# Example results: keep presentation media, but never add optional numerical exports.
+Examples/results/*
+!Examples/results/*.png
+!Examples/results/*.jpg
+!Examples/results/*.jpeg
+!Examples/results/*.svg
+!Examples/results/*.pdf
+!Examples/results/*.mp4
+!Examples/results/*.gif
+
+# Other disposable run directories.
 outputs/
 animations/
 

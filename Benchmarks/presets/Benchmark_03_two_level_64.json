@@ -1,0 +1,97 @@
+{
+  "format": "gqis_benchmark_03_settings_v1",
+  "settings": {
+    "problem": "two_level",
+    "four_level_regime": "wd500",
+    "reference_solver": "qutip_cpu",
+    "target_solvers": [
+      "gqis_rk4",
+      "gqis_tsit5",
+      "gqis_dop853",
+      "julia_gpu_fp64",
+      "julia_gpu_fp32_fopt",
+      "julia_gpu_fp32",
+      "qutip_cpu"
+    ],
+    "GQIS_unroll": false,
+    "grid_side_dimension": 64,
+    "reference_steps_per_period": 4096,
+    "target_base_steps_per_period": 2048,
+    "step_count_dividers": [
+      1,
+      2,
+      3,
+      4,
+      6,
+      8,
+      10,
+      12,
+      14,
+      16,
+      20,
+      24,
+      32,
+      48,
+      64
+    ],
+    "simulation_periods": 40,
+    "reference_rtol": 1e-10,
+    "reference_atol": 1e-12,
+    "target_rtol": 1e-7,
+    "target_atol": 1e-9,
+    "adaptive_nsteps": 100000,
+    "acceptable_rms": 0.001,
+    "acceptable_max_abs": 0.01,
+    "qutip_drive_mode": "analytic",
+    "qutip_largest_divider_only": false,
+    "comparison_output": "mean",
+    "load_reference_map": false,
+    "save_reference_map": false,
+    "reference_file": null,
+    "save_optimal_dividers": true,
+    "optimal_dividers_file": null,
+    "ignore_non_finite_output": true,
+    "show_worker_progress": true,
+    "julia_cmd": "julia",
+    "show_plot": true,
+    "show_results_table": false,
+    "table_times_only": false,
+    "show_best_summary_row": true,
+    "save_settings_manifest": true,
+    "time_grid_axis": "steps_per_period",
+    "divider_axis_scale": "log2",
+    "divider_axis_labels": "powers_of_two",
+    "output_stem": "Benchmark_03_two_level_64",
+    "two_level_parameters": {
+      "delta": 1,
+      "w_over_delta": 1.14,
+      "gamma_phi_per_period": 0.04,
+      "gamma1_per_period": 0.05,
+      "eps_max_over_w": 10,
+      "amplitude_max_over_w": 10
+    },
+    "four_level_parameters": {
+      "qubit_frequency": 5.416499999999999,
+      "resonator_frequency": 7.6767,
+      "gamma_phi": 0,
+      "gamma1": 0.002,
+      "kappa": 0.005,
+      "probe_amplitude": 0.00002,
+      "coupling_over_qubit_frequency": 0.03279650630894309,
+      "photon_levels": 2,
+      "eps_max_over_qubit_frequency": 2.09916,
+      "amplitude_max_over_qubit_frequency": 2.234042553191489,
+      "regimes": {
+        "wd500": {
+          "drive_frequency": 0.5,
+          "amplitude_factor": 1.15
+        },
+        "wd1500": {
+          "drive_frequency": 1.5,
+          "amplitude_factor": 1.4949999999999999
+        }
+      }
+    }
+  }
+}
+

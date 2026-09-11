@@ -16,12 +16,15 @@ import numpy as np
 import sympy as sp
 from sympy.printing.c import C99CodePrinter
 
+from .cuda_solvers import get_solver_spec
+
 try:
     import winsound
 except ImportError:
     winsound = None
 
-# In-memory cache to avoid regenerating/recompiling identical RHS kernels.
+# Independent caches let several integrators share one generated symbolic RHS.
+_RHS_CODE_CACHE = {}
 _KERNEL_CACHE = {}
 
 
@@ -355,14 +358,37 @@ def generate_unrolled_drho(N, H, Drive_symbol, Col_Ops, mean_operator, drive_exp
     drho_eqs, mean_re_expr, mean_im_expr, meta = build_reduced_lindblad_rhs(
         N, H, Col_Ops, mean_operator, pre_expand=pre_expand, collect_rho=collect_rho,
         factor_terms=factor_terms)
+    return _generate_ode_code(drho_eqs, mean_re_expr, mean_im_expr, meta["rho_syms"],
+                              Drive_symbol, drive_expr, runtime_const_syms=runtime_const_syms,
+                              cse_batch_size=cse_batch_size, cse_simplify=cse_simplify,
+                              hoist_rho_independent=hoist_rho_independent)
+
+
+def _generate_ode_code(drho_eqs, mean_re_expr, mean_im_expr, state_symbols,
+                       Drive_symbol, drive_expr, *, runtime_const_syms=(),
+                       cse_batch_size=None, cse_simplify=True, hoist_rho_independent=True,
+                       extract_independent=False):
+    meta = {"rho_syms": state_symbols}
     rho_sym_names = {str(s) for s in meta["rho_syms"]}
     param_sym_names = {"ParX", "ParY"}
     runtime_const_names = {str(s) for s in (runtime_const_syms or ())}
 
+    independent = {}
+    if extract_independent and hoist_rho_independent:
+        state_set = set(state_symbols)
+        def extract(expr):
+            if not expr.is_Atom and expr.free_symbols and not expr.free_symbols & state_set:
+                if expr not in independent:
+                    independent[expr] = sp.Symbol(f"ode_hoist_{len(independent)}", real=True)
+                return independent[expr]
+            return expr.func(*(extract(arg) for arg in expr.args)) if expr.args else expr
+        drho_eqs = [extract(e) for e in drho_eqs]
+        mean_re_expr, mean_im_expr = extract(mean_re_expr), extract(mean_im_expr)
     hoisted_subs, drho_lines = cse_emit_c_lines(drho_eqs, meta["rho_syms"],
                                                 batch_size=cse_batch_size, do_simplify=cse_simplify,
                                                 hoist_rho_independent=hoist_rho_independent,
                                                 return_hoist=True)
+    hoisted_subs = [(symbol, expr) for expr, symbol in independent.items()] + hoisted_subs
     # Drive expressions can be a single Expr (mapped to Drive_symbol) or a dict of Symbol->Expr.
     drive_map = {}
     if drive_expr is not None:
@@ -433,9 +459,12 @@ def generate_unrolled_drho(N, H, Drive_symbol, Col_Ops, mean_operator, drive_exp
     mean_subs, mean_exprs = sp.cse([mean_re_expr, mean_im_expr],
                                    symbols=sp.numbered_symbols("mean_tmp"))
     next_static_idx = len(static_syms)
+    mean_inline = {}
     for s, expr in mean_subs:
+        expr = expr.xreplace(mean_inline)
         expr_sym_names = {str(sym) for sym in expr.free_symbols}
         if expr_sym_names & rho_sym_names:
+            mean_inline[s] = expr
             mean_exprs = [sp.simplify(e.subs(s, expr)) for e in mean_exprs]
         elif expr_sym_names and expr_sym_names.issubset(const_local_names | param_sym_names
                                                         | static_sym_names):
@@ -458,6 +487,7 @@ def generate_unrolled_drho(N, H, Drive_symbol, Col_Ops, mean_operator, drive_exp
             name_to_repl[str(s)] = f"Drive_arr[{next_drive_idx}]"
             next_drive_idx += 1
         else:
+            mean_inline[s] = expr
             mean_exprs = [sp.simplify(e.subs(s, expr)) for e in mean_exprs]
 
     mean_re = my_ccode(mean_exprs[0])
@@ -680,14 +710,35 @@ def emit_drive_code(drive_map, *, array_name="Drive_arr", inline_single_use_func
 def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
                var_arrays=None, const_values=None, kernel_template_file=None, *,
                RHSreuse=True, runtime_consts=None, keep_symbolic_consts=None,
-               auto_runtime_consts=False, output_mode="mean", fp64=False,
+               auto_runtime_consts=False, output_mode="mean", solver="rk4",
+               solver_frequency=None, unroll=False, fp64=False,
                pre_expand=True, collect_rho=True, factor_terms=False,
                cse_batch_size=None, cse_simplify=True, hoist_rho_independent=True,
                nvrtc_options=(), timings=False, return_timing_info=False, warmup_time=0.0,
                rho0=None, rho0_var_arrays=None, rho0_values=None,
                return_time_trace=False, time_trace_every=None,
                time_trace_samples_per_period=None, solver_samples_per_period=None,
-               Actual_Kernel_Save=False, beep_on_error=False, ignore_non_finite_output=False):
+               Actual_Kernel_Save=False, beep_on_error=False, ignore_non_finite_output=False,
+               t_in=0.0, return_device=False):
+    if output_mode not in {"mean", "final", "final_rho"}:
+        raise ValueError("output_mode must be 'mean', 'final', or 'final_rho'.")
+    return _solve_symbolic_system(**locals())
+
+
+def _solve_symbolic_system(H, Drive, Col_Ops, mean_operator, tlist,
+               var_arrays=None, const_values=None, kernel_template_file=None, *,
+               RHSreuse=True, runtime_consts=None, keep_symbolic_consts=None,
+               auto_runtime_consts=False, output_mode="mean", solver="rk4",
+               solver_frequency=None, unroll=False,
+               fp64=False,
+               pre_expand=True, collect_rho=True, factor_terms=False,
+               cse_batch_size=None, cse_simplify=True, hoist_rho_independent=True,
+               nvrtc_options=(), timings=False, return_timing_info=False, warmup_time=0.0,
+               rho0=None, rho0_var_arrays=None, rho0_values=None,
+               return_time_trace=False, time_trace_every=None,
+               time_trace_samples_per_period=None, solver_samples_per_period=None,
+               Actual_Kernel_Save=False, beep_on_error=False, ignore_non_finite_output=False,
+               t_in=0.0, return_device=False, _ode_size=None, _state_trace=False):
     """
     Solve a Lindblad master equation over a two-dimensional parameter sweep on GPU.
 
@@ -697,9 +748,12 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
         Drive: Symbolic drive expression or dict[Symbol -> expression].
         Col_Ops: List of symbolic collapse operators.
         mean_operator: Symbolic operator whose expectation value is returned.
-        tlist: Uniform, strictly increasing time samples beginning at zero. A
-            list of ``M`` samples defines ``M - 1`` fixed-step fourth-order
-            Runge-Kutta (RK4) intervals.
+        t_in: Absolute initial time; drive stages use t_in plus elapsed stage time.
+            Zero and nonzero values share the same symbolic RHS and compiled kernel.
+        return_device: Return CuPy output arrays instead of NumPy arrays. Device
+            rho0_values can be reused directly; finite checks synchronize a scalar.
+        tlist: Uniform, strictly increasing elapsed time samples beginning at zero. A
+            list of ``M`` samples defines ``M - 1`` fixed solver intervals.
         var_arrays: Dict containing one or two sweep arrays, mapped to ParX/ParY
             in insertion order. A one-element dummy axis may be used when no
             physical parameter is swept.
@@ -722,6 +776,23 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
             and "const_values" select every const_values key.
         auto_runtime_consts: If True, keep all const_values symbolic at runtime.
         output_mode: "mean", "final", or "final_rho".
+        solver: Fixed-step CUDA integrator. Supported canonical names are
+            "rk4", "lserk4", "dp5", "ab5", "anas5", "tsit5", "alshina6",
+            and "dop853". RK4 remains the default. General one-step methods are
+            classical RK4, low-storage Carpenter-Kennedy LSRK4, DP5, Tsit5,
+            seven-stage sixth-order Alshina6, and 12-stage eighth-order DOP853.
+            Anas5(w) is frequency-fitted for a known dominant frequency; AB5 is
+            a low-RHS-cost multistep method with a smaller stability region.
+            Every implementation uses the supplied uniform fixed timestep;
+            embedded estimates, dense output, and adaptive acceptance are omitted.
+        solver_frequency: Non-negative angular-frequency estimate used by the
+            fixed-step Anas5(w) method. Its coefficient is computed from
+            ``solver_frequency * dt`` before launch and remains constant during
+            the run. This does not enable adaptive timestepping. It is ignored
+            by other solvers.
+        unroll: If True, add ``#pragma unroll`` to solver vector loops. False
+            leaves unrolling to NVRTC, which is the default for safer register
+            use as the Hilbert-space dimension grows.
         fp64: If True, generate and run a 64-bit floating-point (FP64) kernel;
             otherwise use 32-bit floating point (FP32).
         pre_expand / collect_rho / factor_terms / cse_batch_size / cse_simplify /
@@ -752,11 +823,11 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
             dimension contains density-matrix components, not time samples.
         return_time_trace: If True, also return sampled time dependence of
             mean_operator after selected solver steps, beginning at ``t=dt``.
-        time_trace_every: Record one trace point every k RK4 kernel steps. For
+        time_trace_every: Record one trace point every k solver steps. For
             stride k, times are dt, (k+1)*dt, (2k+1)*dt, and so on.
         time_trace_samples_per_period: Desired trace samples per driving period. Requires
             solver_samples_per_period and maps to time_trace_every internally.
-        solver_samples_per_period: Number of RK4 integration steps per driving period.
+        solver_samples_per_period: Number of integration steps per driving period.
         Actual_Kernel_Save: If truthy, save the fully generated CUDA kernel to
             "<calling_python_file>_Kernel.cu". If a non-empty string is given,
             use it as the output path.
@@ -778,12 +849,18 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
         positivity of a user-supplied initial density matrix is the caller's
         responsibility. The kernel cache exists only for the current process.
     """
-    valid_output_modes = {"mean", "final", "final_rho"}
+    valid_output_modes = {"mean", "final", "final_rho", "mean_state"}
     if output_mode not in valid_output_modes:
         raise ValueError(f"Unsupported output_mode '{output_mode}'. "
                          f"Use one of: {sorted(valid_output_modes)}")
+    if not isinstance(unroll, (bool, np.bool_)):
+        raise ValueError("unroll must be True or False.")
+    unroll = bool(unroll)
     kernel_template_file = _resolve_kernel_template_file(kernel_template_file)
 
+    t_in = float(t_in)
+    if not np.isfinite(t_in):
+        raise ValueError("t_in must be finite.")
     scalar_type = "double" if fp64 else "float"
     complex_type = "double2" if fp64 else "float2"
     scalar_dtype = cp.float64 if fp64 else cp.float32
@@ -799,19 +876,21 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
 
     # Validate dimensions and map sweep symbols to kernel parameters (ParX/ParY).
     N = H.shape[0]
+    state_size = N * N - 1 if _ode_size is None else _ode_size
     rho0_exprs = None
     uses_rho0_values = rho0_values is not None
     if rho0 is not None and uses_rho0_values:
         raise ValueError("Use either rho0 or rho0_values, not both.")
     if rho0 is not None:
-        rho0_exprs = rho_matrix_to_independent_exprs(rho0)
-        if len(rho0_exprs) != N * N - 1:
+        rho0_exprs = (rho_matrix_to_independent_exprs(rho0) if _ode_size is None
+                      else [sp.sympify(value) for value in rho0])
+        if len(rho0_exprs) != state_size:
             raise ValueError("rho0 does not match Hamiltonian size.")
 
     for L in Col_Ops:
         if L.shape != (N, N):
             raise ValueError(f"Collapse operator dimension {L.shape} does not match H {N, N}")
-    if mean_operator.shape != (N, N):
+    if _ode_size is None and mean_operator.shape != (N, N):
         raise ValueError(f"Mean operator dimension {mean_operator.shape} does not match H {N, N}")
 
     if len(var_arrays) == 0:
@@ -822,7 +901,7 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
                          "rho0_var_arrays.")
 
     if tlist is None:
-        raise ValueError("tlist is required for RK4 integration.")
+        raise ValueError("tlist is required for fixed-step integration.")
     num_t_host = int(len(tlist))
     if num_t_host < 2:
         raise ValueError("tlist must contain at least two time samples.")
@@ -838,11 +917,13 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
     storage_tolerance = (8.0 * np.finfo(input_float_dtype).eps *
                          max(1.0, float(np.max(np.abs(tlist_host)))))
     uniform_dt_host = float((tlist_host[-1] - tlist_host[0]) / (num_t_host - 1))
+    solver_spec = get_solver_spec(solver, frequency=solver_frequency,
+                                  step_size=uniform_dt_host)
     if not np.isclose(tlist_host[0], 0.0, rtol=0.0, atol=storage_tolerance):
         raise ValueError("tlist must begin at zero; the CUDA kernel derives stage times from the "
                          "step index.")
     if not np.allclose(time_diffs, uniform_dt_host, rtol=1.0e-6, atol=storage_tolerance):
-        raise ValueError("tlist must be uniformly spaced because the GPU RK4 kernel uses one "
+        raise ValueError("tlist must be uniformly spaced because the GPU solver uses one "
                          "fixed dt.")
     # A list of M sample times defines M - 1 integration intervals. Passing M
     # to the kernel would advance the state one step beyond tlist[-1].
@@ -880,6 +961,8 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
     if output_mode == "mean" and warmup_steps_host >= num_steps_host:
         # No measurement window left: return the final expectation value instead.
         effective_output_mode = "final"
+    if output_mode == "mean_state" and warmup_steps_host >= num_steps_host:
+        effective_output_mode = "final_rho"
 
     subs = {
         sym: sp.Symbol(name, real=True)
@@ -1068,43 +1151,66 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
         return re.sub(r"Const_arr\[(\d+)\]",
                       lambda m: f"Const_arr[{idx_map.get(int(m.group(1)), int(m.group(1)))}]", s)
 
-    # Include template path/mtime and codegen knobs in the cache key so reuse is safe.
-    template_mtime = (os.path.getmtime(kernel_template_file)
-                      if os.path.exists(kernel_template_file) else None)
-    cache_key = (
-        "rhs_v3", N,
+    # Symbolic generation is independent of the selected CUDA time integrator.
+    rhs_cache_key = (
+        "symbolic_rhs_v2", N, _ode_size,
         _expr_key(H), _drive_key(Drive), tuple(_expr_key(L) for L in Col_Ops),
         _expr_key(mean_operator),
         tuple((str(k), float(v)) for k, v in
               sorted(const_values_eff.items(), key=lambda kv: str(kv[0]))),
         tuple(str(s) for s in runtime_const_syms),
         tuple(sp.srepr(expr) for expr in rho0_exprs) if rho0_exprs is not None else None,
-        bool(uses_rho0_values), effective_output_mode, warmup_steps_host, bool(fp64),
-        pre_expand, collect_rho, factor_terms, cse_batch_size, cse_simplify,
-        hoist_rho_independent, return_time_trace,
-        kernel_template_file, template_mtime,
+        bool(uses_rho0_values), pre_expand, collect_rho, factor_terms, cse_batch_size,
+        cse_simplify, hoist_rho_independent,
+    )
+
+    # Kernel compilation additionally depends on solver/output/template options.
+    template_mtime = (os.path.getmtime(kernel_template_file)
+                      if os.path.exists(kernel_template_file) else None)
+    cache_key = (
+        "kernel_v8", rhs_cache_key, effective_output_mode, warmup_steps_host,
+        solver_spec.name, bool(unroll), bool(fp64),
+        return_time_trace, _state_trace, kernel_template_file, template_mtime,
         tuple(nvrtc_options) if not isinstance(nvrtc_options, str) else (nvrtc_options,),
     )
 
     collect_timings = bool(timings or return_timing_info)
     total_start = time.time() if collect_timings else 0.0
     rhs_stage_start = time.time() if collect_timings else 0.0
-    cache_status = "miss"
+    rhs_cache_status = "miss"
+    kernel_cache_status = "miss"
     saved_kernel_path = None
+    rhs_codegen_time = 0.0
 
-    cached = _KERNEL_CACHE.get(cache_key) if RHSreuse else None
-    used_const_indices = None
-    if cached is None:
-        # 1) Symbolic codegen -> kernel source patching -> NVRTC compilation.
+    rhs_cached = _RHS_CODE_CACHE.get(rhs_cache_key) if RHSreuse else None
+    if rhs_cached is None:
+        rhs_codegen_start = time.time()
+        codegen_options = dict(runtime_const_syms=runtime_const_syms,
+                               cse_batch_size=cse_batch_size, cse_simplify=cse_simplify,
+                               hoist_rho_independent=hoist_rho_independent)
+        if _ode_size is None:
+            fragments = generate_unrolled_drho(
+                N, H, Drive_Symb, Col_Ops, mean_operator, Drive,
+                pre_expand=pre_expand, collect_rho=collect_rho, factor_terms=factor_terms,
+                **codegen_options)
+        else:
+            states = [sp.Symbol(f"rho[{i}]", real=True) for i in range(state_size)]
+            expressions = list(H)
+            if pre_expand:
+                expressions = [sp.expand(e) for e in expressions]
+            if collect_rho:
+                expressions = [sp.collect(e, states) for e in expressions]
+            if factor_terms:
+                expressions = [sp.factor_terms(e) for e in expressions]
+            fragments = _generate_ode_code(expressions, sp.re(mean_operator[0]),
+                                            sp.im(mean_operator[0]), states, Drive_Symb,
+                                            Drive, extract_independent=True, **codegen_options)
         (static_lines, drive_lines, _drive_alias_lines, drho_lines, mean_line, final_line,
          static_syms, drive_syms, hoisted_syms,
-         ) = generate_unrolled_drho(N, H, Drive_Symb, Col_Ops, mean_operator, Drive,
-                                    runtime_const_syms=runtime_const_syms, pre_expand=pre_expand,
-                                    collect_rho=collect_rho, factor_terms=factor_terms,
-                                    cse_batch_size=cse_batch_size, cse_simplify=cse_simplify,
-                                    hoist_rho_independent=hoist_rho_independent)
+         ) = fragments
         if uses_rho0_values:
-            init_lines = [f"rho[{i}] = Rho0_arr[result_idx * N + {i}];" for i in range(N * N - 1)]
+            init_lines = [f"rho[{i}] = Rho0_arr[(size_t)result_idx * N + {i}];"
+                          for i in range(state_size)]
         elif rho0_exprs is None:
             init_lines = ["for (int i=0;i<N;++i) rho[i] = 0.0f;", "rho[0] = 1.0f;"]
         else:
@@ -1131,12 +1237,39 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
                     final_line = _remap_const_indices(final_line, idx_map)
         else:
             init_lines = tidy_c_lines(init_lines)
+        rhs_codegen_time = time.time() - rhs_codegen_start
+        rhs_cached = {
+            "static_lines": tuple(static_lines), "drive_lines": tuple(drive_lines),
+            "drho_lines": tuple(drho_lines), "mean_line": mean_line, "final_line": final_line,
+            "static_syms": tuple(static_syms), "drive_syms": tuple(drive_syms),
+            "hoisted_syms": tuple(hoisted_syms), "init_lines": tuple(init_lines),
+            "used_const_indices": tuple(used_const_indices),
+        }
+        if RHSreuse:
+            _RHS_CODE_CACHE[rhs_cache_key] = rhs_cached
+    else:
+        rhs_cache_status = "hit"
 
-        # Read CUDA kernel template
+    static_lines = list(rhs_cached["static_lines"])
+    drive_lines = list(rhs_cached["drive_lines"])
+    drho_lines = list(rhs_cached["drho_lines"])
+    mean_line, final_line = rhs_cached["mean_line"], rhs_cached["final_line"]
+    static_syms = tuple(rhs_cached["static_syms"])
+    drive_syms = tuple(rhs_cached["drive_syms"])
+    hoisted_syms = tuple(rhs_cached["hoisted_syms"])
+    init_lines = list(rhs_cached["init_lines"])
+    used_const_indices = list(rhs_cached["used_const_indices"])
+
+    cached = _KERNEL_CACHE.get(cache_key) if RHSreuse else None
+    if cached is None:
+        # Assemble the selected solver around the shared RHS and compile it.
         with open(kernel_template_file) as f:
             template_text = f.read()
             src = Template(template_text)
         has_const_arg_marker = "#CONST_ARG_DECL#" in template_text
+        if "#SOLVER_CODE#" not in template_text:
+            raise ValueError("Kernel template is missing #SOLVER_CODE#. Use the current "
+                             "N_Level_Kernel.cu template.")
         if runtime_const_syms and not has_const_arg_marker:
             raise ValueError("Kernel template is missing #CONST_ARG_DECL# but runtime constants "
                              "are enabled. Use N_Level_Kernel.cu template.")
@@ -1146,7 +1279,7 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
         drives_code = "\n    ".join(drive_lines) if drive_lines else "/* no drives */"
         num_statics = max(1, len(static_syms))
         num_drives = max(1, len(drive_syms) + len(hoisted_syms))  # Drive_arr[0] exists if used
-        kernel_code = src.substitute(N_DECL=str(N * N - 1), NUM_STATICS_DECL=str(num_statics),
+        kernel_code = src.substitute(N_DECL=str(state_size), NUM_STATICS_DECL=str(num_statics),
                                      NUM_DRIVES_DECL=str(num_drives))
         const_arg_decl = (f"    const {scalar_type}* __restrict__ Const_arr,\n"
                           if has_const_arg_marker else "")
@@ -1154,10 +1287,24 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
         rho0_arg_decl = (f"    const {scalar_type}* __restrict__ Rho0_arr,\n"
                          if uses_rho0_values else "")
         kernel_code = kernel_code.replace("#RHO0_ARG_DECL#", rho0_arg_decl)
+        if solver_spec.parameters and "#SOLVER_ARG_DECL#" not in kernel_code:
+            raise ValueError("The selected fitted solver requires a kernel template containing "
+                             "#SOLVER_ARG_DECL#.")
+        solver_arg_decl = "".join(
+            f"    const {scalar_type} solver_param{index},\n"
+            for index in range(len(solver_spec.parameters)))
+        kernel_code = kernel_code.replace("#SOLVER_ARG_DECL#", solver_arg_decl)
         kernel_code = kernel_code.replace("#INIT_RHO#", "\n            ".join(init_lines))
         kernel_code = kernel_code.replace("#INSERT_STATICS#", static_code)
         kernel_code = kernel_code.replace("#INSERT_DRIVES#", drives_code)
         kernel_code = kernel_code.replace("#INSERT_DRHO#", drho_code)
+        solver_code = solver_spec.source.replace(
+            "#SOLVER_UNROLL#", "#pragma unroll" if unroll else "//#pragma unroll")
+        has_time_input = "const float t_in" in kernel_code
+        if has_time_input:
+            solver_code = solver_code.replace("compute_drives(ParX, ParY, ",
+                                               "compute_drives(ParX, ParY, t_in, ")
+        kernel_code = kernel_code.replace("#SOLVER_CODE#", solver_code)
         mean_line_kernel = mean_line.replace("Drive_arr[", "Drive[")
         mean_line_kernel = mean_line_kernel.replace("Static_arr[", "Static[")
         final_line_kernel = final_line.replace("Drive_arr[", "Drive[")
@@ -1167,11 +1314,17 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
             final_line_out = final_line_kernel
             results_line = (
                 "results[result_idx].x = avg.x;\n            results[result_idx].y = avg.y;")
+        elif effective_output_mode == "mean_state":
+            kernel_code = kernel_code.replace("float rho[N];", "float rho[N]; float state_avg[N] = {0};")
+            mean_line_out = "if (step >= warmup_steps) { for (int i=0; i<N; ++i) state_avg[i] += rho[i]; }"
+            final_line_out = ""
+            results_line = ("for (int i=0; i<N; ++i) results[(size_t)result_idx * N + i] = "
+                            "state_avg[i] / (num_steps - warmup_steps);")
         elif effective_output_mode == "final_rho":
             mean_line_out = ""
             final_line_out = ""
             results_line = ("for (int i = 0; i < N; ++i) {\n"
-                            "                results[result_idx * N + i] = rho[i];\n"
+                            "                results[(size_t)result_idx * N + i] = rho[i];\n"
                             "            }")
         else:
             if warmup_steps_host > 0:
@@ -1187,13 +1340,15 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
             trace_obs_line = final_line_kernel.replace("avg.x",
                                                        "time_trace_results[trace_offset].x")
             trace_obs_line = trace_obs_line.replace("avg.y", "time_trace_results[trace_offset].y")
+            trace_store = ("for (int i=0; i<N; ++i) time_trace_results[trace_offset * N + i] = rho[i];"
+                           if _state_trace else trace_obs_line)
             trace_line_out = (
                 "if ((step % time_trace_stride) == 0) {\n"
                 "                    const int trace_idx = step / time_trace_stride;\n"
                 "                    if (trace_idx < num_time_trace) {\n"
-                "                        const int trace_offset = result_idx * "
+                "                        const size_t trace_offset = (size_t)result_idx * "
                 "num_time_trace + trace_idx;\n"
-                f"                        {trace_obs_line}\n"
+                f"                        {trace_store}\n"
                 "                    }\n"
                 "                }")
             mean_line_out = (f"{mean_line_out}\n                {trace_line_out}"
@@ -1203,14 +1358,15 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
         kernel_code = kernel_code.replace("#RESULTS_LINE#", results_line)
 
         # Match output pointer type to selected output mode.
-        if effective_output_mode == "final_rho":
+        if effective_output_mode in {"final_rho", "mean_state"}:
             result_arg_decl = f"    {scalar_type}* __restrict__ results"
             result_arg_comment = " // final reduced rho vector"
         else:
             result_arg_decl = f"    {complex_type}* __restrict__ results"
             result_arg_comment = " // averaged/final expectation value"
         if return_time_trace:
-            result_arg_decl += (f",\n    {complex_type}* __restrict__ time_trace_results,"
+            trace_type = scalar_type if _state_trace else complex_type
+            result_arg_decl += (f",\n    {trace_type}* __restrict__ time_trace_results,"
                                 "\n    const int time_trace_stride,"
                                 "\n    const int num_time_trace")
         else:
@@ -1244,14 +1400,16 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
         cached = {"kernel": time_evolution_kernel,
                   "uses_const_arr_arg": has_const_arg_marker,
                   "uses_rho0_arr_arg": uses_rho0_values,
+                  "has_time_input": has_time_input,
+                  "solver_parameter_count": len(solver_spec.parameters),
                   "uses_time_trace": return_time_trace,
                   "used_const_indices": tuple(used_const_indices or []),
                   "kernel_code": kernel_code}
         if RHSreuse:
             _KERNEL_CACHE[cache_key] = cached
     else:
-        # 2) Reuse already compiled kernel and constant index mapping.
-        cache_status = "hit"
+        # Reuse the already compiled solver-specific kernel.
+        kernel_cache_status = "hit"
         time_evolution_kernel = cached["kernel"]
         if Actual_Kernel_Save and cached.get("kernel_code"):
             saved_kernel_path = _save_generated_kernel_file(Actual_Kernel_Save,
@@ -1267,7 +1425,7 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
     # 3) Upload sweep axes and launch kernel.
     def to_device(x):
         """Convert a host array to a CuPy array with the selected scalar dtype."""
-        return x if isinstance(x, cp.ndarray) else cp.asarray(x, dtype=scalar_dtype)
+        return x.astype(scalar_dtype, copy=False) if isinstance(x, cp.ndarray) else cp.asarray(x, dtype=scalar_dtype)
 
     ParX_list = to_device(next(iter(var_arrays.values())))
     ParY_list = (to_device(list(var_arrays.values())[1]) if len(var_arrays) > 1 else
@@ -1275,8 +1433,8 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
     num_X, num_Y = int(len(ParX_list)), int(len(ParY_list))
     rho0_arr = None
     if uses_rho0_values:
-        rho0_np = np.asarray(rho0_values, dtype=np.float64 if fp64 else np.float32)
-        nred = N * N - 1
+        rho0_np = cp.asarray(rho0_values, dtype=scalar_dtype)
+        nred = state_size
         if rho0_np.shape == (num_X, nred) and num_Y == 1:
             rho0_np = rho0_np.reshape(num_X, 1, nred)
         if rho0_np.shape != (num_X, num_Y, nred):
@@ -1284,11 +1442,12 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
                              f"or ({num_X}, {nred}) when num_Y=1; got {rho0_np.shape}.")
         rho0_arr = cp.asarray(rho0_np.reshape(num_X * num_Y, nred), dtype=scalar_dtype)
     # Allocate output
-    if effective_output_mode == "final_rho":
-        results = cp.zeros((num_X, num_Y, N * N - 1), dtype=scalar_dtype)
+    if effective_output_mode in {"final_rho", "mean_state"}:
+        results = cp.zeros((num_X, num_Y, state_size), dtype=scalar_dtype)
     else:
         results = cp.zeros((num_X, num_Y), dtype=complex_dtype)
-    time_trace_results = (cp.zeros((num_X, num_Y, num_time_trace_host), dtype=complex_dtype)
+    trace_shape = (num_X, num_Y, num_time_trace_host) + ((state_size,) if _state_trace else ())
+    time_trace_results = (cp.zeros(trace_shape, dtype=scalar_dtype if _state_trace else complex_dtype)
                           if return_time_trace else None)
 
     # Grid/block
@@ -1318,10 +1477,15 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
         ev_start.record()
 
     kernel_args = [Cudt, num_X, num_Y, num_steps, warmup_steps, ParX_list, ParY_list]
+    if cached.get("has_time_input", False):
+        kernel_args.insert(1, scalar_dtype(t_in))
+    elif t_in != 0.0:
+        raise ValueError("Nonzero t_in requires the current CUDA kernel template.")
     if cached.get("uses_const_arr_arg", False):
         kernel_args.append(const_arr)
     if cached.get("uses_rho0_arr_arg", False):
         kernel_args.append(rho0_arr)
+    kernel_args.extend(scalar_dtype(value) for value in solver_spec.parameters)
     kernel_args.append(results)
     if cached.get("uses_time_trace", False):
         kernel_args.extend([time_trace_results, np.int32(time_trace_stride_host),
@@ -1333,22 +1497,18 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
         ev_end.synchronize()
         gpu_kernel_time = cp.cuda.get_elapsed_time(ev_start, ev_end) / 1000.0
 
-    results_np = cp.asnumpy(results)
-    time_trace_np = cp.asnumpy(time_trace_results) if return_time_trace else None
-    if not np.all(np.isfinite(results_np)):
-        if ignore_non_finite_output:
-            print("mesolve_2D warning: non-finite values detected in output; returning raw data "
-                  "because ignore_non_finite_output=True.")
-        else:
+    results_np = results if return_device else cp.asnumpy(results)
+    time_trace_np = ((time_trace_results if return_device else cp.asnumpy(time_trace_results))
+                     if return_time_trace else None)
+    output_xp = cp if return_device else np
+    if not bool(output_xp.all(output_xp.isfinite(results_np))):
+        if not ignore_non_finite_output:
             if beep_on_error:
                 _play_notification_beep("error")
             raise RuntimeError("Non-finite values detected in mesolve_2D output. Try reducing dt "
                                "(increase time samples) or check model parameters/RHS.")
-    if return_time_trace and not np.all(np.isfinite(time_trace_np)):
-        if ignore_non_finite_output:
-            print("mesolve_2D warning: non-finite values detected in time trace; returning raw "
-                  "trace because ignore_non_finite_output=True.")
-        else:
+    if return_time_trace and not bool(output_xp.all(output_xp.isfinite(time_trace_np))):
+        if not ignore_non_finite_output:
             if beep_on_error:
                 _play_notification_beep("error")
             raise RuntimeError("Non-finite values detected in mesolve_2D time trace. Try reducing "
@@ -1358,18 +1518,27 @@ def mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist,
     if collect_timings:
         total_time = time.time() - total_start
         timing_info = {"rhs_stage_s": rhs_stage_time, "gpu_kernel_s": gpu_kernel_time,
-                       "total_s": total_time, "cached_rhs": cache_status}
+                       "rhs_codegen_s": rhs_codegen_time, "total_s": total_time,
+                       "cached_rhs": rhs_cache_status, "cached_kernel": kernel_cache_status,
+                       "solver": solver_spec.name, "solver_frequency": solver_frequency,
+                       "unroll": unroll}
     if timings:
-        print(f"mesolve_2D timings: rhs_stage={rhs_stage_time:.3f}s "
-              f"gpu_kernel={gpu_kernel_time:.3f}s total={total_time:.3f}s cachedRHS={cache_status}")
+        api_name = "mesolve_2D" if _ode_size is None else "odesolve_2D"
+        print(f"{api_name} timings: rhs_stage={rhs_stage_time:.3f}s "
+              f"rhs_codegen={rhs_codegen_time:.3f}s gpu_kernel={gpu_kernel_time:.3f}s "
+              f"total={total_time:.3f}s cachedRHS={rhs_cache_status} "
+              f"cachedKernel={kernel_cache_status}")
     if saved_kernel_path:
         print(f"Generated kernel saved to: {saved_kernel_path}")
     if return_time_trace:
         dt_host = uniform_dt_host
-        trace_steps = np.arange(num_time_trace_host, dtype=np.float32) * time_trace_stride_host
-        trace_t = (trace_steps + 1.0) * dt_host
+        trace_steps = np.arange(num_time_trace_host, dtype=np.float64 if fp64 else np.float32) * time_trace_stride_host
+        trace_t = t_in + (trace_steps + 1.0) * dt_host
         output = (results_np, time_trace_np, trace_t)
         return (*output, timing_info) if return_timing_info else output
     if return_timing_info:
         return results_np, timing_info
     return results_np
+
+
+mesolve_2D.__doc__ = _solve_symbolic_system.__doc__

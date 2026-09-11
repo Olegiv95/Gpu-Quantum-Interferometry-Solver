@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gqis"
-version = "0.1.1"
-description = "GPU Quantum Interferometry Solver for massive parameter sweeps of user-defined finite-dimensional Lindblad systems."
+version = "0.2.0"
+description = "CUDA solver for massive parameter and initial-condition sweeps of symbolic Lindblad systems and general ordinary differential equations."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -20,6 +20,7 @@ keywords = [
     "Lindblad",
     "quantum interferometry",
     "open quantum systems",
+    "ordinary differential equations",
     "parameter sweep",
     "GPU computing",
 ]
