@@ -5,10 +5,6 @@ and initial-condition sweeps of driven open quantum systems and general ordinary
 GQIS evaluates independent simulations in parallel on an NVIDIA graphics processing unit (GPU), from small
 calculations to grids containing millions or even billions of parameter sets.
 
-Use `mesolve_2D` for symbolic Lindblad models and `odesolve_2D` for symbolic ODE systems in your own Python code.
-The accompanying examples demonstrate these APIs through working code; the benchmarks report numerical accuracy
-and performance, including comparisons with other solvers.
-
 The physical model is written symbolically: the Hamiltonian, drive, collapse operators, and measured operator are SymPy
 expressions in which selected physical parameters remain named symbols instead of immediately becoming fixed numbers.
 GQIS converts this model into the system of equations and CUDA code used for the parameter sweep.
@@ -70,6 +66,10 @@ See the [installation and GPU test guide](https://github.com/Olegiv95/Gpu-Quantu
 optional dependencies, and troubleshooting.
 
 ## Minimal Use
+
+Use `mesolve_2D` for symbolic Lindblad models and `odesolve_2D` for symbolic ODE systems in your own Python code.
+The accompanying examples demonstrate these APIs through working code; the benchmarks report numerical accuracy
+and performance, including comparisons with other solvers.
 
 Supply the model, time grid, and sweep axes; optional settings use defaults. Initial-state and output options
 can be changed as needed. See the [API reference](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/develop/GQIS_API.md) for all arguments and defaults.
