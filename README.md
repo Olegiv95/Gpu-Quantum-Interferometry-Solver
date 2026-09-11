@@ -1,15 +1,19 @@
 # GPU Quantum Interferometry Solver (GQIS)
 
-The GPU Quantum Interferometry Solver (`GQIS`) is a Python/NVIDIA CUDA research package for large parameter sweeps of
-driven open quantum systems. GQIS evaluates independent simulations in parallel on an NVIDIA graphics processing unit
-(GPU), supporting workloads from tutorial-scale examples to parameter grids containing millions or even billions of
-simulations.
+The GPU Quantum Interferometry Solver (`GQIS`) is a Python/NVIDIA CUDA solver package for large parameter
+and initial-condition sweeps of driven open quantum systems and general ordinary differential equations (ODEs).
+GQIS evaluates independent simulations in parallel on an NVIDIA graphics processing unit (GPU), from small
+calculations to grids containing millions or even billions of parameter sets.
+
+Use `mesolve_2D` for symbolic Lindblad models and `odesolve_2D` for symbolic ODE systems in your own Python code.
+The accompanying examples demonstrate these APIs through working code; the benchmarks report numerical accuracy
+and performance, including comparisons with other solvers.
 
 The physical model is written symbolically: the Hamiltonian, drive, collapse operators, and measured operator are SymPy
 expressions in which selected physical parameters remain named symbols instead of immediately becoming fixed numbers.
 GQIS converts this model into the system of equations and CUDA code used for the parameter sweep.
 
-The same CUDA engine also accepts general SymPy-defined ordinary differential equations (ODEs).
+The same CUDA engine also accepts general SymPy-defined ODEs directly.
 This supports applications such as nonlinear oscillators and initial-condition maps, with final-state,
 time-average and sampled-evolution outputs. See [General ODE Sweeps](#general-ode-sweeps).
 
@@ -60,13 +64,6 @@ major version, replace `cuda12` with `cuda11` or `cuda13`. Verify the core solve
 
 ```bash
 gqis-check --installation-test
-```
-
-The repository provides reference example scripts demonstrating the solver's main features. To run them, install their
-optional dependencies, including Matplotlib:
-
-```bash
-pip install "gqis[cuda12,examples]"
 ```
 
 See the [installation and GPU test guide](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/develop/INSTALLATION_TEST.md) for tested configurations, source installs,
@@ -124,11 +121,9 @@ result = odesolve_2D(
 Use `output_mode="mean"` for averages, or `return_time_trace=True` for sampled evolution.
 Both public APIs share the fixed-step integrators and symbolic optimizations; no quantum operators are needed here.
 
-[Example 06](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/develop/Examples/Example_06_symbolic_ode_sweep.py) evolves a dense Duffing initial-condition cloud live on the GPU
-and displays its phase-space flow, with optional MP4 export. The [ODE API reference](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/develop/GQIS_API.md#odesolve_2d-direct-sympy-ode-sweeps)
-describes output shapes and sampling options. See [accuracy calibration](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/develop/BENCHMARKS.md#benchmark-03-accuracy-and-convergence)
-for the step-size comparison workflow; its bundled models are Lindblad systems, while a general ODE can be
-checked by refining its time grid and comparing with a suitable reference.
+The [ODE API reference](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/develop/GQIS_API.md#odesolve_2d-direct-sympy-ode-sweeps)
+describes output shapes and sampling options. Check accuracy for your ODE model by refining the time grid
+and comparing the required observable with an analytic solution or a suitable numerical reference.
 
 ### Choosing A Solver
 
@@ -139,45 +134,10 @@ reach tighter accuracy with coarser steps. The [solver comparison table](https:/
 summarizes their costs and uses; [Benchmark 03](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/develop/BENCHMARKS.md#benchmark-03-accuracy-and-convergence) compares the time
 needed to satisfy chosen error limits.
 
-## Examples
-
-| Script | Demonstration |
-| --- | --- |
-| `Examples/Example_01_two_level_basic.py` | Basic two-level interferogram. |
-| `Examples/Example_02_four_level_interferogram.py` | Coupled qubit-resonator interferogram. |
-| `Examples/Example_03_two_level_animation.py` | Two-level animation that reuses the generated equations and compiled kernel between frames. |
-| `Examples/Example_04_four_level_animation.py` | Four-level animation that changes selected physical constants without recompilation. |
-| `Examples/Example_05_initial_condition_sweep_gate_fidelity.py` | Initial-state sweep and gate-fidelity comparison. |
-| `Examples/Example_06_symbolic_ode_sweep.py` | Live Duffing phase-space flow, GPU rasterization and optional MP4 export through the general ODE API. |
-
-[Example 06](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/develop/Examples/Example_06_symbolic_ode_sweep.py) demonstrates the general ODE API with a live
-Duffing attractor animation. The simulation stays on the GPU, with fast display and optional video export;
-see its [animation guide](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/develop/Examples/Example_06.md) for display settings and timing logs.
-
-Run an example from the repository root:
-
-```bash
-python Examples/Example_01_two_level_basic.py
-```
-
-Reduce `grid_size` in the `user_settings()` block for a quicker run or for a GPU with less memory.
-Example outputs are saved to `Examples/results/`.
-
-<table>
-  <tr>
-    <td width="50%"><img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/develop/Examples/results/Example_01_two_level_basic.png" alt="Two-level interferogram"></td>
-    <td width="50%"><img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/develop/Examples/results/Example_02_four_level_interferogram.png" alt="Four-level interferogram"></td>
-  </tr>
-  <tr align="center">
-    <td><strong>Example 01:</strong> two-level interferogram</td>
-    <td><strong>Example 02:</strong> coupled qubit-resonator interferogram</td>
-  </tr>
-</table>
-
 ## Supported Models And Outputs
 
-The user supplies the physical model (Hamiltonian, collapse operators) and requested output. A solver call
-can contain:
+For a Lindblad sweep, supply the Hamiltonian, collapse operators and requested observable.
+The `mesolve_2D` interface supports:
 
 - any finite-dimensional SymPy Hamiltonian, optionally containing named symbols mapped to one or more time-dependent
   drive expressions
@@ -199,6 +159,11 @@ reference](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/de
 for details. [Example 05](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/develop/Examples/Example_05_initial_condition_sweep_gate_fidelity.py)
 uses `output_mode="final_rho"` for final-state gate-fidelity calculations. GQIS does not interpret physical units or basis
 labels; define all model quantities in compatible units and one consistent basis.
+
+For general real ODE systems, `odesolve_2D` takes symbolic derivatives, state variables and initial values
+directly. Parameters and initial conditions can vary across the sweep. The solver returns final states,
+state averages or a chosen observable, with optional sampled evolution and GPU-resident outputs.
+Both APIs use the same selectable CUDA integrators and support reuse across repeated calculations.
 
 ## Solver Pipeline
 
@@ -300,8 +265,8 @@ For a new model, these components perform the following pipeline (with `odesolve
 
 Later calls can reuse the generated RHS and compiled CUDA kernel when the symbolic structure of the model is unchanged,
 so they can start from stage 8. Sweep arrays, numerically supplied initial states, and the numerical values of selected
-constants deliberately kept symbolic may then change without recompilation. This is particularly useful for animations
-that vary one physical parameter between frames. See [Reusing The ODE For
+constants deliberately kept symbolic may then change without recompilation. This supports parameter fitting, repeated sweeps and animations
+that vary physical parameters between calls. See [Reusing The ODE For
 Animations](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/develop/GQIS_API.md#reusing-the-ode-for-animations)
 for details.
 
@@ -314,10 +279,55 @@ Important implementation choices are:
   redundant calculations
 - only the requested sweep output is transferred back to CPU memory, without storing other intermediate data to save memory
 
+## Examples
+
+These working scripts demonstrate how to define a model, call the GQIS solver and use its returned results.
+Adapt the model and solver calls to your own application. Plotting, animation and video export are supplied
+by the example scripts and their helpers.
+
+To run the examples, install their optional dependencies, including Matplotlib:
+
+```bash
+pip install "gqis[cuda12,examples]"
+```
+
+| Script | Demonstration |
+| --- | --- |
+| `Examples/Example_01_two_level_basic.py` | Basic two-level interferogram. |
+| `Examples/Example_02_four_level_interferogram.py` | Coupled qubit-resonator interferogram. |
+| `Examples/Example_03_two_level_animation.py` | Two-level animation that reuses the generated equations and compiled kernel between frames. |
+| `Examples/Example_04_four_level_animation.py` | Four-level animation that changes selected physical constants without recompilation. |
+| `Examples/Example_05_initial_condition_sweep_gate_fidelity.py` | Initial-state sweep and gate-fidelity comparison. |
+| `Examples/Example_06_symbolic_ode_sweep.py` | Live Duffing phase-space flow, GPU rasterization and optional MP4 export through the general ODE API. |
+
+[Example 06](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/develop/Examples/Example_06_symbolic_ode_sweep.py) demonstrates the general ODE API with a live
+Duffing attractor animation. The simulation stays on the GPU, with fast display and optional video export;
+see its [animation guide](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/develop/Examples/Example_06.md) for display settings and timing logs.
+
+Run an example from the repository root:
+
+```bash
+python Examples/Example_01_two_level_basic.py
+```
+
+Reduce `grid_size` in the `user_settings()` block for a quicker run or for a GPU with less memory.
+Example outputs are saved to `Examples/results/`.
+
+<table>
+  <tr>
+    <td width="50%"><img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/develop/Examples/results/Example_01_two_level_basic.png" alt="Two-level interferogram"></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/develop/Examples/results/Example_02_four_level_interferogram.png" alt="Four-level interferogram"></td>
+  </tr>
+  <tr align="center">
+    <td><strong>Example 01:</strong> two-level interferogram</td>
+    <td><strong>Example 02:</strong> coupled qubit-resonator interferogram</td>
+  </tr>
+</table>
+
 ## Validation And Performance
 
-The benchmark scripts support the solver rather than define its interface. They compare GQIS output with trusted CPU
-solvers and show how calculation time changes with the size of the parameter grid:
+The accompanying benchmarks measure GQIS accuracy and performance against QuTiP, SciPy, Python RK4 and Julia
+backends. Accuracy sweeps compare numerical results; scaling runs measure calculation time as the parameter grid grows:
 
 - `Benchmarks/Benchmark_01_two_level.py`: driven qubit model
 - `Benchmarks/Benchmark_02_four_level_Interferometry.py`: coupled qubit-resonator model

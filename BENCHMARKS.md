@@ -1,5 +1,9 @@
 # Benchmark Validation And Performance
 
+The accompanying benchmarks document GQIS solver accuracy and performance, including comparisons
+with QuTiP, SciPy, Python RK4 and Julia backends. To apply GQIS to your own model, use the
+[solver APIs](GQIS_API.md); the [working examples](README.md#examples) demonstrate those calls.
+
 Use Benchmark 01/02 to compare solver results and measure parameter-sweep scaling.
 Use Benchmark 03 to choose a solver and time resolution that satisfy RMS (root-mean-square)
 and maximum-error limits against a numerical reference. The bundled problems are Lindblad systems;

@@ -17,10 +17,10 @@ semantic version numbers.
 ### Added
 
 - General SymPy ODE interface, `odesolve_2D`, with final-state, averaged and sampled-evolution outputs.
-- Live Duffing phase-space flow with device-resident state, direct GPU-prepared RGBA display,
-  an interactive frame-rate cap, timing logs and optional MP4 export.
 - Absolute initial time (`t_in`) and device-array outputs (`return_device`) in both solver APIs.
 - Selectable fixed-step CUDA integrators alongside the default RK4; see the [API reference](GQIS_API.md).
+- Example 06 demonstrates the ODE API and GPU continuation through live Duffing phase-space flow,
+  with GPU-prepared RGBA display, an interactive frame-rate cap, timing logs and optional MP4 export.
 - [Benchmark 03 accuracy sweeps](BENCHMARKS.md#benchmark-03-accuracy-and-convergence), saved references,
   accuracy-calibrated scaling runs and CSV-based figure generation.
 

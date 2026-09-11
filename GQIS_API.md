@@ -2,25 +2,25 @@
 
 This technical reference documents the application programming interface (API) of the GPU Quantum Interferometry
 Solver (GQIS). The Lindblad interface is in `gqis/solver.py`, and the direct ODE interface is in
-`gqis/gqis_ode_api.py`. New users should begin with the [README](./README.md) and the examples.
+`gqis/gqis_ode_api.py`. The [README](./README.md#minimal-use) introduces the basic solver calls;
+the examples provide working applications of these APIs.
 Use `mesolve_2D` for Lindblad problems or `odesolve_2D` for general real ODEs. The other functions
 expose the symbolic and CUDA code-generation stages for inspection or advanced customization.
 
 ```python
-from gqis import build_independent_rho, build_reduced_lindblad_rhs, mesolve_2D, odesolve_2D
+from gqis import mesolve_2D, odesolve_2D
 ```
 
-These four functions form the public package interface. The remaining helpers
-documented below are available from `gqis.solver` for inspection and advanced
-development, but they may change before version 1.0.
+These are the two solver entry points. The package also exports `build_independent_rho` and
+`build_reduced_lindblad_rhs` for working with reduced Lindblad equations. The remaining helpers
+documented below are available from `gqis.solver` for inspection and advanced development,
+but they may change before version 1.0.
 
 ## `odesolve_2D`: direct SymPy ODE sweeps
 
 This entry point skips Lindblad extraction and uses the same fixed-step CUDA solvers,
 precision options and caches. The number of state variables follows the supplied equations,
 without density-matrix constraints.
-See [Example 06](Examples/Example_06_symbolic_ode_sweep.py) for live Duffing phase-space flow:
-a dense cloud stays on the GPU while short solves advance it and a compact raster is sent to Matplotlib.
 
 ```python
 import numpy as np
@@ -238,6 +238,9 @@ Both APIs accept `t_in=0.0` and `return_device=False`. With `return_device=True`
 trace arrays are CuPy arrays; trace times remain small NumPy metadata arrays. Pass the returned
 state back through `y0_values` (ODE) or `rho0_values` (Lindblad) without downloading it. Finite-value
 checks still synchronize a scalar status; they do not copy the full state. For example:
+
+[Example 06](Examples/Example_06_symbolic_ode_sweep.py) demonstrates this continuation pattern
+with a Duffing initial-condition sweep and a live phase-space display.
 
 ```python
 state = odesolve_2D(rhs, states, y0, elapsed_times, t_in=10.0, return_device=True, **model_options)

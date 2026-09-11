@@ -6,7 +6,7 @@ authors:
     given-names: "Oleh"
 version: "0.2.0"
 date-released: "2026-09-09"
-abstract: "GQIS converts symbolic Lindblad models and general ordinary differential equations into CUDA kernels for large parameter and initial-condition sweeps, with selectable fixed-step integrators and accuracy-calibration benchmarks."
+abstract: "GQIS converts symbolic Lindblad models and general ordinary differential equations into CUDA kernels for large parameter and initial-condition sweeps, with selectable fixed-step integrators, final-state and averaged outputs, and optional sampled evolution."
 keywords:
   - quantum interferometry
   - Lindblad master equation
