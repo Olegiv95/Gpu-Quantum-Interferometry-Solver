@@ -337,20 +337,17 @@ On the reference NVIDIA GeForce RTX 3080 desktop GPU, the largest measured `3276
 1.07 billion independent parameter sets. GQIS(RK4) completed the two-level run in about **1 min 38 s** with
 10,240 steps per simulation, and the four-level run in about **5 min 4 s** with 5,840 steps per simulation.
 These time grids were selected through accuracy calibration.
-At the largest measured two-level QuTiP grid (`2048 x 2048`), QuTiP took about **12 h 9 min**
-and GQIS(RK4) took **0.36223 s**, a measured speedup of approximately **120,800 times**.
-The QuTiP measurement comes from the dense Benchmark 03 sweep and was transferred to the scaling figure.
+The largest measured two-level QuTiP grid is `2048 x 2048`: about **12 h 9 min** for QuTiP
+versus **0.36223 s** for GQIS(RK4), approximately **120,800 times** speedup.
+The QuTiP measurement was imported from the dense Benchmark 03 sweep into the Benchmark 01 CSV,
+so the scaling figure and its CSV plotting launcher retain this measured point.
 
-The largest measured four-level QuTiP grid is `256 x 256`, preserved in the
-[v0.1.1 benchmark CSV](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/v0.1.1/Benchmark_02_full_benchmark.csv).
-QuTiP took about **12 min 11 s**, versus **0.033861 s** GQIS calculation time: approximately
-**21,600 times** speedup. This historical benchmark used 10,240 RK4 steps per simulation.
-The current calibrated four-level CSV uses 5,840 steps and records approximately **32,300 times**
-speedup at `64 x 64`. These comparisons exclude GQIS preparation; the historical result is separate
-from the current scaling averages below.
+The largest measured four-level QuTiP grid is `256 x 256`: about **27 min 30 s** for QuTiP
+versus **0.023219 s** for GQIS(RK4), approximately **71,100 times** speedup.
+These comparisons exclude GQIS preparation.
 
 Across grids from `4096 x 4096` to `32768 x 32768`, average point-by-point speedups were approximately
-46,900 times and 50,700 times over extrapolated QuTiP timings for the two- and four-level models, respectively.
+118,110 times and 88,040 times over extrapolated QuTiP timings for the two- and four-level models, respectively.
 See the [benchmark results](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/develop/BENCHMARKS.md#reference-results) for timing definitions and measured/extrapolated status.
 
 The compact GQIS kernel retains the reduced state and solver (RK4 by default) working values instead of storing each complete time

@@ -1168,10 +1168,20 @@ def _plot_accuracy_sweep(rows: list[dict], settings: dict, reference_time: float
     show_table = bool(settings.get("show_results_table", True))
     times_only = bool(settings.get("table_times_only", False))
     show_best_row = bool(settings.get("show_best_summary_row", False))
+    def format_time(seconds: float) -> str:
+        if not np.isfinite(seconds):
+            return "--"
+        if seconds >= 3600:
+            minutes = round(seconds / 60)
+            return f"{minutes // 60} h {minutes % 60} min"
+        if seconds >= 60:
+            return f"{int(seconds // 60)} min {seconds % 60:.3g} s"
+        return f"{seconds:.3g}s"
+
     table_fields = [("target_calculation_time_s", "time", ".3g")]
     if not times_only:
         table_fields += [("rms", "RMS", ".3e"), ("max_abs", "max error", ".3e")]
-    table_rows = 2 + len(table_fields) * len(solvers)
+    table_rows = 1 + len(table_fields) * len(solvers)
     has_table_area = show_table or show_best_row
     if show_table:
         table_height = max(2.5, 0.235 * table_rows) + (0.8 if show_best_row else 0.0)
@@ -1287,9 +1297,10 @@ def _plot_accuracy_sweep(rows: list[dict], settings: dict, reference_time: float
         work_x = np.where(finite_rms,
                           np.clip(rms, np.finfo(float).tiny, error_cap), error_cap)
         label_offset = -6 if index % 2 == 0 else 7
-        for x, y, divider in zip(work_x[~self_reference], calculation_time[~self_reference],
-                                 dividers[~self_reference]):
-            ax_work.annotate(f"d={divider:.3g}", (x, y), xytext=(-4, label_offset),
+        step_counts = np.asarray([float(row["target_steps_per_period"]) for row in solver_rows])
+        for x, y, steps in zip(work_x[~self_reference], calculation_time[~self_reference],
+                               step_counts[~self_reference]):
+            ax_work.annotate(f"{steps:g}", (x, y), xytext=(-4, label_offset),
                              textcoords="offset points", ha="right", fontsize=7,
                              color=color)
 
@@ -1341,7 +1352,7 @@ def _plot_accuracy_sweep(rows: list[dict], settings: dict, reference_time: float
 
     ax_work.axvline(settings["acceptable_rms"], color="0.25", linestyle=":")
     ax_work.set(xlabel="RMS deviation from reference", ylabel="Calculation time [s]",
-                title="Work-precision comparison")
+                title="Work-precision comparison (labels: steps/period)")
     ax_work.set_xscale("log")
     ax_work.set_yscale("log")
     ax_work.set_xlim(right=error_cap)
@@ -1356,17 +1367,16 @@ def _plot_accuracy_sweep(rows: list[dict], settings: dict, reference_time: float
                  f"{settings['grid_side_dimension']} parameter grid, {output_title}")
 
     divider_keys = list(requested_dividers)
-    column_labels = [f"{divider:g}" for divider in divider_keys]
     ordered_rows = {}
     for solver in solvers:
         by_divider = {float(row["requested_step_count_divider"]): row
                       for row in rows if row["target_solver"] == solver}
         ordered_rows[solver] = [by_divider.get(key) for key in divider_keys]
 
-    table_labels = ["step-count divider", "steps/period (shared)"]
-    table_values = [column_labels,
-                    [str(max(1, int(round(float(settings["target_base_steps_per_period"])
-                                          / divider))))
+    # Use the recorded resolution, including rounding, rather than reconstructing it from a divider.
+    table_labels = ["steps/period"]
+    table_values = [[str(int(float(next(row["target_steps_per_period"] for row in rows
+                                      if float(row["requested_step_count_divider"]) == divider))))
                      for divider in divider_keys]]
     for field, label, fmt in table_fields:
         for solver in solvers:
@@ -1383,8 +1393,7 @@ def _plot_accuracy_sweep(rows: list[dict], settings: dict, reference_time: float
                 else:
                     value = format(float(row[field]), fmt)
                 if field == "target_calculation_time_s" and row:
-                    seconds = "s" if np.isfinite(float(row[field])) else ""
-                    value = f"{value}{seconds} {'V' if row['acceptable'] == 'yes' else 'X'}"
+                    value = f"{format_time(float(row[field]))} {'V' if row['acceptable'] == 'yes' else 'X'}"
                 values.append(value)
             table_labels.append(f"{solver_label(solver)} {label}")
             table_values.append(values)
@@ -1417,7 +1426,7 @@ def _plot_accuracy_sweep(rows: list[dict], settings: dict, reference_time: float
         if column is None:
             continue
         for field_index in range(len(table_fields)):
-            row_index = 2 + field_index * len(solvers) + solver_index
+            row_index = 1 + field_index * len(solvers) + solver_index
             cell = table[row_index, column]
             cell.set_facecolor("darkolivegreen")
             cell.get_text().set_color("white")
@@ -1430,12 +1439,12 @@ def _plot_accuracy_sweep(rows: list[dict], settings: dict, reference_time: float
                 summary_values.append(f"{solver_label(solver)}\nno accepted point")
             else:
                 summary_values.append(
-                    f"{solver_label(solver)}\n{float(best['requested_step_count_divider']):g} | "
-                    f"{float(best['target_calculation_time_s']):.3g}s")
+                    f"{solver_label(solver)}\n{int(float(best['target_steps_per_period']))} | "
+                    f"{format_time(float(best['target_calculation_time_s']))}")
         summary_ax = fig.add_axes((0.055, 0.015, 0.93, 0.105))
         summary_ax.axis("off")
         summary_title = (
-            "Coarsest accepted grids: divider and measured time for each solver with "
+            "Coarsest accepted grids: steps/period | time (adaptive solvers: output intervals/period); "
             f"RMS <= {float(settings['acceptable_rms']):.1e} and "
             f"maximum error <= {float(settings['acceptable_max_abs']):.1e}")
         summary_ax.text(0.5, 0.94, summary_title, ha="center", va="top",
@@ -1457,8 +1466,8 @@ def _plot_accuracy_sweep(rows: list[dict], settings: dict, reference_time: float
         left = cells[0, -1].get_x()
         right_cell = cells[0, len(divider_keys) - 1]
         right = right_cell.get_x() + right_cell.get_width()
-        section_boundaries = [1] + [
-            1 + field_index * len(solvers)
+        section_boundaries = [0] + [
+            field_index * len(solvers)
             for field_index in range(1, len(table_fields))]
         for row_index in section_boundaries:
             y = cells[row_index, 0].get_y()
@@ -1887,7 +1896,7 @@ def user_settings() -> dict:
         "show_plot": True,
         "show_results_table": True,  # False makes a compact graph; all values remain in CSV
         "table_times_only": False,  # True omits RMS and maximum-error rows
-        "show_best_summary_row": False,  # compact dark-olive divider | time summary
+        "show_best_summary_row": False,  # compact dark-olive steps/period | time summary
         # Save a complete JSON settings manifest beside the CSV and figure. It
         # can later be passed back with --settings to reproduce this run.
         "save_settings_manifest": True,

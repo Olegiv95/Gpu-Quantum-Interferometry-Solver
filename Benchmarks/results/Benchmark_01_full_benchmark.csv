@@ -47,15 +47,16 @@
 # time_definition,GQIS/Python/QuTiP solve-call wall time; Julia synchronized solve time
 # calibrated_solvers,"gqis_rk4,gqis_dop853,julia_gpu_fp32_fopt,qutip_cpu"
 # gpu_first_rhs_stage_s,0.208056927
-# partial_update_timestamp_local,2026-09-08T17:47:56
-# partial_update_ranges,gqis_rk4:16-256
+# partial_update_timestamp_local,2026-09-11T17:27:12
+# partial_update_ranges,gqis_dop853:16-2048
 
+# qutip_measured_2048_source,Benchmark_03_two_level_accuracy_timestep_dense grid_sweep.csv
 side_dimension,number_of_simulations,solver,time_s,prep_s,calc_s,status
-16,256,gqis_rk4,0.00474739075,,,measured
-32,1024,gqis_rk4,0.00728344917,,,measured
-64,4096,gqis_rk4,0.00725722313,,,measured
-128,16384,gqis_rk4,0.00573468208,,,measured
-256,65536,gqis_rk4,0.0118584633,,,measured
+16,256,gqis_rk4,0.00729990005,,,measured
+32,1024,gqis_rk4,0.00599145889,,,measured
+64,4096,gqis_rk4,0.00599122047,,,measured
+128,16384,gqis_rk4,0.00645303726,,,measured
+256,65536,gqis_rk4,0.0109989643,,,measured
 512,262144,gqis_rk4,0.0298132896,,,measured
 1024,1048576,gqis_rk4,0.101312876,,,measured
 2048,4194304,gqis_rk4,0.362227917,,,measured
@@ -63,14 +64,14 @@ side_dimension,number_of_simulations,solver,time_s,prep_s,calc_s,status
 8192,67108864,gqis_rk4,5.77455878,,,measured
 16384,268435456,gqis_rk4,23.5818954,,,measured
 32768,1073741824,gqis_rk4,98.4283137,,,measured
-16,256,gqis_dop853,0.0363678932,,,measured
-32,1024,gqis_dop853,0.0152816772,,,measured
-64,4096,gqis_dop853,0.0122556686,,,measured
-128,16384,gqis_dop853,0.0164551735,,,measured
-256,65536,gqis_dop853,0.0475416183,,,measured
-512,262144,gqis_dop853,0.138068914,,,measured
-1024,1048576,gqis_dop853,0.103973866,,,measured
-2048,4194304,gqis_dop853,0.323979378,,,measured
+16,256,gqis_dop853,0.00499582291,,,measured
+32,1024,gqis_dop853,0.00400209427,,,measured
+64,4096,gqis_dop853,0.00500249863,,,measured
+128,16384,gqis_dop853,0.00699925423,,,measured
+256,65536,gqis_dop853,0.0100059509,,,measured
+512,262144,gqis_dop853,0.0270023346,,,measured
+1024,1048576,gqis_dop853,0.0916228294,,,measured
+2048,4194304,gqis_dop853,0.337079287,,,measured
 4096,16777216,gqis_dop853,1.28995132,,,measured
 8192,67108864,gqis_dop853,5.25324607,,,measured
 16384,268435456,gqis_dop853,21.0348518,,,measured
@@ -87,15 +88,15 @@ side_dimension,number_of_simulations,solver,time_s,prep_s,calc_s,status
 8192,67108864,julia_gpu_fp32_fopt,94.789,,,measured
 16384,268435456,julia_gpu_fp32_fopt,456.668591,,,extrapolated
 32768,1073741824,julia_gpu_fp32_fopt,2200.10974,,,extrapolated
-16,256,qutip_cpu,9.47806,,,measured
-32,1024,qutip_cpu,19.6717887,,,measured
-64,4096,qutip_cpu,55.3529269,,,measured
-128,16384,qutip_cpu,188.458854,,,measured
-256,65536,qutip_cpu,641.641582,,,extrapolated
-512,262144,qutip_cpu,2184.58253,,,extrapolated
-1024,1048576,qutip_cpu,7437.79855,,,extrapolated
-2048,4194304,qutip_cpu,25323.3039,,,extrapolated
-4096,16777216,qutip_cpu,86217.678,,,extrapolated
-8192,67108864,qutip_cpu,293543.371,,,extrapolated
-16384,268435456,qutip_cpu,999420.453,,,extrapolated
-32768,1073741824,qutip_cpu,3402704.13,,,extrapolated
+16,256,qutip_cpu,7.2970854,,,measured
+32,1024,qutip_cpu,16.6727333,,,measured
+64,4096,qutip_cpu,49.5685035,,,measured
+128,16384,qutip_cpu,185.664799,,,measured
+256,65536,qutip_cpu,732.547291,,,measured
+512,262144,qutip_cpu,2890.29227,,,extrapolated
+1024,1048576,qutip_cpu,11403.7544,,,extrapolated
+2048,4194304,qutip_cpu,43747.29854499991,,,measured
+4096,16777216,qutip_cpu,177525.214,,,extrapolated
+8192,67108864,qutip_cpu,700432.258,,,extrapolated
+16384,268435456,qutip_cpu,2763581.22,,,extrapolated
+32768,1073741824,qutip_cpu,10903811.3,,,extrapolated

@@ -6,7 +6,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from Benchmark_full_tools import accuracy_divider_for_solver, load_accuracy_dividers
+from Benchmark_full_tools import (accuracy_divider_for_solver, load_accuracy_dividers,
+                                  solver_time_grid_label)
 
 
 def load_calibration(filename, problem, settings_file=None):
@@ -59,8 +60,10 @@ def load_calibration(filename, problem, settings_file=None):
 
 def calibrated_config(name, cfg, calibration):
     divider = accuracy_divider_for_solver(calibration["dividers"], name)
-    details = calibration["details"].get(name, {})
-    spp = int(details.get("steps_per_period", max(1, round(calibration["base_steps"] / divider))))
+    details = calibration["details"].get(name, {}) if name in calibration["dividers"] else {}
+    base_steps = (calibration["base_steps"] if name in calibration["dividers"]
+                  else calibration.get("fallback_base_steps", 256))
+    spp = int(details.get("steps_per_period", max(1, round(base_steps / divider))))
     if spp <= 0:
         raise ValueError(f"Invalid calibrated steps per period for {name}: {spp}")
     steps = max(1, round(cfg.tr * spp))
@@ -70,11 +73,14 @@ def calibrated_config(name, cfg, calibration):
 
 def run_calibrated_sweep(filename, *, problem, settings_file=None, solvers=None,
                          min_side, max_side, time_limit, output_filename,
-                         julia_cmd, show_plot):
+                         julia_cmd, show_plot, show_progress=True, fallback_base_steps=256, on_measured=None):
     import Benchmark_03_accuracy_timestep_sweep as accuracy
     from Benchmark_01_two_level import run_full_benchmark
 
     calibration = load_calibration(filename, problem, settings_file)
+    calibration["fallback_base_steps"] = int(fallback_base_steps)
+    if calibration["fallback_base_steps"] <= 0:
+        raise ValueError("Fallback steps per period must be positive")
     settings = calibration["settings"]
     names = solvers or settings["target_solvers"]
     names = names.split(",") if isinstance(names, str) else names
@@ -85,12 +91,12 @@ def run_calibrated_sweep(filename, *, problem, settings_file=None, solvers=None,
     cfg = accuracy._accuracy_config(cfg_settings, calibration["base_steps"], reference=False)
     cfg = replace(cfg, warmup_time=float(settings.get("averaging_skip_fraction", 0.0)),
                   gpu_precision=settings.get("gpu_precision", cfg.gpu_precision),
-                  cpu_precision=settings.get("cpu_precision", cfg.cpu_precision))
+                  cpu_precision=settings.get("cpu_precision", cfg.cpu_precision), progress=show_progress)
     args = SimpleNamespace(
         calibration=calibration, accuracy_dividers=calibration["dividers"],
         julia_cmd=julia_cmd, bench_min_side_size=min_side, bench_max_side_size=max_side,
         bench_solver_time_limit=time_limit, output_filename=output_filename,
-        no_plot=not show_plot,
+        no_plot=not show_plot, no_progress=not show_progress,
         python_cpu_spp_divider=accuracy_divider_for_solver(calibration["dividers"], "python_cpu"),
         python_ode_cpu_spp_divider=accuracy_divider_for_solver(calibration["dividers"], "python_ode_cpu"),
         qutip_cpu_spp_divider=accuracy_divider_for_solver(calibration["dividers"], "qutip_cpu"))
@@ -99,5 +105,8 @@ def run_calibrated_sweep(filename, *, problem, settings_file=None, solvers=None,
     for name in names:
         actual = calibrated_config(name, cfg, calibration)
         source = "calibrated" if name in calibration["dividers"] else "fallback (not accuracy-validated)"
-        print(f"{name}: {actual.solver_steps_per_period} steps/output samples per period; {source}")
-    return run_full_benchmark(cfg, args, names)
+        if name not in calibration["dividers"]:
+            source += (f"; no entry for {name}; original base={calibration['fallback_base_steps']}"
+                       f"; default divider={accuracy_divider_for_solver({}, name):g}")
+        print(f"{name}: {solver_time_grid_label(name, actual)}; {source}")
+    return run_full_benchmark(cfg, args, names, on_measured=on_measured)

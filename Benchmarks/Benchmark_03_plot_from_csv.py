@@ -44,11 +44,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--csv", help="input metrics CSV; overrides csv_file")
     parser.add_argument("--solvers", nargs="+", help="solver names to include, in legend order")
+    parser.add_argument("--output", help="output PNG path; overrides output_file")
+    parser.add_argument("--no-show", action="store_true", help="save without opening a plot window")
     args = parser.parse_args()
     if args.csv:
         options["csv_file"] = args.csv
     if args.solvers:
         options["include_solvers"] = args.solvers
+    if args.output:
+        options["output_file"] = str(Path(args.output).expanduser().resolve())
+    if args.no_show:
+        options["show_plot"] = False
     csv_path = _resolve_file(options["csv_file"])
     with csv_path.open("r", newline="", encoding="utf-8-sig") as stream:
         rows = list(csv.DictReader(stream))
@@ -117,7 +123,7 @@ def user_settings() -> dict:
         "include_solvers": (),#"gqis_rk4", "gqis_tsit5", "gqis_dop853", "qutip_cpu","julia_gpu_fp32_fopt"),
         "show_results_table": False,  # True restores the full table below the graphs
         "table_times_only": False,  # True keeps only step information and solver times
-        "show_best_summary_row": True,  # add dark-olive solver: divider | time cells
+        "show_best_summary_row": True,  # add dark-olive solver: steps/period | time cells
         "time_grid_axis": "steps_per_period",  # choices: "steps_per_period" or "divider"
         "divider_axis_scale": "log2",  # choices: "log2" or "equidistant"; applies to either quantity
         "divider_axis_labels": "powers_of_two",  # choices: "powers_of_two" or "all"

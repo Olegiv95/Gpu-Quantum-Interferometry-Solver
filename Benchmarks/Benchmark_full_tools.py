@@ -103,6 +103,15 @@ def load_accuracy_dividers(path, *, expected_problem: str, expected_output: str 
     return dividers
 
 
+def solver_time_grid_label(solver: str, cfg) -> str:
+    """Describe the actual fixed-step or adaptive-output grid for a run."""
+    frequency = float(cfg.w if hasattr(cfg, "w") else cfg.w_abs)
+    periods = float(cfg.tlist[-1] - cfg.tlist[0]) * frequency / (2.0 * np.pi)
+    per_period = cfg.num_steps / periods if periods > 0 else 0.0
+    label = "output_intervals" if solver in {"qutip_cpu", "python_ode_cpu"} else "steps"
+    return f"{label}={cfg.num_steps} {label}_per_period={per_period:g}"
+
+
 def accuracy_divider_for_solver(dividers: dict[str, float], solver: str) -> float:
     """Return a calibrated divider or the documented GPU/CPU fallback."""
     aliases = {"gpu": "gqis_rk4", "julia_gpu": "julia_gpu_fp32"}
@@ -385,6 +394,7 @@ def run_calibrated_csv_update(calibration_file: str | Path, *, problem: str,
                               backup_csv: bool = True,
                               refresh_extrapolated_points: bool = True,
                               update_plot: bool = True, show_plot: bool = True,
+                              show_progress: bool = True, fallback_base_steps: int = 256,
                               solver_labels: dict | None = None,
                               show_startup_times: bool = True,
                               show_gpu_preparation: bool = True,
@@ -393,7 +403,8 @@ def run_calibrated_csv_update(calibration_file: str | Path, *, problem: str,
                               dpi: int = 300) -> Path:
     """Rerun selected calibrated benchmark ranges and update an existing CSV in place.
 
-    Each item in ``runs`` is a mapping with ``solver``, ``min_side`` and ``max_side``.
+    Each item in ``runs`` specifies ``solver``, ``min_side`` and ``max_side``.
+    CPU and Julia measurements are saved to the target CSV after each completed point.
     Only newly *measured* rows are merged. Existing rows outside the requested ranges are
     untouched; existing extrapolated rows for an updated solver can optionally be refreshed.
     """
@@ -408,6 +419,32 @@ def run_calibrated_csv_update(calibration_file: str | Path, *, problem: str,
     replacements: list[dict] = []
     updated_solvers: list[str] = []
     range_labels: list[str] = []
+    backup_path = None
+    checkpoint_rows = list(base_rows)
+
+    def ensure_backup():
+        nonlocal backup_path
+        if backup_csv and backup_path is None:
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            backup_path = target_path.with_name(
+                f"{target_path.stem}_backup_{stamp}{target_path.suffix}")
+            shutil.copy2(target_path, backup_path)
+            print(f"Backed up previous CSV: {backup_path}")
+
+    def save_checkpoint(row):
+        nonlocal checkpoint_rows
+        ensure_backup()
+        checkpoint_rows = merge_benchmark_rows(checkpoint_rows, [row])
+        # Replace the destination only after the complete CSV has been written.
+        with tempfile.NamedTemporaryFile(dir=target_path.parent, suffix=".csv",
+                                         delete=False) as handle:
+            pending_path = Path(handle.name)
+        try:
+            save_benchmark_csv(checkpoint_rows, pending_path, metadata=metadata)
+            pending_path.replace(target_path)
+        finally:
+            pending_path.unlink(missing_ok=True)
+        print(f"Saved {row['solver']} side={row['side_dimension']} to {target_path}")
 
     with tempfile.TemporaryDirectory(prefix="gqis_benchmark_update_") as temp_dir:
         for index, spec in enumerate(run_specs):
@@ -429,7 +466,11 @@ def run_calibrated_csv_update(calibration_file: str | Path, *, problem: str,
                 time_limit=local_limit,
                 output_filename=str(temp_stem),
                 julia_cmd=julia_cmd,
-                show_plot=False,
+                show_plot=False, show_progress=show_progress,
+                fallback_base_steps=fallback_base_steps,
+                on_measured=(save_checkpoint if (solver in
+                             {"python_cpu", "python_ode_cpu", "qutip_cpu"}
+                             or solver.startswith("julia_")) else None),
             )
 
             if isinstance(result, list):
@@ -455,6 +496,7 @@ def run_calibrated_csv_update(calibration_file: str | Path, *, problem: str,
             if missing:
                 print(f"{solver}: keeping existing CSV values for unmeasured sides: {missing}")
             replacements.extend(measured_rows)
+            checkpoint_rows = merge_benchmark_rows(checkpoint_rows, measured_rows)
             if solver not in updated_solvers:
                 updated_solvers.append(solver)
             range_labels.append(f"{solver}:{min_side}-{max_side}")
@@ -464,12 +506,7 @@ def run_calibrated_csv_update(calibration_file: str | Path, *, problem: str,
         refresh_benchmark_extrapolations(merged_rows, solvers=updated_solvers,
                                          slope_points=2)
 
-    backup_path = None
-    if backup_csv:
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = target_path.with_name(f"{target_path.stem}_backup_{stamp}{target_path.suffix}")
-        shutil.copy2(target_path, backup_path)
-        print(f"Backed up previous CSV: {backup_path}")
+    ensure_backup()
 
     metadata = dict(metadata)
     metadata["partial_update_timestamp_local"] = datetime.now().isoformat(timespec="seconds")

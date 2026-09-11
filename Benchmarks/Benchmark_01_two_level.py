@@ -36,7 +36,7 @@ from Benchmark_full_tools import (accuracy_divider_for_solver, add_time_referenc
                                   load_accuracy_dividers, print_equipment_info,
                                   run_calibrated_csv_update, save_benchmark_csv,
                                   should_extrapolate_next, sympy_to_julia_fp32,
-                                  terminate_process_tree,
+                                  terminate_process_tree, solver_time_grid_label,
                                   )
 from gqis import build_reduced_lindblad_rhs, mesolve_2D
 from gqis.cuda_solvers import available_solvers
@@ -450,6 +450,7 @@ def solve_cpu_column(eps_index: int) -> tuple[int, np.ndarray]:
 
 def run_cpu_solver(solver: str, cfg: BenchConfig) -> tuple[np.ndarray, float]:
     start = time.time()
+    progress_start = time.perf_counter()
     dtype = np.float32 if (solver == "python_cpu" and cfg.cpu_precision == "fp32") else np.float64
     out = np.empty((cfg.ny, cfg.nx), dtype=dtype)
 
@@ -461,7 +462,11 @@ def run_cpu_solver(solver: str, cfg: BenchConfig) -> tuple[np.ndarray, float]:
             out[:, eps_index] = col
             done += 1
             if cfg.progress and (done == 1 or done == cfg.nx or done % update_every == 0):
-                print_progress(solver, done, cfg.nx)
+                if solver == "qutip_cpu":
+                    from Benchmark_03_accuracy_timestep_sweep import print_progress as accuracy_progress
+                    accuracy_progress(solver, done, cfg.nx, progress_start)
+                else:
+                    print_progress(solver, done, cfg.nx)
 
     return out, time.time() - start
 
@@ -667,7 +672,7 @@ def solver_dispatch(args: argparse.Namespace) -> dict[
     if getattr(args, "calibration", None) is not None:
         from Benchmark_03_accuracy_timestep_sweep import ACCURACY_SOLVER_SET, _run_accuracy_solver
         settings = {**args.calibration["settings"], "julia_cmd": args.julia_cmd,
-                    "show_worker_progress": False}
+                    "show_worker_progress": not getattr(args, "no_progress", False)}
         return {name: (lambda cfg, name=name: _run_accuracy_solver(name, cfg, settings))
                 for name in ACCURACY_SOLVER_SET}
     return {
@@ -686,10 +691,11 @@ def run_solver(name: str, base_cfg: BenchConfig,
     if name not in solver_dispatch(args):
         raise ValueError(f"Unknown solver '{name}'. Available solvers: {', '.join(SOLVERS)}")
 
-    cfg = config_for_solver(name, base_cfg, args)
+    cfg = replace(config_for_solver(name, base_cfg, args),
+                  progress=not getattr(args, "no_progress", not base_cfg.progress))
     show_column_progress = cfg.progress and name in {"python_cpu", "python_ode_cpu", "qutip_cpu"}
 
-    running = f"{name}: Running  grid={cfg.nx}x{cfg.ny}  steps={cfg.num_steps}"
+    running = f"{name}: Running  grid={cfg.nx}x{cfg.ny}  {solver_time_grid_label(name, cfg)}"
     if show_column_progress:
         print(running, flush=True)
     else:
@@ -697,7 +703,7 @@ def run_solver(name: str, base_cfg: BenchConfig,
 
     p_mat, elapsed = solver_dispatch(args)[name](cfg)
 
-    result = f"{name}: time={elapsed:8.3f}s  grid={cfg.nx}x{cfg.ny}  steps={cfg.num_steps}"
+    result = f"{name}: time={elapsed:8.3f}s  grid={cfg.nx}x{cfg.ny}  {solver_time_grid_label(name, cfg)}"
     if show_column_progress:
         print(result)
     else:
@@ -752,7 +758,7 @@ def warmup_gpu_solver_for_benchmark(base_cfg: BenchConfig, args: argparse.Namesp
     warm_cfg = config_for_solver(name, warm_cfg, args)
 
     print(f"{name}: warmup/precalculation  grid={warm_cfg.nx}x{warm_cfg.ny}  "
-          f"steps={warm_cfg.num_steps}")
+          f"{solver_time_grid_label(name, warm_cfg)}")
     _p_mat, _elapsed = solver_dispatch(args)[name](warm_cfg)
     gc.collect()
 
@@ -796,7 +802,7 @@ def run_full_solver_with_timeout(name: str, cfg: BenchConfig, args: argparse.Nam
 
 
 def run_full_benchmark(base_cfg: BenchConfig, args: argparse.Namespace,
-                       solvers: tuple[str, ...]) -> list[dict]:
+                       solvers: tuple[str, ...], *, on_measured=None) -> list[dict]:
     sides = benchmark_sides(args.bench_min_side_size, args.bench_max_side_size)
     rows: list[dict] = []
     histories: dict[str, list[tuple[int, float]]] = {name: [] for name in solvers}
@@ -847,7 +853,8 @@ def run_full_benchmark(base_cfg: BenchConfig, args: argparse.Namespace,
                                                    dtype=base_cfg.eps_list.dtype),
                                A_list=np.linspace(float(base_cfg.A_list[0]),
                                                  float(base_cfg.A_list[-1]), side,
-                                                 dtype=base_cfg.A_list.dtype), progress=False)
+                                                 dtype=base_cfg.A_list.dtype),
+                               progress=not getattr(args, "no_progress", False))
 
             try:
                 if name in gpu_names:
@@ -871,6 +878,9 @@ def run_full_benchmark(base_cfg: BenchConfig, args: argparse.Namespace,
                 rows.append(benchmark_row(side, num_simulations, name, est, status))
                 print(f"{name:>10s} side={side}: {status.upper()} ({exc})")
 
+            if rows[-1]["status"] == "measured" and on_measured is not None:
+                on_measured(dict(rows[-1]))
+
     output_stem = benchmark_output_path(
         args.output_filename, script_dir=Path(__file__).resolve().parent)
     out_csv = Path(f"{output_stem}.csv")
@@ -889,6 +899,8 @@ def run_full_benchmark(base_cfg: BenchConfig, args: argparse.Namespace,
         "qutip_output_density_divider": str(args.qutip_cpu_spp_divider),
         "solver_time_grid_dividers": ";".join(
             f"{name}:{configured_divider_for_solver(name, args):g}" for name in solvers),
+        "fallback_base_steps_per_period": str((calibration or {}).get(
+            "fallback_base_steps", base_cfg.solver_steps_per_period)),
         "solver_steps_per_trajectory_by_solver": ";".join(
             f"{name}:{config_for_solver(name, base_cfg, args).num_steps}" for name in solvers),
         "gpu_precision": base_cfg.gpu_precision,
@@ -1053,7 +1065,9 @@ def main() -> None:
                 julia_cmd=args.julia_cmd or settings["julia_cmd"],
                 time_limit=args.bench_solver_time_limit or settings["bench_solver_time_limit"],
                 backup_csv=True, refresh_extrapolated_points=True, update_plot=True,
-                show_plot=not args.no_plot)
+                show_plot=not args.no_plot, show_progress=not args.no_progress,
+                fallback_base_steps=(args.solver_steps_per_period if args.solver_steps_per_period is not None
+                                     else settings["solver_steps_per_period"]))
             return
 
         from Benchmark_accuracy_calibration import run_calibrated_sweep
@@ -1064,7 +1078,10 @@ def main() -> None:
             max_side=args.bench_max_side_size or settings["bench_max_side_size"],
             time_limit=args.bench_solver_time_limit or settings["bench_solver_time_limit"],
             output_filename=args.output_filename or settings["Output_filename"],
-            julia_cmd=args.julia_cmd or settings["julia_cmd"], show_plot=not args.no_plot)
+            julia_cmd=args.julia_cmd or settings["julia_cmd"],
+            show_plot=not args.no_plot, show_progress=not args.no_progress,
+                fallback_base_steps=(args.solver_steps_per_period if args.solver_steps_per_period is not None
+                                     else settings["solver_steps_per_period"]))
         return
 
     mode = settings["mode"]
@@ -1320,14 +1337,14 @@ def user_settings() -> dict:
 
     # Presets for full_benchmark_action = "update". Uncomment one line to use it.
     #update_preset = {"solver": "julia_gpu_fp32_fopt", "min_side": 16, "max_side": 2048}
-    # update_preset = {"solver": "qutip_cpu", "min_side": 16, "max_side": 256}
-    update_preset = {"solver": "gqis_rk4", "min_side": 16, "max_side": 256}
-    #update_preset = {"solver": "gqis_dop853", "min_side": 16, "max_side": 32768}
+    #update_preset = {"solver": "qutip_cpu", "min_side": 16, "max_side": 512}
+    #update_preset = {"solver": "gqis_rk4", "min_side": 16, "max_side": 256}
+    update_preset = {"solver": "gqis_dop853", "min_side": 16, "max_side": 2048}
 
     return {
         **mode_settings,
         # "full" runs the complete sweep; "update" replaces only update_preset timings.
-        "full_benchmark_action": "update",
+        "full_benchmark_action": "full",
         "benchmark_update_preset": update_preset,
         "julia_cmd": "julia",  # Julia executable name or full path
         # Physics parameters.

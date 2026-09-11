@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import csv
 from pathlib import Path
 
@@ -153,7 +154,7 @@ def user_settings() -> dict:
     """User-editable data-selection and figure settings."""
     return {
         # Select either a Benchmark 01 or Benchmark 02 full-benchmark CSV.
-        "csv_file": "Benchmark_02_full_benchmark.csv",
+        "csv_file": "Benchmark_01_full_benchmark.csv",
         # Empty includes every solver. Otherwise list only the desired curves.
         "include_solvers": ("gqis_rk4","julia_gpu_fp32_fopt","qutip_cpu"),
         # Display names only; CSV identifiers and solver selection stay unchanged.
@@ -181,5 +182,29 @@ def user_settings() -> dict:
     }
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--csv", dest="csv_file", help="Benchmark 01 or 02 scaling CSV")
+    parser.add_argument("--output", dest="output_file", help="Output PNG path")
+    parser.add_argument("--solvers", nargs="+", help="Solver identifiers to display")
+    parser.add_argument("--no-show", action="store_true", help="Save the figure without opening a window")
+    parser.add_argument("--stored-points", action="store_true",
+                        help="Plot CSV values as recorded, without merging points or refreshing estimates")
+    args = parser.parse_args()
+    options = user_settings()
+    if args.csv_file is not None:
+        options["csv_file"] = args.csv_file
+    if args.output_file is not None:
+        options["output_file"] = args.output_file
+    if args.solvers is not None:
+        options["include_solvers"] = tuple(args.solvers)
+    if args.no_show:
+        options["show_plot"] = False
+    if args.stored_points:
+        options.update(additional_csv_files=(), additional_measured_points=(),
+                       refresh_extrapolated_points=False, save_merged_csv=False)
+    generate_plot(options)
+
+
 if __name__ == "__main__":
-    generate_plot()
+    main()

@@ -58,6 +58,14 @@ Set that setting to `None` to use the manually configured time grids. A calibrat
 calibration's model, duration, adaptive settings and solver-specific step counts; only the parameter-grid size changes.
 See [calibration files](#calibration-files-and-compatibility) for overrides and older files.
 
+Benchmark 01/02 print each solver's total steps and steps per driving period. For QuTiP and SciPy,
+these counts describe requested output intervals; internal integration is adaptive. QuTiP also shows
+a column progress bar with completion percentage and estimated remaining time. Use `--no-progress`
+to hide the progress bar. If a solver is absent from the calibration JSON, the startup message
+identifies the fallback time grid explicitly. Missing CPU solvers use one tenth of the original
+`solver_steps_per_period` setting (256 by default, giving 26 after rounding), rather than one tenth
+of the calibration JSON's base density. Solvers present in the JSON use their saved calibration.
+
 Scaling CSVs record hardware, software, numerical settings and measured/extrapolated status in
 `Benchmarks/results/`. Circles denote measurements; squares denote estimates after a solver reaches
 or is predicted to exceed `bench_solver_time_limit`. CPU and Julia measurements run in terminable
@@ -69,7 +77,8 @@ Use `--help` for all CLI options and [timing details](#timing-boundaries-and-pre
 Benchmark 01 shows calculation time for driven two-level interferograms as the number of parameter
 sets increases. GQIS approaches linear scaling on large grids, reaching 1.07 billion simulations
 in about **1 min 38 s** with RK4. Circles mark measurements; squares and dashed extensions mark
-extrapolated timings. The transferred QuTiP measurement at `2048 x 2048` took about **12 h 9 min**.
+extrapolated timings. The largest measured QuTiP point is `2048 x 2048`, at about **12 h 9 min**.
+That measurement comes from Benchmark 03 and is stored as a measured point in the Benchmark 01 CSV.
 
 [Timing data (CSV)](./Benchmarks/results/Benchmark_01_full_benchmark.csv) | [Figure file (PNG)](./Benchmarks/results/Benchmark_01_full_benchmark_plot.png)
 
@@ -80,8 +89,8 @@ extrapolated timings. The transferred QuTiP measurement at `2048 x 2048` took ab
 Benchmark 02 shows the same scaling comparison for the coupled qubit-resonator model. The larger
 state makes each simulation more expensive; GQIS RK4 completes the largest grid of 1.07 billion
 parameter sets in about **5 min 4 s**. Circles mark measurements; squares and dashed extensions
-mark extrapolated timings. This figure uses the current calibrated runs; the historical
-`256 x 256` QuTiP measurement discussed above is a separate result.
+mark extrapolated timings. The largest measured QuTiP grid is `256 x 256`, taking about
+**27 min 30 s**, versus **0.023219 s** for GQIS(RK4): approximately **71,100 times** speedup.
 
 [Timing data (CSV)](./Benchmarks/results/Benchmark_02_full_benchmark.csv) | [Figure file (PNG)](./Benchmarks/results/Benchmark_02_full_benchmark_plot.png)
 
@@ -161,6 +170,23 @@ python Benchmarks/Benchmark_01_02_plot_from_csv.py
 python Benchmarks/Benchmark_03_plot_from_csv.py
 ```
 
+On Windows, use [Plot_Benchmark_01.bat](Benchmarks/Plot_Benchmark_01.bat) for the two-level figure
+or [Plot_Benchmark_02.bat](Benchmarks/Plot_Benchmark_02.bat) for the four-level figure.
+Each launcher selects its matching CSV and saves `Benchmark_01_full_benchmark_plot.png` or
+`Benchmark_02_full_benchmark_plot.png` beside the data. The launchers use stored measurements and
+estimates unchanged, keeping the figures consistent with the CSV-based speedup summaries.
+Set `GQIS_PYTHON` to select a Python environment with NumPy and Matplotlib installed.
+
+The equivalent command for Benchmark 01 is:
+
+```bash
+python Benchmarks/Benchmark_01_02_plot_from_csv.py --csv Benchmarks/results/Benchmark_01_full_benchmark.csv --stored-points
+```
+
+Use `--no-show` to save without opening a window, `--output` to choose another PNG path, or
+`--solvers gqis_rk4 julia_gpu_fp32_fopt qutip_cpu` to select curves. The batch launchers also forward
+these arguments. Figure styling continues to use the plot helper's `user_settings()`.
+
 Common settings are `csv_file`, `include_solvers` (empty selects all), `show_results_table`,
 `show_plot`, and `output_file`. With `output_file=None`, the figure is saved beside the CSV as
 `<CSV stem>_plot.png`. Select solver identifiers as stored in the CSV.
@@ -171,7 +197,9 @@ See [adding measurements](#adding-measurements-to-a-scaling-plot) and
 [preparation curves](#timing-boundaries-and-preparation) for optional changes.
 
 **Benchmark 03 plotter:** draws accuracy and time versus steps per period. `table_times_only=True`
-hides error rows; `show_best_summary_row=True` shows each solver's coarsest accepted grid and time.
+hides error rows; `show_best_summary_row=True` shows each solver's coarsest accepted steps per driving period and time.
+The full table and work-precision point labels also use recorded steps per period; for adaptive
+solvers, these counts describe requested output intervals per period.
 `show_results_table=False` gives a compact figure. See [axis controls](#time-grids-and-legacy-option-names)
 for alternative spacing and labels.
 
@@ -337,20 +365,20 @@ Reference desktop system:
 
 The largest measured `32768 x 32768` grids contain 1.07 billion independent simulations.
 GQIS(RK4) completed them in about **1 min 38 s** for the two-level model and **5 min 4 s** for the four-level model.
-The corresponding QuTiP estimates are **39.4 days** and **102.3 days**;
+The corresponding QuTiP estimates are **126.20 days** and **248.67 days**;
 these largest-grid CPU values are extrapolated, not measured runs.
 
-The largest measured QuTiP comparison is the two-level `2048 x 2048` run:
-**12 h 9 min** (43,747 s). That measurement comes from the
-[Benchmark 03 dense two-level sweep](<Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_dense grid_sweep.csv>)
-and was transferred to the scaling figure. The matching GQIS RK4 time comes from the
-[Benchmark 01 scaling CSV](Benchmarks/results/Benchmark_01_full_benchmark.csv).
+The [Benchmark 01 scaling CSV](Benchmarks/results/Benchmark_01_full_benchmark.csv) includes the
+measured `2048 x 2048` QuTiP run imported from the
+[Benchmark 03 dense two-level sweep](<Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_dense grid_sweep.csv>).
+The CSV records **12 h 9 min** as a measurement, so regenerating the scaling figure retains the point.
+Other measured timings and existing extrapolations are preserved. The larger-grid averages below
+use those stored extrapolations; they have not been refitted to the imported point.
 
 | Model and measurement | Grid | QuTiP CPU time | GQIS(RK4) calculation time | Measured speedup |
 | --- | --- | --- | --- | --- |
-| Two-level, Benchmark 03 / current scaling | `2048 x 2048` | 12 h 9 min | 0.36223 s | approximately 120,800 times |
-| Four-level, v0.1.1 benchmark | `256 x 256` | 12 min 11 s | 0.033861 s | approximately 21,600 times |
-| Four-level, current calibrated benchmark | `64 x 64` | 4 min 18 s | 0.0079920 s | approximately 32,300 times |
+| Two-level, Benchmark 03 measurement imported into scaling | `2048 x 2048` | 12 h 9 min | 0.36223 s | approximately 120,800 times |
+| Four-level | `256 x 256` | about 27 min 30 s | 0.023219 s | approximately 71,100 times |
 
 Displayed times are rounded to at most five significant digits; long durations use hours and
 minutes. Speedups are calculated from the unrounded recorded times. Each ratio compares measured
@@ -360,19 +388,12 @@ The two-level QuTiP run used 32 requested output intervals per driving period (1
 40 periods), with adaptive internal integration. The calibrated RK4 run used 256 integration
 steps per period (10,240 total).
 
-The historical four-level row pairs QuTiP with the GQIS `calc_s` value from the same v0.1.1 CSV.
-That benchmark used 10,240 RK4 steps per simulation; the current calibrated four-level benchmark
-uses 5,840. The historical row is a separate measured comparison and is not part of the current
-calibrated scaling CSV or its larger-grid averages.
-
-The original Benchmark 01 CSV still contains the older extrapolated QuTiP value at `2048 x 2048`;
-the table above uses the later Benchmark 03 measurement. The smaller `128 x 128` comparison is
-also measured, but is not the largest measured two-level grid. The larger-grid averages below
-refer to the original scaling CSV values.
+The four-level runs use 5,840 RK4 steps and 1,280 QuTiP output intervals over 40 periods.
+QuTiP extrapolations use the updated measurements through `256 x 256`.
 
 For the four grid sizes from `4096 x 4096` through `32768 x 32768`, arithmetic means of the
-point-by-point timing ratios are approximately **46,900× over QuTiP and 17.9× over Julia** for the two-level
-model, and **50,700× over QuTiP and 60.6× over Julia** for the four-level model.
+point-by-point timing ratios are approximately **118,110× over QuTiP and 17.9× over Julia** for the two-level
+model, and **88,040× over QuTiP and 60.6× over Julia** for the four-level model.
 These ratios use the linked CSV calculation times for GQIS(RK4) and Julia's
 `julia_gpu_fp32_fopt` variant, versus QuTiP's CPU run times; preparation is not added to the GPU calculation times.
 Julia uses experimental integer-step FP32 time reconstruction in this comparison.
@@ -380,7 +401,7 @@ QuTiP timings in this range, and Julia timings beyond its measured range, are ex
 
 The calibrated grids differ by solver. Per simulation, the two-level CSV records 10,240 RK4 steps,
 1,720 DOP853 steps, 4,080 Julia steps and 1,280 QuTiP output intervals. The four-level CSV records
-5,840 RK4 steps, 1,720 DOP853 steps, 5,840 Julia steps and 8,200 QuTiP output intervals.
+5,840 RK4 steps, 1,720 DOP853 steps, 5,840 Julia steps and 1,280 QuTiP output intervals.
 QuTiP's internal adaptive integration steps are distinct from these output intervals.
 
 
