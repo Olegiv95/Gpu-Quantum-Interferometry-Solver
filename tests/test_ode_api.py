@@ -17,7 +17,8 @@ class OdeApiTests(unittest.TestCase):
         self.codes = []
         def kernel(code, *args, **kwargs):
             self.codes.append(code)
-            launch = lambda *args: None
+            def launch(*args):
+                return None
             launch.compile = lambda: None  # the solver compiles before the timed launch
             return launch
         fake = SimpleNamespace(float32=np.float32, float64=np.float64,

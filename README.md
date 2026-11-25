@@ -130,10 +130,9 @@ and comparing the required observable with an analytic solution or a suitable nu
 
 Both APIs offer `rk4` (default), `lserk4`, `lserk4f`, `dp5`, `tsit5`, `anas5`, `ab5`, `alshina6`, `dop853` and
 `tsit5a` with adaptive step size. Set `solver="tsit5"`, for example, to change the integration method. RK4 is a useful starting
-point, the low-storage `lserk4` and `lserk4f` keep the solver state in GPU registers up to larger Hilbert-space
-dimensions, higher-order methods can
-reach tighter accuracy with coarser steps, and `tsit5a` adapts its step size for each parameter point between the
-`tlist` output times. The [solver comparison table](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md#available-solvers)
+point. The low-storage `lserk4` and `lserk4f` are faster for large systems, higher-order methods can reach tighter
+accuracy with coarser steps, and `tsit5a` adapts its step size for each parameter point between the `tlist`
+output times. The [solver comparison table](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md#available-solvers)
 summarizes their costs and uses; [Benchmark 03](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md#benchmark-03-accuracy-and-convergence) compares the time
 needed to satisfy chosen error limits.
 
@@ -236,8 +235,9 @@ $M$ time samples contains $t_0,\ldots,t_{M-1}$ and therefore defines $M-1$ integ
 $h=t_{n+1}-t_n$.
 
 With RK4 selected, each GPU thread applies this update to its own evolution and parameter set.
-Other available methods include LSERK4, DP5, Tsit5, Anas5, AB5, Alshina6 and DOP853; see the
-[API reference](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md) for their costs and intended uses. For general ODEs, `odesolve_2D`
+Other available methods include LSERK4, DP5, TSIT5, ANAS5, AB5, ALSHINA6 and DOP853, as well as LSERK4F with
+extra low storage for large systems and TSIT5A with adaptive step size; see the
+[available solvers](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md#available-solvers) for their costs and intended uses. For general ODEs, `odesolve_2D`
 accepts SymPy derivatives and initial conditions directly, using the same CUDA execution path.
 
 For a new model, these components perform the following pipeline (with `odesolve_2D` starting from stage 4):
@@ -328,13 +328,17 @@ Reduce `grid_size` in the `user_settings()` block for a quicker run or for a GPU
 Example outputs are saved to `Examples/results/`.
 
 <table>
+  <tr align="center">
+    <td><strong>Example 01:</strong> two-level interferogram</td>
+    <td><strong>Example 02:</strong> coupled qubit-resonator interferogram</td>
+  </tr>
   <tr>
     <td width="50%"><img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Examples/results/Example_01_two_level_basic.png" alt="Two-level interferogram"></td>
     <td width="50%"><img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Examples/results/Example_02_four_level_interferogram.png" alt="Four-level interferogram"></td>
   </tr>
-  <tr align="center">
-    <td><strong>Example 01:</strong> two-level interferogram</td>
-    <td><strong>Example 02:</strong> coupled qubit-resonator interferogram</td>
+  <tr>
+    <td><em>Time-averaged qubit occupation versus detuning &epsilon;/&Delta; and drive amplitude A/&Delta;.</em></td>
+    <td><em>Resonator response 10&middot;log<sub>10</sub>|Re&lang;a&rang;| versus detuning &epsilon;/&Delta; and drive amplitude A/&Delta;.</em></td>
   </tr>
 </table>
 
@@ -371,34 +375,15 @@ The compact GQIS kernel retains the reduced state and solver (RK4 by default) wo
 evolution. In the tested large sweeps, this execution design used less video random-access memory (VRAM) than the Julia
 comparison solver.
 
+<p align="center"><strong>Two-level calculation-time scaling</strong></p>
 <p align="center">
   <a href="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Benchmarks/results/Benchmark_01_full_benchmark_plot.png">
     <img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Benchmarks/results/Benchmark_01_full_benchmark_plot.png" alt="Two-level calculation-time scaling benchmark" width="900">
   </a>
 </p>
-<p align="center"><em>Two-level scaling reference. Click the figure for the full-resolution result.</em></p>
-
-[Benchmark 04](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md#benchmark-04-hilbert-space-scaling)
-shows how the time grows with the Hilbert-space dimension, for a qubit-resonator model with up to 10 photon
-states and for up to 5 coupled qubits, on a `1024 x 1024` grid. Every solver is calibrated to the same accuracy
-of the resulting interferogram. GQIS is compared with dynamiqs (Tsit5 with adaptive step size) and Julia
-DiffEqGPU (Tsit5 with fixed step size) through the same integrators, GQIS(TSIT5A) and GQIS(TSIT5).
-
-While the solver state fits in GPU registers, GQIS calculations are tens to hundreds of times faster: for 3
-coupled qubits, GQIS(LSERK4F) takes **2.0 s** against **271 s** for dynamiqs and **98 s** for DiffEqGPU. For
-larger systems the state spills from the registers to slower memory, and the advantage decreases to about 2
-times: for 5 coupled qubits (dimension 32), the first call of GQIS(TSIT5A) takes **938 s** against **2358 s**
-for dynamiqs. The low-storage LSERK4F delays the spilling: for the qubit-resonator model of dimension 12, it
-takes **34.7 s** against **624 s** for dynamiqs and **508 s** for DiffEqGPU. Once the registers are heavily
-overfilled, the GQIS solvers become close to each other again.
-
-<p align="center">
-  <a href="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Benchmarks/results/Benchmark_04_hilbert_space_scaling_summary_plot.png">
-    <img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Benchmarks/results/Benchmark_04_hilbert_space_scaling_summary_plot.png" alt="Calculation time versus Hilbert-space dimension" width="900">
-  </a>
-</p>
-<p align="center"><em>Hilbert-space scaling at equal accuracy. Solid curves show the calculation time, dotted curves the
-first-call total time. The jumps in the GQIS curves appear where the solver state no longer fits in GPU registers.</em></p>
+<p align="center"><em>Calculation time versus the number of simulated parameter sets for the driven two-level
+model. Circles mark measurements; squares and dashed extensions mark extrapolated timings. Click the figure for
+the full-resolution result.</em></p>
 
 Accuracy depends on the selected solver and the step size supplied by the user. The
 [Benchmark 03 accuracy results and calibration workflow](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md#benchmark-03-accuracy-and-convergence)
@@ -414,6 +399,23 @@ stock and modified Julia stepping, and preparation-time definitions.
 Start with the [64×64 Benchmark 03 preset](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/Benchmarks/presets/Benchmark_03_two_level_64.json).
 [Reproducing accuracy figures](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md#reproducing-accuracy-figures) explains launching presets,
 reusing references and rebuilding plots from saved CSV files.
+
+[Benchmark 04](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md#benchmark-04-hilbert-space-scaling)
+shows how the time grows with the Hilbert-space dimension, for a qubit-resonator model with up to 10 photon
+states and for up to 5 coupled qubits, on a `1024 x 1024` grid. Every solver is calibrated to the same accuracy
+of the resulting interferogram. GQIS is compared with dynamiqs (Tsit5 with adaptive step size) and Julia
+DiffEqGPU (Tsit5 with fixed step size) through the same integrators, GQIS(TSIT5A) and GQIS(TSIT5).
+
+<p align="center"><strong>Hilbert-space scaling at equal accuracy</strong></p>
+<p align="center">
+  <a href="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Benchmarks/results/Benchmark_04_hilbert_space_scaling_summary_plot.png">
+    <img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Benchmarks/results/Benchmark_04_hilbert_space_scaling_summary_plot.png" alt="Calculation time versus Hilbert-space dimension" width="900">
+  </a>
+</p>
+<p align="center"><em>Solid curves show the calculation time, dotted curves the first-call total time. While the
+solver state fits in GPU registers, GQIS calculations are tens to hundreds of times faster. The jumps in the GQIS
+curves appear where the state spills from the registers to slower memory; the advantage then decreases to a few
+times. The low-storage LSERK4F delays this spilling.</em></p>
 
 Benchmarks involving QuTiP, CPU ODE solvers, or Julia can take substantial time to run.
 

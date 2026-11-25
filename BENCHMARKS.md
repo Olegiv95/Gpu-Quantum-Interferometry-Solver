@@ -76,6 +76,8 @@ Use `--help` for all CLI options and [timing details](#timing-boundaries-and-pre
 
 ### Two-Level time scaling:
 
+![Two-level full benchmark](./Benchmarks/results/Benchmark_01_full_benchmark_plot.png)
+
 Benchmark 01 shows calculation time for driven two-level interferograms as the number of parameter
 sets increases. GQIS approaches linear scaling on large grids, reaching 1.07 billion simulations
 in about **1 min 38 s** with RK4. Circles mark measurements; squares and dashed extensions mark
@@ -84,9 +86,9 @@ That measurement comes from Benchmark 03 and is stored as a measured point in th
 
 [Timing data (CSV)](./Benchmarks/results/Benchmark_01_full_benchmark.csv) | [Figure file (PNG)](./Benchmarks/results/Benchmark_01_full_benchmark_plot.png)
 
-![Two-level full benchmark](./Benchmarks/results/Benchmark_01_full_benchmark_plot.png)
-
 ### Four-Level time scaling:
+
+![Four-level full benchmark](./Benchmarks/results/Benchmark_02_full_benchmark_plot.png)
 
 Benchmark 02 shows the same scaling comparison for the coupled qubit-resonator model. The larger
 state makes each simulation more expensive; GQIS RK4 completes the largest grid of 1.07 billion
@@ -95,8 +97,6 @@ mark extrapolated timings. The largest measured QuTiP grid is `256 x 256`, takin
 **27 min 30 s**, versus **0.023219 s** for GQIS(RK4): approximately **71,100 times** speedup.
 
 [Timing data (CSV)](./Benchmarks/results/Benchmark_02_full_benchmark.csv) | [Figure file (PNG)](./Benchmarks/results/Benchmark_02_full_benchmark_plot.png)
-
-![Four-level full benchmark](./Benchmarks/results/Benchmark_02_full_benchmark_plot.png)
 
 ## Benchmark 03: Accuracy And Convergence
 
@@ -134,32 +134,32 @@ Calculation times belong to these accuracy runs, separately from the scaling mea
 
 ### Small Two-Level Grid accuracy scaling: Independent QuTiP Reference
 
+![Benchmark 03: two-level convergence against QuTiP](Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_sweep_GQIS_vs_QuTiP_plot.png)
+
 The `64 x 64` sweep compares GQIS with a QuTiP reference using 2048 output intervals per period.
 At fine resolution, the recorded GQIS methods agree with QuTiP to roughly `3-4e-6` RMS in the observable.
-
-![Benchmark 03: two-level convergence against QuTiP](Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_sweep_GQIS_vs_QuTiP_plot.png)
 
 [Results (CSV)](Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_sweep_GQIS_vs_QuTiP.csv)
 
 ### Dense Two-Level Grid accuracy scaling:
+
+![Benchmark 03: dense two-level convergence](<Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_dense grid_sweep.png>)
 
 The `2048 x 2048` sweep uses GQIS RK4 at 4096 steps per period as the reference,
 with limits of `1e-3` on the RMS error and `1e-2` on the maximum error. Among the coarsest accepted GQIS points,
 DOP853 has the shortest recorded time: **0.33592 s** at **43 steps per period**.
 The measured QuTiP point takes about **12 h 9 min** and satisfies both limits.
 
-![Benchmark 03: dense two-level convergence](<Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_dense grid_sweep.png>)
-
 [Results (CSV)](<Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_dense grid_sweep.csv>)
 
 ### Dense Four-Level Grid accuracy scaling:
+
+![Benchmark 03: dense four-level convergence](<Benchmarks/results/Benchmark_03_four_level_accuracy_timestep_dense grid_sweep.png>)
 
 The `2048 x 2048` sweep uses the same reference resolution and error limits as the dense two-level sweep.
 Here RK4 has the shortest recorded GQIS time among the coarsest accepted points:
 **0.98360 s** at **146 steps per period**. DOP853 needs only **43 steps per period** but takes
 **1.5141 s**, illustrating that even vastly different solvers, fourth-order for RK4 and eighth-order for DOP853, can provide quite similar performance when calibrated to the same accuracy limits.
-
-![Benchmark 03: dense four-level convergence](<Benchmarks/results/Benchmark_03_four_level_accuracy_timestep_dense grid_sweep.png>)
 
 [Results (CSV)](<Benchmarks/results/Benchmark_03_four_level_accuracy_timestep_dense grid_sweep.csv>)
 
@@ -213,6 +213,8 @@ Time limits, recalculation of selected points and calibration settings are descr
 
 ### Hilbert-space time scaling:
 
+![Hilbert-space scaling](./Benchmarks/results/Benchmark_04_hilbert_space_scaling_calibrated_plot.png)
+
 The saved run covers the qubit-resonator model (`Nph` 2-10, dimension 4-20) and coupled qubits
 (1-5 qubits, dimension 2-32). GQIS is compared with each library through the same integrator:
 GQIS(TSIT5A) with dynamiqs (Tsit5 with adaptive step size), and GQIS(TSIT5) with DiffEqGPU (Tsit5 with
@@ -238,8 +240,6 @@ DiffEqGPU. dynamiqs was measured up to `Nph = 6`. DiffEqGPU did not complete `Np
 possibly because it ran out of GPU memory.
 
 [Timing data (CSV)](./Benchmarks/results/Benchmark_04_hilbert_space_scaling_calibrated.csv) | [dynamiqs data (CSV)](./Benchmarks/results/Benchmark_04_hilbert_space_scaling_dynamiqs_calibrated.csv) | [Figure file (PNG)](./Benchmarks/results/Benchmark_04_hilbert_space_scaling_calibrated_plot.png)
-
-![Hilbert-space scaling](./Benchmarks/results/Benchmark_04_hilbert_space_scaling_calibrated_plot.png)
 
 ## Plot Saved CSV Data
 

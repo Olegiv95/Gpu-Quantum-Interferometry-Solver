@@ -441,9 +441,9 @@ def run_size(job: dict, solvers: list[str], time_limit_s: float, on_result, on_s
 
     ``time_limit_s`` applies to each solver's first-call time ``total_s`` (time counted before its
     phase, from the start event, + its phase) and to the shared symbolic ODE generation; the
-    running calculation is aborted when it is exceeded. A symbolic-stage timeout or crash ends every remaining solver of this
-    size. After a solver timeout or crash, the remaining solvers continue in a new worker, which
-    generates the symbolic ODE again.
+    running calculation is aborted when it is exceeded. A symbolic-stage timeout or crash ends every
+    remaining solver of this size. After a solver timeout or crash, the remaining solvers continue in
+    a new worker, which generates the symbolic ODE again.
     With ``finish_over_limit`` nothing is aborted: a solver whose ``total_s`` exceeds the limit is
     stored as measured with ``OVER_LIMIT_NOTE``.
     With ``limit_on_calc`` the limit applies to ``calc_s`` instead: the abort timer starts with the

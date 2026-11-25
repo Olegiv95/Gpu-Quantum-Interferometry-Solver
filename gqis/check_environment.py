@@ -375,7 +375,8 @@ def run_benchmarks_test(julia_timeout: float = 900.0) -> int:
 
     def dynamiqs_check():
         if os.name == "nt":  # JAX has no CUDA build for native Windows
-            return False, "dynamiqs runs on the GPU only on Linux or WSL; run this check and Benchmark 04's dynamiqs comparison there"
+            return False, ("dynamiqs runs on the GPU only on Linux or WSL; "
+                           "run this check and Benchmark 04's dynamiqs comparison there")
         import dynamiqs as dq
         import jax
         import jax.numpy as jnp

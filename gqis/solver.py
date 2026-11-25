@@ -2020,7 +2020,8 @@ def _solve_symbolic_system(H, Drive, Col_Ops, mean_operator, tlist,
                 weighted = ("avg.x = fmaf(avg_weight, obs.x + obs_prev.x, avg.x);"
                             " avg.y = fmaf(avg_weight, obs.y + obs_prev.y, avg.y);")
                 results_line = ("results[result_idx].x = adaptive_failed ? __int_as_float(0x7fc00000) : avg.x;\n"
-                                "            results[result_idx].y = adaptive_failed ? __int_as_float(0x7fc00000) : avg.y;")
+                                "            results[result_idx].y = adaptive_failed"
+                                " ? __int_as_float(0x7fc00000) : avg.y;")
             else:
                 weighted = ("for (int i=0; i<N; ++i) "
                             "state_avg[i] = fmaf(avg_weight, rho[i] + y_prev[i], state_avg[i]);")

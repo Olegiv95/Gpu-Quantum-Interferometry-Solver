@@ -108,7 +108,8 @@ if __name__ == "__main__":
         "attractor_interpolation": "bilinear",  # GPU display: "bilinear" (smooth) or "nearest".
 
         # Solver / real-time animation.
-        "solver": "dop853",  # "rk4", "lserk4", "lserk4f", "dp5", "tsit5", "anas5", "ab5", "alshina6", "dop853", "tsit5a".
+        # Solvers: "rk4", "lserk4", "lserk4f", "dp5", "tsit5", "anas5", "ab5", "alshina6", "dop853", "tsit5a".
+        "solver": "dop853",
         "fp64": False,                    # State/integration precision; raster always FP32.
         "animate": True,                  # False shows initial cloud only, unless saving a video.
         "animation_max_fps": 165,         # Interactive FPS cap; 0 = uncapped. Does not change dt.
