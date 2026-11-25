@@ -235,7 +235,7 @@ def _draw_times_table(ax, measured: dict, solvers: list, sizes: list, labels: di
     title = "First call total time"
     if calibration:  # JSON settings of the step calibration saved in the CSV metadata
         limits = json.loads(calibration)
-        title = (f"First call total time for resulted interferogram error "
+        title = (f"First-call total time for an error of the resulting interferogram of "
                  f"{_power(limits['rms_atol'])} rms, {_power(limits['max_atol'])} max")
     ax.set_title(title, fontsize=11)
 
@@ -253,10 +253,10 @@ def user_settings() -> dict:
         "csv_file": "Benchmark_04_hilbert_space_scaling_calibrated.csv",  # relative: Benchmarks/results/
         # Other libraries' runs drawn in the same panels (same CSV format, grid and physics).
         "additional_csv_files": ("Benchmark_04_hilbert_space_scaling_dynamiqs_calibrated.csv",),
-        # Shown solvers in legend order (empty: every saved solver); same-method pairs side by side.
-        "include_solvers": ("gqis_tsit5a", "dynamiqs_tsit5",  # adaptive Tsit5
-                            "gqis_tsit5", "julia_gpu_fp32_fopt",  # fixed-step Tsit5
-                            "gqis_lserk4f", "gqis_lserk4"),  # fused vs unfused low-storage RK4
+        # Shown solvers in legend and table order (empty: every saved solver).
+        "include_solvers": ("gqis_tsit5a", "gqis_tsit5",  # adaptive and fixed-step Tsit5
+                            "gqis_lserk4f", "gqis_lserk4",  # fused vs unfused low-storage RK4
+                            "dynamiqs_tsit5", "julia_gpu_fp32_fopt"),  # other libraries last
         "solver_colors": {"gqis_tsit5a": "tab:pink", "dynamiqs_tsit5": "tab:orange",
                           "gqis_tsit5": "tab:brown", "julia_gpu_fp32_fopt": "tab:olive",
                           "gqis_lserk4f": "tab:red", "gqis_lserk4": "tab:blue",

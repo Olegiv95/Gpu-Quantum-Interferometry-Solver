@@ -16,7 +16,7 @@ Each JSON file contains a complete settings snapshot. All three use 40 drive
 periods, 4096 reference steps/output intervals per period, a target base of
 2048 steps per period, and RMS/max acceptance limits of 1e-3/1e-2.
 QuTiP chooses its internal integration steps adaptively. RK4 remains the
-large-grid reference to retain the established comparison; DOP853 can be
+reference for the large grids to retain the established comparison; DOP853 can be
 selected by editing `reference_solver` after validating its reference settings.
 
 Results go to `Benchmarks/results/Benchmark_03_<preset>_metrics.csv` and related
@@ -33,7 +33,7 @@ repeating calculations. Keep the generated settings JSON with each CSV and figur
 
 The high-resolution QuTiP calculation may take more than 12 hours at full CPU
 load. Targets run in preset order: GQIS, each Julia variant, then QuTiP where
-included. GQIS results are saved after each solver's complete time-resolution sweep;
+included. GQIS results are saved after each solver's complete sweep over time resolution;
 Julia and QuTiP results are appended after every point. Other CPU solvers save
 after their complete sweep. The plot launchers can be used before the test finishes;
 selected solvers without saved results yet are skipped.

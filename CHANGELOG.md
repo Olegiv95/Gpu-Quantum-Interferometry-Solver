@@ -73,13 +73,13 @@ semantic version numbers.
 
 ### Added
 
-- General SymPy ODE interface, `odesolve_2D`, with final-state, averaged and sampled-evolution outputs.
-- Absolute initial time (`t_in`) and device-array outputs (`return_device`) in both solver APIs.
+- General SymPy ODE interface, `odesolve_2D`, with outputs of the final state, the average and the sampled time evolution.
+- Absolute initial time (`t_in`) and outputs kept on the GPU (`return_device`) in both solver APIs.
 - Selectable fixed-step CUDA integrators alongside the default RK4; see the [API reference](GQIS_API.md).
 - Example 06 demonstrates the ODE API and GPU continuation through live Duffing phase-space flow,
-  with GPU-prepared RGBA display, an interactive frame-rate cap, timing logs and optional MP4 export.
+  with RGBA display prepared on the GPU, an interactive cap on the frame rate, timing logs and optional MP4 export.
 - [Benchmark 03 accuracy sweeps](BENCHMARKS.md#benchmark-03-accuracy-and-convergence), saved references,
-  accuracy-calibrated scaling runs and CSV-based figure generation.
+  scaling runs calibrated for accuracy, and figures drawn from saved CSV data.
 
 ### Changed
 
@@ -93,26 +93,27 @@ semantic version numbers.
 
 ### Changed
 
-- Removed the Python upper-version restriction and added Python 3.12 to continuous integration testing.
+- Removed the upper limit on the Python version and added Python 3.12 to continuous integration testing.
 - Documented the two tested CUDA 12 installation methods: a local CUDA Toolkit and CUDA runtime libraries installed
   through pip with CuPy's `ctk` option.
-- Added external installation-test results from an RTX 4060 Laptop GPU without a system-wide CUDA Toolkit.
+- Added external results of the installation test from an RTX 4060 Laptop GPU without a system-wide CUDA Toolkit.
 
 ## [0.1.0] - 2026-08-25
 
 ### Added
 
-- Symbolic Lindblad-equation reduction and CUDA right-hand-side (RHS) generation for
+- Symbolic reduction of the Lindblad equation and CUDA generation of the right-hand side (RHS) for
   finite-dimensional user-defined Hamiltonians and collapse operators.
 - Two-dimensional graphics processing unit (GPU) parameter sweeps with fixed-step fourth-order Runge-Kutta (RK4)
   integration.
-- Time-averaged expectation-value, final expectation-value, final-density-matrix, and sampled-trace output modes.
-- Runtime constants, symbolic RHS caching, and initial-condition sweeps.
+- Output modes for the time-averaged expectation value, the final expectation value, the final density
+  matrix and a sampled time trace.
+- Runtime constants, symbolic RHS caching, and sweeps over initial conditions.
 - Two- and four-level examples, animations, gate-fidelity example, and Julia
   comparison solver.
 - GPU, native fixed-step Python, adaptive SciPy, and QuTiP benchmark solvers.
 - Pairwise benchmark `diff` mode with mean-square deviation (MSE), root-mean-square deviation (RMS), and maximum absolute deviation,
-  plus automatic full-benchmark scaling mode.
+  plus an automatic scaling mode (`full_benchmark`).
 - Installable `gqis` package, environment checker, automated tests, public
   documentation, and MIT license.
 

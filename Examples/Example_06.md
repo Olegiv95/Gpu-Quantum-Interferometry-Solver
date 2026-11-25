@@ -18,11 +18,11 @@ Edit `USER_SETTINGS` in the example to control three independent quantities:
 
 | Setting | Controls |
 | --- | --- |
-| `attractor_grid_size` | Number of initial conditions/trajectories |
-| `attractor_steps_per_period` | Integration accuracy through time resolution |
+| `attractor_grid_size` | Number of trajectories (initial conditions) |
+| `attractor_steps_per_period` | Time steps per drive period, which set the integration accuracy |
 | `attractor_render_bins` | Resolution of the displayed trajectory histogram |
 
-Choose initial-cloud bounds and viewing bounds separately. The view stays fixed; trajectories
+Choose the bounds of the initial cloud and the viewing bounds separately. The view stays fixed; trajectories
 outside the view continue evolving but are not drawn. Reducing display resolution or limiting
 playback speed does not change the ODE time step.
 
@@ -37,9 +37,9 @@ frames then reuse it. See [automatic time-step calibration](../GQIS_API.md#autom
 
 ## Read The Timings
 
-Console timings distinguish the ODE kernel, the whole solve call, and raster/copy work.
-The solve call includes Python setup and GPU finite-value checks. First use may include compilation;
-subsequent frames reuse the compiled kernel. Unequal integration-step counts per frame are reported.
+Console timings distinguish the ODE kernel, the whole solve call, and rasterization and copying.
+The solve call includes Python setup and GPU checks for finite values. First use may include compilation;
+subsequent frames reuse the compiled kernel. Frames with unequal numbers of integration steps are reported.
 Matplotlib drawing, terminal logging and optional video encoding also affect playback speed.
 
 For a per-frame record, set `frame_log_to_ram=True`. After the window closes, the example writes
@@ -60,18 +60,19 @@ its `RENDER_DEFAULTS` lists advanced options that can be overridden in `USER_SET
 
 ### Histogram And Image Rendering
 
-`histogram_partitions=8` spreads atomic updates across reusable buffers, then merges the buffers.
-This reduces contention as trajectories concentrate, at the cost of extra memory and a merge pass.
+`histogram_partitions=8` accumulates the histogram in 8 separate buffers and then adds them together.
+This avoids many GPU threads writing to the same pixel at once when trajectories concentrate, at the cost
+of extra memory and one summation step.
 Use `1` to compare the unpartitioned renderer. Partitioning changes rendering, not the simulation state.
 
 With `gpu_display_rgba=True`, the GPU scales the compact histogram to the plotting area's pixel
 dimensions and applies the color map. A custom Matplotlib artist draws the finished 8-bit RGBA
-image, using two reusable pinned host buffers. `attractor_render_bins=(512, 512)` controls trajectory
+image, using two reusable CPU buffers that allow fast copying from the GPU. `attractor_render_bins=(512, 512)` controls trajectory
 projection; `attractor_interpolation="bilinear"` smooths image scaling, while `"nearest"` keeps sharp pixels.
 
 Set `direct_rgba_draw=False` to compare the RGBA `imshow` path, or `gpu_display_rgba=False` to use
-Matplotlib scalar-image rendering. Larger windows require larger image transfers and canvas copies.
-Resize, linear-axis zoom/pan and video DPI changes rescale the retained raster without another ODE solve.
+Matplotlib rendering of a scalar image. Larger windows require larger image transfers and canvas copies.
+Resizing, zoom and pan on linear axes, and video DPI changes rescale the retained raster without another ODE solve.
 Those redraws happen outside the frame callback.
 
 ### Playback And Video
@@ -79,7 +80,7 @@ Those redraws happen outside the frame callback.
 `animation_blit=True` can reduce redraw work on compatible backends. The changing time label stays
 inside the axes; the title and colorbar remain static. `overlap_gpu_with_matplotlib=True` allows
 computation of the next frame to overlap drawing; compare timing logs on your system.
-Frame-data caching is disabled, and the worker queue holds at most one pending frame.
+Frame data are not cached, and the worker queue holds at most one pending frame.
 
 `animation_max_fps=60` caps interactive playback; `0` removes the cap. GUI timer resolution and
 rendering may lower the achieved frame rate. This setting changes neither integration steps nor
@@ -87,15 +88,16 @@ MP4 playback speed, which uses `video_fps`. `frame_log_every=10` limits console 
 
 ### Timing CSV Fields
 
-The CSV separates GPU, solve-call, raster/copy, artist-update and callback durations and identifies
+The CSV records separately the durations of the GPU work, the solve call, rasterization and copy, the update of
+Matplotlib artists and the callback, and identifies
 interactive playback versus video export. `callback_interval_s` measures successive callback starts;
 `outside_callback_s` includes drawing, timer scheduling or encoding between callbacks.
 These values do not measure when a frame becomes visible on the monitor.
 
 With GPU RGBA display, `raster_copy_s` measures projection, and `rgba_copy_s` measures scaling,
 color conversion and download. `display_width` and `display_height` record image dimensions.
-RAM logging stores scalar timing tuples, not images or trajectories; no per-frame file writes or GPU
-telemetry queries occur. Forced process termination before saving loses the RAM records.
+Logging to RAM stores only timing values, not images or trajectories; nothing is written to files and the GPU
+is not queried during playback. If the process is killed before saving, these records are lost.
 
 ## Related Duffing Visualization
 

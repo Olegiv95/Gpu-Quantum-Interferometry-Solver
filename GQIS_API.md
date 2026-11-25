@@ -4,8 +4,7 @@ This technical reference documents the application programming interface (API) o
 Solver (GQIS). The Lindblad interface is in `gqis/solver.py`, and the direct ODE interface is in
 `gqis/gqis_ode_api.py`. The [README](./README.md#minimal-use) introduces the basic solver calls;
 the examples provide working applications of these APIs.
-Use `mesolve_2D` for Lindblad problems or `odesolve_2D` for general real ODEs. The other functions
-expose the symbolic and CUDA code-generation stages for inspection or advanced customization.
+Use `mesolve_2D` for Lindblad problems or `odesolve_2D` for general real ODEs.
 
 ```python
 from gqis import mesolve_2D, odesolve_2D
@@ -18,9 +17,228 @@ from the solvers:
   return a `CompiledRHS` that both solvers accept; see [compiling the ODE once](#compiling-the-ode-once).
 - `build_independent_rho` and `build_reduced_lindblad_rhs` work with the reduced Lindblad equations; see
   [density-matrix helpers](#density-matrix-helpers).
- The remaining helpers
-documented below are available from `gqis.solver` for inspection and advanced development,
-but they may change before version 1.0.
+
+The remaining helpers, documented at the end, expose the symbolic and CUDA code-generation stages.
+They are available from `gqis.solver` for inspection and advanced development, but they may change
+before version 1.0.
+
+## `mesolve_2D`
+
+Build and solve a finite-dimensional Lindblad master equation over one or two parameter axes. One CUDA thread
+integrates one parameter combination with the selected method. GQIS symbolically generates the
+right-hand side (RHS), meaning the time derivatives, of the reduced ordinary differential equation (ODE) system and
+compiles it as a CUDA kernel.
+
+### Minimal Call
+
+Assuming the symbolic model and numerical arrays have already been defined, the
+smallest call with one sweep axis is:
+
+```python
+result = mesolve_2D(
+    H, Drive, Col_Ops, mean_operator, tlist,
+    var_arrays={eps: eps_values},
+)
+```
+
+The required positional arguments `H`, `Drive`, `Col_Ops`,
+`mean_operator`, and `tlist` specify the Hamiltonian, time-dependent drive,
+collapse operators, measured operator, and time samples, respectively. At least
+one sweep array is required. This call returns shape `(len(eps_values), 1)`; a
+call with two sweep axes uses `var_arrays={eps: eps_values, A: amplitude_values}` and
+returns shape `(len(eps_values), len(amplitude_values))`.
+
+Alternatively, prepare the ODE once with `compile_lindblad_rhs(H, Drive, Col_Ops, mean_operator, [eps])`
+and pass the result in place of the model: `mesolve_2D(rhs, tlist=tlist, var_arrays={eps: eps_values})`.
+The call then starts from CUDA code generation; see [compiling the ODE once](#compiling-the-ode-once).
+
+Notation used below:
+
+- `N` is the Hilbert-space dimension: the number of basis states or quantum
+  levels represented by the Hamiltonian. Therefore `H`, every collapse
+  operator, `mean_operator`, and a symbolic initial density matrix are `N x N`.
+- `num_X` and `num_Y` are the numbers of independent simulations along the two
+  axes of the parameter sweep. They are unrelated to the time samples.
+- `1D` means a one-dimensional array.
+
+### Physical Model
+
+| Parameter | Type | Meaning |
+| --- | --- | --- |
+| `H` | `N x N` SymPy matrix | Hamiltonian. `N` is the number of simulated basis states or quantum levels. `H` may contain sweep symbols, constant symbols, and one or more drive placeholder symbols. |
+| `Drive` | SymPy expression or `dict[Symbol, Expr]` | Time-dependent signal. A single expression supplies the conventional `Symbol("Drive")` placeholder used by `H`. A dictionary explicitly maps multiple Hamiltonian placeholder symbols to separate signals. Expressions may use `t`, sweep parameters, and constants. |
+| `Col_Ops` | sequence of `N x N` SymPy matrices | Lindblad collapse operators. Use `[]` for closed-system evolution. Every operator must have the same shape as `H`. |
+| `mean_operator` | `N x N` SymPy matrix | Operator whose expectation value is averaged, returned at the final time, or sampled as a trace. It must match `H`. |
+| `tlist` | 1D array | Finite, strictly increasing, uniformly spaced elapsed times beginning at zero. `np.linspace(0, duration, n_steps + 1)` supplies `n_steps` updates ending at absolute time `t_in + duration`. |
+| `t_in` | `0.0` | Absolute initial time of the supplied state. Drive evaluations and returned trace times include this offset. |
+| `return_device` | `False` | Return CuPy result/trace arrays instead of copying them to NumPy. Trace times remain NumPy metadata. |
+
+### Sweeps And Constants
+
+| Parameter | Type/default | Meaning |
+| --- | --- | --- |
+| `var_arrays` | `dict[Symbol, 1D array]` | One or two sweep axes are required. Dictionary insertion order maps the first array to result axis X and the second to Y. For a single parameter point, supply a one-element dummy axis. Array values and lengths can change while reusing the generated ODE. |
+| `const_values` | `dict[Symbol, number]` | Constants substituted as numbers while generating the ODE and CUDA code. If one of these values changes on a later call, GQIS normally generates and compiles a new ODE kernel. |
+
+### Initial State And Output
+
+| Parameter | Type/default | Meaning |
+| --- | --- | --- |
+| `rho0` | `N x N` SymPy matrix, reduced expression list, or `None` | Initial density matrix at `t=t_in`. It may contain symbols swept through `rho0_var_arrays` or `var_arrays`, and it may use runtime constants. `None` initializes state `\|0><0\|`. For matrix input, GQIS reads the first `N-1` diagonal populations and the upper-triangular coherences; unit trace and the lower triangle are reconstructed. |
+| `output_mode` | `"mean"` | `"mean"` averages the expectation value over the solver steps after the warmup; `"final"` returns the expectation value at the final time; `"final_rho"` returns the final reduced real density vector in the ordering described under `build_independent_rho`. |
+| `warmup_time` | `0.0` | Initial fraction of time excluded from the time average, in `[0, 1]`. This can suppress transient dependence on the initial state without shortening the simulated evolution. A value of `1` leaves no averaging window and returns the final expectation value. |
+| `return_time_trace` | `False` | Also return sampled expectation values and their absolute times. Samples begin at `t=t_in+dt`, after the first integration step. |
+| `time_trace_every` | `None` | Store one trace value every specified number of solver steps. With stride `k`, stored times are `dt`, `(k+1)*dt`, `(2k+1)*dt`, and so on. Mutually exclusive with `time_trace_samples_per_period`. |
+| `time_trace_samples_per_period` | `None` | Number of trace samples to store per drive period (approximate). Requires `solver_samples_per_period`; the integer stride is `max(1, round(solver_samples_per_period / time_trace_samples_per_period))`. |
+| `solver_samples_per_period` | `None` | Number of solver integration steps per drive period, used only to convert trace density to a stride. |
+
+### Initial-State Representations
+
+An `N`-level density matrix has shape `N x N`. A Hermitian matrix contains
+`N*N` independent real values, and the unit trace condition removes one of
+them. GQIS therefore evolves and stores only `N*N - 1` real values per state:
+
+1. the first `N - 1` diagonal populations
+2. the real and imaginary parts of the upper-triangular coherences
+
+The final diagonal population and lower-triangular coherences are reconstructed
+from unit trace and Hermiticity. This is why the last dimension of
+`rho0_values` is `N*N - 1`, rather than `N*N`.
+
+Use `rho0` with `rho0_var_arrays` when the initial state has a convenient
+analytic SymPy form. Use `rho0_values` when the initial states have already been
+calculated numerically or are easier to provide as arbitrary reduced vectors.
+Both initial-state representations specify one state at `t=t_in` for every independent GPU
+simulation; neither contains a state for every time sample.
+
+### Solver And Precision Options
+
+These options apply to both APIs. Begin with the default RK4 and let
+[`calibrate_timesteps`](#automatic-time-step-calibration) choose the time step, or refine the time grid
+yourself; compare methods when you need lower runtime at your target accuracy.
+
+| Parameter | Type/default | Meaning |
+| --- | --- | --- |
+| `solver` | `"rk4"` | CUDA integrator: `"rk4"`, `"lserk4"`, `"lserk4f"`, `"dp5"`, `"ab5"`, `"anas5"`, `"tsit5"`, `"alshina6"`, `"dop853"`, or `"tsit5a"` with adaptive step size; see [available solvers](#available-solvers). Only the selected solver body is inserted into the generated CUDA source. |
+| `solver_frequency` | `None` | Non-negative angular frequency `w` for fixed-step `"anas5"`. Before launch, its fitted coefficient is calculated from `v = w*dt` and then remains constant throughout the kernel. This does not enable adaptive stepping. Anas5 defaults to `w=1` when omitted; supply the dominant frequency for meaningful fitted behavior. Other solvers ignore it. |
+| `adaptive_options` | `None` | Settings dictionary of `"tsit5a"`; see [adaptive step size](#adaptive-step-size-tsit5a). |
+| `fp64` | `False` | Use 64-bit floating-point (FP64) state, sweep arrays, constants, generated math, and output instead of the faster 32-bit floating-point (FP32) path. |
+| `calibrate_timesteps` | `None` | `True` or a settings dictionary chooses one uniform time step before the run; see [automatic time-step calibration](#automatic-time-step-calibration). |
+
+### Available Solvers
+
+The `solver` option selects the same methods in `mesolve_2D` and `odesolve_2D`.
+The implementations have the following roles and costs per step after startup. Counts of work vectors
+exclude the state,
+static terms, and drive values; NVRTC may further scalarize or reuse them.
+
+| Class | Solver | Order | New RHS/step | Work vectors | Main advantage | Main limitation |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| General baseline | `rk4` — classical Runge-Kutta | 4 | 4 | 3 | Standard reference method; a good default. | Lower order than the high-accuracy methods. |
+| General low-storage | `lserk4` — Carpenter-Kennedy 2N54 | 4 | 5 | 2 | Two work vectors help reduce register pressure for large systems. | One more RHS evaluation than RK4. |
+| General low-storage | `lserk4f` — `lserk4` with the RHS fused into the residual update | 4 | 5 | 1 | No separate derivative vector: the lowest register use, for the largest systems. Same results as `lserk4` to rounding; switching between them reuses the generated ODE. | Same RHS cost as `lserk4`. |
+| General fifth-order | `dp5` — Dormand-Prince 5(4) main formula | 5 | 6 | 5 | Efficient at tight accuracy limits. | Embedded estimate is unused; more work than RK4. |
+| General fifth-order | `tsit5` — Tsitouras 5(4) main formula | 5 | 6 | 5 | Small error coefficients; the same method as Julia GPUTsit5 and dynamiqs Tsit5. | Embedded estimate is unused; more work than RK4. |
+| General high-order | `alshina6` — Alshina sixth-order formula | 6 | 7 | 5 | Sixth order with seven stages. | More work per step than the fifth-order methods. |
+| General high-order | `dop853` — Dormand-Prince 8(5,3) main formula | 8 | 12 | 6 | Coarser time grids at the same accuracy. | More stages and work vectors; roundoff can limit gains at fine steps. |
+| Periodic fitted | `anas5` — frequency-fitted Anas5(w) | 4 generally, 5 for accurate `w` | 6 | 5 | Reduced phase error when the dominant frequency is known. | Loses fifth-order fitting when `w` is inaccurate or the signal is broadband. |
+| Multistep | `ab5` — Adams-Bashforth 5 | 5 | 1 after startup | 7 during RK4 startup, then 5 | Very low RHS cost per step after startup on smooth trajectories. | Smaller stability region, startup cost, and storage of previous derivatives. |
+| Adaptive step size | `tsit5a` — Tsitouras 5(4) with its embedded error estimate | 5 | 6 (+6 per rejected step) | 7 | Each system takes its own steps between the `tlist` output points. | GPU threads run in groups of 32 (warps), and each group runs as many steps as its slowest parameter point; two more work vectors than `tsit5`. |
+
+All methods except `tsit5a`, which adapts its step size, use the uniform `dt` supplied by `tlist` and reconstruct base time from the
+integer step index rather than accumulating `t += dt`. Alshina6 and DOP853 add each stage derivative to the later stages as soon as it is calculated, so its
+storage can be reused for the next stage. Derivative and drive values are reused where the method
+permits. DOP853 uses the eighth-order update without the embedded error estimates or dense-output stages.
+Anas5(w) uses the supplied frequency and fixed step size to set its fitted coefficient.
+
+Accuracy depends on the chosen method and the time step, which the user supplies or
+[`calibrate_timesteps`](#automatic-time-step-calibration) chooses automatically. The
+[Benchmark 03 accuracy sweeps](BENCHMARKS.md#benchmark-03-accuracy-and-convergence) show this dependence
+for the two- and four-level examples.
+
+#### Adaptive Step Size: `tsit5a`
+
+With `solver="tsit5a"`, `tlist` gives only the output times: every parameter point chooses its own steps
+between them, and `mean` outputs integrate over those steps. Its settings are passed as
+`adaptive_options=dict(...)`; `calibrate_timesteps` does not apply to this solver.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `step_rtol`, `step_atol` | `1e-5` | Relative and absolute error tolerances of one step. The error of the final result is larger than these values. |
+| `max_substeps` | `64` | Largest number of steps, accepted and rejected, between two output times; exceeding it gives a non-finite result. |
+| `fp64_time` | `True` | Keep the time variable in FP64. |
+| `count_steps` | `False` | Add the accepted and rejected step counts of every parameter point to the timing dictionary as `adaptive_steps`. |
+
+### Automatic Time-Step Calibration
+
+`calibrate_timesteps` chooses one uniform time step that meets the accuracy limits; `tlist` then sets
+only the duration and the starting grid:
+
+```python
+result = mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist, var_arrays=sweep,
+                    calibrate_timesteps=dict(rms_atol=1e-3, max_atol=1e-2, sample_stride=8))
+```
+
+GQIS first works on a reduced set of sweep points (every `sample_stride`-th value of each axis). It refines
+the time grid until doubling the step count changes the result by less than the limits, then searches for
+the coarsest step count that still passes. The full grid is calculated once with that step count. The step
+is the same for all parameter points, and the integration keeps this fixed step. The accepted step is stored
+and reused by later calls with the same model and settings.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `rms_atol`, `rms_rtol` | `1e-3`, `0` (`odesolve_2D`: `1e-4`, `0`) | Limit for the RMS change of the result: `rms_atol + rms_rtol * RMS(result)`. |
+| `max_atol`, `max_rtol` | `1e-2`, `0` (`odesolve_2D`: `1e-3`, `0`) | Limit for the largest pointwise change: `max_atol + max_rtol * max(abs(result))`. Setting both values of a pair to zero skips that test. |
+| `sample_stride` | `8` | Test every `k`-th value on each sweep axis, plus the last value; `1` tests the full grid. |
+| `max_steps` | `2**20` | Largest step count tried. |
+| `bisection_steps` | `2` | Bisections between the last failing and the first passing step count. The accepted grid has at most `2x` (`0`), `1.41x` (`1`) or `1.19x` (`2`) more steps than the limits require. |
+| `full_grid_bisection` | `False` | When the test points are the full grid, the first passing result is returned without bisection. `True` bisects anyway, giving a coarser stored step for repeated calls. |
+| `recalibrate_every` | `None` | `None` calibrates once; `N` calibrates again on every `N`-th call. A recalibration never makes the step coarser. |
+| `reset` | `False` | Discard the stored step and calibrate again. |
+| `on_fail` | `"warning"` | When the limits are not reached within `max_steps`, or refinement stops reducing the change (for example at the FP32 rounding floor): `"warning"` continues with the best step found, `"ignore"` does the same without a message, `"error"` stops with `RuntimeError`. |
+| `range_warning` | `True` | Warn once when a later call reuses the stored step with a sweep range beyond the calibrated one; `False` disables the warning. |
+
+`calibrate_timesteps=True` uses these defaults.
+
+- **Repeated calls:** changing the model, fixed constants, solver, precision, output settings or calibration
+  settings starts a new calibration. Changing sweep values or runtime constants does not, so for animations
+  put the most demanding frame first or use `recalibrate_every`.
+- **Short intervals:** the test measures the error of the calculated interval only. For short continuation
+  chunks, calibrate once over a longer interval first, as in
+  [Example 06](Examples/Example_06_symbolic_ode_sweep.py).
+- **Time traces:** the step count stays a power-of-two multiple of the `tlist` grid.
+- **Reporting:** `timings=True` prints a one-line calibration summary; with `return_timing_info=True` the
+  timing dictionary reports the used step count under `"timestep_calibration"`.
+
+### Returns
+
+Without optional trace/timing values, the result is a NumPy array:
+
+- `output_mode="mean"` or `"final"`: complex shape `(num_X, num_Y)`.
+- `output_mode="final_rho"`: real shape `(num_X, num_Y, N*N-1)`.
+- A sweep over one axis retains a singleton Y dimension.
+
+With `return_time_trace=True`, the return is
+`(result, trace, trace_t)`, where `trace` has complex shape
+`(num_X, num_Y, num_trace)`. With `return_timing_info=True`, `timing_info` is
+appended to that tuple; without a trace the return is `(result, timing_info)`.
+
+### Validation And Limitations
+
+- At least one sweep array is required, even for a single simulation; use a
+  one-element dummy axis when no physical parameter is swept.
+- GQIS validates matrix dimensions, the structure of the time grid, option combinations,
+  the shapes of explicit initial-state arrays, and finite output values.
+- GQIS does not test whether a supplied symbolic or reduced initial state is
+  positive semidefinite. The caller is responsible for providing a physical
+  density matrix. For matrix input, the last population and lower triangle are
+  reconstructed rather than independently validated.
+- The elapsed time grid is uniform and begins at zero. Absolute stage times add `t_in`
+  to the elapsed time derived from the integer step index.
+- Kernel reuse is limited to one Python process; the cache of compiled kernels is not written to
+  disk. A new Python process compiles its first model again.
+- Practical Hilbert-space size is limited by the cost of symbolic generation, NVRTC
+  compilation, CUDA register pressure, and GPU memory.
 
 ## `odesolve_2D`: direct SymPy ODE sweeps
 
@@ -66,7 +284,8 @@ Set `t_in` to the absolute time of the initial state; the interval ends at `t_in
 | `return_time_trace=True` | Return `(result, trace, trace_times)`; traces add a sample axis before the state axis |
 
 Unused sweep axes have length one. `time_trace_every=k` samples at `t_in + dt`, `t_in + (k+1)*dt`, etc.;
-neither the initial state nor a nonaligned final endpoint is appended automatically.
+the trace does not include the initial state, and it includes the final time only if the final step falls on
+this sampling pattern.
 With an observable, the trace has shape `(nx, ny, nsamples)`. `warmup_time` is the fraction
 of integration steps discarded from the mean, not a duration; it does not trim traces.
 At `warmup_time=1`, the mean falls back to the final result. `return_timing_info=True`
@@ -74,406 +293,8 @@ appends a timing dictionary to the return values, as for `mesolve_2D`.
 
 For solver and precision choices, see [solver options](#solver-and-precision-options).
 Optional settings may also be passed as [grouped options](#grouped-options).
-Full-state means need an accumulator vector; sampled evolution storage grows with trajectory
+Means of the full state need an accumulator vector; storage of sampled evolution grows with trajectory
 count, sample count and state dimension. Use sparse trace sampling for large sweeps.
-
-## `mesolve_2D`
-
-Build and solve a finite-dimensional Lindblad master equation over one or two parameter axes. One CUDA thread
-integrates one parameter combination with the selected method. GQIS symbolically generates the
-right-hand side (RHS), meaning the time derivatives, of the reduced ordinary differential equation (ODE) system and
-compiles it as a CUDA kernel.
-
-### Minimal Call
-
-Assuming the symbolic model and numerical arrays have already been defined, the
-smallest one-axis call is:
-
-```python
-result = mesolve_2D(
-    H, Drive, Col_Ops, mean_operator, tlist,
-    var_arrays={eps: eps_values},
-)
-```
-
-The required positional arguments `H`, `Drive`, `Col_Ops`,
-`mean_operator`, and `tlist` specify the Hamiltonian, time-dependent drive,
-collapse operators, measured operator, and time samples, respectively. At least
-one sweep array is required. This call returns shape `(len(eps_values), 1)`; a
-two-axis call uses `var_arrays={eps: eps_values, A: amplitude_values}` and
-returns shape `(len(eps_values), len(amplitude_values))`.
-
-Alternatively, prepare the ODE once with `compile_lindblad_rhs(H, Drive, Col_Ops, mean_operator, [eps])`
-and pass the result in place of the model: `mesolve_2D(rhs, tlist=tlist, var_arrays={eps: eps_values})`.
-The call then starts from CUDA code generation; see [compiling the ODE once](#compiling-the-ode-once).
-
-Notation used below:
-
-- `N` is the Hilbert-space dimension: the number of basis states or quantum
-  levels represented by the Hamiltonian. Therefore `H`, every collapse
-  operator, `mean_operator`, and a symbolic initial density matrix are `N x N`.
-- `num_X` and `num_Y` are the numbers of independent simulations along the two
-  parameter-sweep axes. They are unrelated to the time samples.
-- `1D` means a one-dimensional array.
-
-### Physical Model
-
-| Parameter | Type | Meaning |
-| --- | --- | --- |
-| `H` | `N x N` SymPy matrix | Hamiltonian. `N` is the number of simulated basis states or quantum levels. `H` may contain sweep symbols, constant symbols, and one or more drive placeholder symbols. |
-| `Drive` | SymPy expression or `dict[Symbol, Expr]` | Time-dependent signal. A single expression supplies the conventional `Symbol("Drive")` placeholder used by `H`. A dictionary explicitly maps multiple Hamiltonian placeholder symbols to separate signals. Expressions may use `t`, sweep parameters, and constants. |
-| `Col_Ops` | sequence of `N x N` SymPy matrices | Lindblad collapse operators. Use `[]` for closed-system evolution. Every operator must have the same shape as `H`. |
-| `mean_operator` | `N x N` SymPy matrix | Operator whose expectation value is averaged, returned at the final time, or sampled as a trace. It must match `H`. |
-| `tlist` | 1D array | Finite, strictly increasing, uniformly spaced elapsed times beginning at zero. `np.linspace(0, duration, n_steps + 1)` supplies `n_steps` updates ending at absolute time `t_in + duration`. |
-| `t_in` | `0.0` | Absolute initial time of the supplied state. Drive evaluations and returned trace times include this offset. |
-| `return_device` | `False` | Return CuPy result/trace arrays instead of copying them to NumPy. Trace times remain NumPy metadata. |
-
-### Sweeps And Constants
-
-| Parameter | Type/default | Meaning |
-| --- | --- | --- |
-| `var_arrays` | `dict[Symbol, 1D array]` | One or two sweep axes are required. Dictionary insertion order maps the first array to result axis X and the second to Y. For a single parameter point, supply a one-element dummy axis. Array values and lengths can change while reusing the generated ODE. |
-| `const_values` | `dict[Symbol, number]` | Constants substituted as numbers while generating the ODE and CUDA code. If one of these values changes on a later call, GQIS normally generates and compiles a new ODE kernel. |
-
-### Initial State And Output
-
-| Parameter | Type/default | Meaning |
-| --- | --- | --- |
-| `rho0` | `N x N` SymPy matrix, reduced expression list, or `None` | Initial density matrix at `t=t_in`. It may contain symbols swept through `rho0_var_arrays` or `var_arrays`, and it may use runtime constants. `None` initializes state `\|0><0\|`. For matrix input, GQIS reads the first `N-1` diagonal populations and the upper-triangular coherences; unit trace and the lower triangle are reconstructed. |
-| `output_mode` | `"mean"` | `"mean"` averages the expectation value after each post-warmup solver step; `"final"` returns the expectation value at the final time; `"final_rho"` returns the final reduced real density vector in the ordering described under `build_independent_rho`. |
-| `warmup_time` | `0.0` | Initial fraction of time excluded from the time average, in `[0, 1]`. This can suppress transient dependence on the initial state without shortening the simulated evolution. A value of `1` leaves no averaging window and returns the final expectation value. |
-| `return_time_trace` | `False` | Also return sampled expectation values and their absolute times. Samples begin at `t=t_in+dt`, after the first integration step. |
-| `time_trace_every` | `None` | Store one trace value every specified number of solver steps. With stride `k`, stored times are `dt`, `(k+1)*dt`, `(2k+1)*dt`, and so on. Mutually exclusive with `time_trace_samples_per_period`. |
-| `time_trace_samples_per_period` | `None` | Requested approximate stored trace density per drive period. Requires `solver_samples_per_period`; the integer stride is `max(1, round(solver_samples_per_period / time_trace_samples_per_period))`. |
-| `solver_samples_per_period` | `None` | Number of solver integration steps per drive period, used only to convert trace density to a stride. |
-
-### Initial-State Representations
-
-An `N`-level density matrix has shape `N x N`. A Hermitian matrix contains
-`N*N` independent real values, and the unit-trace condition removes one of
-them. GQIS therefore evolves and stores only `N*N - 1` real values per state:
-
-1. the first `N - 1` diagonal populations
-2. the real and imaginary parts of the upper-triangular coherences
-
-The final diagonal population and lower-triangular coherences are reconstructed
-from unit trace and Hermiticity. This is why the last dimension of
-`rho0_values` is `N*N - 1`, rather than `N*N`.
-
-Use `rho0` with `rho0_var_arrays` when the initial state has a convenient
-analytic SymPy form. Use `rho0_values` when the initial states have already been
-calculated numerically or are easier to provide as arbitrary reduced vectors.
-Both initial-state representations specify one state at `t=t_in` for every independent GPU
-simulation; neither contains a state for every time sample.
-
-### Solver And Precision Options
-
-These options apply to both APIs. Begin with the default RK4 and refine the uniform time grid;
-compare methods when you need lower runtime at your target accuracy.
-
-| Parameter | Type/default | Meaning |
-| --- | --- | --- |
-| `solver` | `"rk4"` | CUDA integrator: `"rk4"`, `"lserk4"`, `"lserk4f"`, `"dp5"`, `"ab5"`, `"anas5"`, `"tsit5"`, `"alshina6"`, `"dop853"`, or `"tsit5a"` with adaptive step size; see [available solvers](#available-solvers). Only the selected solver body is inserted into the generated CUDA source. |
-| `solver_frequency` | `None` | Non-negative angular frequency `w` for fixed-step `"anas5"`. Before launch, its fitted coefficient is calculated from `v = w*dt` and then remains constant throughout the kernel. This does not enable adaptive stepping. Anas5 defaults to `w=1` when omitted; supply the dominant frequency for meaningful fitted behavior. Other solvers ignore it. |
-| `adaptive_options` | `None` | Settings dictionary of `"tsit5a"`; see [adaptive step size](#adaptive-step-size-tsit5a). |
-| `fp64` | `False` | Use 64-bit floating-point (FP64) state, sweep arrays, constants, generated math, and output instead of the faster 32-bit floating-point (FP32) path. |
-| `calibrate_timesteps` | `None` | `True` or a settings dictionary chooses one uniform time step before the run; see [automatic time-step calibration](#automatic-time-step-calibration). |
-
-### Available Solvers
-
-The `solver` option selects the same methods in `mesolve_2D` and `odesolve_2D`.
-The implementations have the following roles and steady-state costs. Work-vector counts exclude the state,
-static terms, and drive values; NVRTC may further scalarize or reuse them.
-
-| Class | Solver | Order | New RHS/step | Work vectors | Main advantage | Main limitation |
-| --- | --- | ---: | ---: | ---: | --- | --- |
-| General baseline | `rk4` — classical Runge-Kutta | 4 | 4 | 3 | Strong general work-precision baseline. | Lower order than the high-accuracy methods. |
-| General low-storage | `lserk4` — Carpenter-Kennedy 2N54 | 4 | 5 | 2 | Two work vectors help reduce register pressure for large systems. | One more RHS evaluation than RK4. |
-| General low-storage | `lserk4f` — `lserk4` with the RHS fused into the residual update | 4 | 5 | 1 | No separate derivative vector: the lowest register use, for the largest systems. Same results as `lserk4` to rounding; switching between them reuses the generated ODE. | Same RHS cost as `lserk4`. |
-| General fifth-order | `dp5` — Dormand-Prince 5(4) main formula | 5 | 6 | 5 | Broadly useful at tighter accuracy. | Embedded estimate is unused; more work than RK4. |
-| General fifth-order | `tsit5` — Tsitouras 5(4) main formula | 5 | 6 | 5 | Good accuracy constants and direct comparison with Julia GPUTsit5. | Embedded estimate is unused; more work than RK4. |
-| General high-order | `alshina6` — Alshina sixth-order formula | 6 | 7 | 5 | Sixth order with seven stages. | More work per step than the fifth-order methods. |
-| General high-order | `dop853` — Dormand-Prince 8(5,3) main formula | 8 | 12 | 6 | High-order accuracy can permit coarser fixed grids. | More stages and work vectors; roundoff can limit gains at fine steps. |
-| Periodic fitted | `anas5` — frequency-fitted Anas5(w) | 4 generally, 5 for accurate `w` | 6 | 5 | Reduced phase error when the dominant frequency is known. | Loses fifth-order fitting when `w` is inaccurate or the signal is broadband. |
-| Multistep | `ab5` — Adams-Bashforth 5 | 5 | 1 after startup | 7 during RK4 startup, then 5 | Very low steady RHS cost on smooth trajectories. | Smaller stability region, startup cost, and derivative-history storage. |
-| Adaptive step size | `tsit5a` — Tsitouras 5(4) with its embedded error estimate | 5 | 6 (+6 per rejected step) | 7 | Each system takes its own steps between the `tlist` output points. | A warp runs at its slowest system's step count; two more work vectors than `tsit5`. |
-
-All methods except `tsit5a`, which adapts its step size, use the uniform `dt` supplied by `tlist` and reconstruct base time from the
-integer step index rather than accumulating `t += dt`. Alshina6 and DOP853 actively fold early derivative vectors into pending stage combinations;
-those buffers are reused as their values become available. Derivative and drive values are reused where the method
-permits. DOP853 uses the eighth-order update without the embedded error estimates or dense-output stages.
-Anas5(w) uses the supplied frequency and fixed step size to set its fitted coefficient.
-
-Accuracy depends on the chosen method and user-supplied step size. The
-[Benchmark 03 accuracy sweeps](BENCHMARKS.md#benchmark-03-accuracy-and-convergence) show this dependence
-for the two- and four-level examples and provide a workflow for choosing a time grid for your own problem.
-
-#### Adaptive Step Size: `tsit5a`
-
-With `solver="tsit5a"`, `tlist` gives only the output times: every parameter point chooses its own steps
-between them, and `mean` outputs integrate over those steps. Its settings are passed as
-`adaptive_options=dict(...)`; `calibrate_timesteps` does not apply to this solver.
-
-| Setting | Default | Meaning |
-| --- | --- | --- |
-| `step_rtol`, `step_atol` | `1e-5` | Relative and absolute error tolerances of one step. The error of the final result is larger than these values. |
-| `max_substeps` | `64` | Largest number of steps, accepted and rejected, between two output times; exceeding it gives a non-finite result. |
-| `fp64_time` | `True` | Keep the time variable in FP64. |
-| `count_steps` | `False` | Add the accepted and rejected step counts of every parameter point to the timing dictionary as `adaptive_steps`. |
-
-### Automatic Time-Step Calibration
-
-`calibrate_timesteps` chooses one uniform time step that meets the accuracy limits; `tlist` then sets
-only the duration and the starting grid:
-
-```python
-result = mesolve_2D(H, Drive, Col_Ops, mean_operator, tlist, var_arrays=sweep,
-                    calibrate_timesteps=dict(rms_atol=1e-3, max_atol=1e-2, sample_stride=8))
-```
-
-GQIS first works on a reduced set of sweep points (every `sample_stride`-th value of each axis). It refines
-the time grid until doubling the step count changes the result by less than the limits, then searches for
-the coarsest step count that still passes. The full grid is calculated once with that step count. The step
-is the same for all parameter points, and the integration remains fixed-step. The accepted step is stored
-and reused by later calls with the same model and settings.
-
-| Setting | Default | Meaning |
-| --- | --- | --- |
-| `rms_atol`, `rms_rtol` | `1e-3`, `0` (`odesolve_2D`: `1e-4`, `0`) | Limit for the RMS change of the result: `rms_atol + rms_rtol * RMS(result)`. |
-| `max_atol`, `max_rtol` | `1e-2`, `0` (`odesolve_2D`: `1e-3`, `0`) | Limit for the largest pointwise change: `max_atol + max_rtol * max(abs(result))`. Setting both values of a pair to zero skips that test. |
-| `sample_stride` | `8` | Test every `k`-th value on each sweep axis, plus the last value; `1` tests the full grid. |
-| `max_steps` | `2**20` | Largest step count tried. |
-| `bisection_steps` | `2` | Bisections between the last failing and the first passing step count. The accepted grid has at most `2x` (`0`), `1.41x` (`1`) or `1.19x` (`2`) more steps than the limits require. |
-| `full_grid_bisection` | `False` | When the test points are the full grid, the first passing result is returned without bisection. `True` bisects anyway, giving a coarser stored step for repeated calls. |
-| `recalibrate_every` | `None` | `None` calibrates once; `N` calibrates again on every `N`-th call. A recalibration never makes the step coarser. |
-| `reset` | `False` | Discard the stored step and calibrate again. |
-| `on_fail` | `"warning"` | When the limits are not reached within `max_steps`, or refinement stops reducing the change (for example at the FP32 rounding floor): `"warning"` continues with the best step found, `"ignore"` does the same without a message, `"error"` stops with `RuntimeError`. |
-| `range_warning` | `True` | Warn once when a later call reuses the stored step with a sweep range beyond the calibrated one; `False` disables the warning. |
-
-`calibrate_timesteps=True` uses these defaults.
-
-- **Repeated calls:** changing the model, fixed constants, solver, precision, output settings or calibration
-  settings starts a new calibration. Changing sweep values or runtime constants does not, so for animations
-  put the most demanding frame first or use `recalibrate_every`.
-- **Short intervals:** the test measures the error of the calculated interval only. For short continuation
-  chunks, calibrate once over a longer interval first, as in
-  [Example 06](Examples/Example_06_symbolic_ode_sweep.py).
-- **Time traces:** the step count stays a power-of-two multiple of the `tlist` grid.
-- **Reporting:** `timings=True` prints a one-line calibration summary; with `return_timing_info=True` the
-  timing dictionary reports the used step count under `"timestep_calibration"`.
-
-### Returns
-
-Without optional trace/timing values, the result is a NumPy array:
-
-- `output_mode="mean"` or `"final"`: complex shape `(num_X, num_Y)`.
-- `output_mode="final_rho"`: real shape `(num_X, num_Y, N*N-1)`.
-- A one-axis sweep retains a singleton Y dimension.
-
-With `return_time_trace=True`, the return is
-`(result, trace, trace_t)`, where `trace` has complex shape
-`(num_X, num_Y, num_trace)`. With `return_timing_info=True`, `timing_info` is
-appended to that tuple; without a trace the return is `(result, timing_info)`.
-
-### Validation And Limitations
-
-- At least one sweep array is required, even for a single simulation; use a
-  one-element dummy axis when no physical parameter is swept.
-- GQIS validates matrix dimensions, time-grid structure, option combinations,
-  explicit initial-state array shapes, and finite output values.
-- GQIS does not test whether a supplied symbolic or reduced initial state is
-  positive semidefinite. The caller is responsible for providing a physical
-  density matrix. For matrix input, the last population and lower triangle are
-  reconstructed rather than independently validated.
-- The elapsed time grid is uniform and begins at zero. Absolute stage times add `t_in`
-  to the elapsed time derived from the integer step index.
-- Kernel reuse is process-local; the compiled-kernel cache is not written to
-  disk. A new Python process compiles its first model again.
-- Practical Hilbert-space size is limited by symbolic-generation cost, NVRTC
-  compilation, CUDA register pressure, and GPU memory.
-
-## Summary
-
-Use `mesolve_2D` for a symbolic Lindblad model and `odesolve_2D` for real first-order ODEs.
-Supply the equations, uniform elapsed-time grid and sweep axes; choose initial values and the
-required final, mean or sampled output. Both APIs default to fixed-step RK4 and FP32.
-Check convergence for the observable you need before increasing the parameter-grid size.
-
-The remaining sections describe optional continuation, caching, diagnostics and symbolic helpers.
-
-## Optional Execution And Inspection
-
-### Continuing On The GPU
-
-Both APIs accept `t_in=0.0` and `return_device=False`. With `return_device=True`, result and
-trace arrays are CuPy arrays; trace times remain small NumPy metadata arrays. Pass the returned
-state back through `y0_values` (ODE) or `rho0_values` (Lindblad) without downloading it. Finite-value
-checks still synchronize a scalar status; they do not copy the full state. For example:
-
-[Example 06](Examples/Example_06_symbolic_ode_sweep.py) demonstrates this continuation pattern
-with a Duffing initial-condition sweep and a live phase-space display.
-
-```python
-state = odesolve_2D(rhs, states, y0, elapsed_times, t_in=10.0, return_device=True, **model_options)
-state = odesolve_2D(rhs, states, None, elapsed_times,
-                    y0_values=state, t_in=10.0 + elapsed_times[-1],
-                    return_device=True, **model_options)
-```
-
-Here `states` is the ordered state-symbol list and `model_options` contains the same sweep axes,
-constants and solver settings for both calls. Request full-state output when continuing a trajectory.
-Stage times use `t_in + elapsed_stage_time`, with elapsed time derived from the integer step index.
-Zero and nonzero offsets share one runtime-parameterized kernel, cached after first use.
-Changing `t_in` does not require another compilation.
-FP32 still rounds the
-absolute time to its representable precision; use FP64 when small intervals at large times need it.
-
-### ODE Code Generation
-
-`solver`, `solver_frequency`, `fp64`, `unroll`, caching, runtime constants and code-generation
-options below also apply. Defaults are RK4 and FP32. Nonlinear expressions are not expanded
-or collected by default. Common expressions are reused, parameter-only combinations are
-hoisted out of integration, and time-only expressions are evaluated in the shared stage-drive
-routine. Runtime-constant-only combinations use the existing CPU precomputation path.
-Only the selected integrator is emitted. `cse_batch_size` can limit temporary lifetimes and
-help reduce register pressure for larger systems.
-Full-state means require an extra accumulator vector; evolution storage scales with
-`nx * ny * nsamples * nstate`, so use sparse sampling on large grids.
-
-### Full Lindblad Call Signature
-
-The complete signature includes the optional controls described below:
-
-```python
-mesolve_2D(
-    H, Drive, Col_Ops, mean_operator, tlist,
-    var_arrays=None, const_values=None,
-    kernel_template_file=None, *,
-    RHSreuse=True, runtime_consts=None, keep_symbolic_consts=None,
-    auto_runtime_consts=False, output_mode="mean", solver="rk4",
-    solver_frequency=None, adaptive_options=None, unroll=False, fp64=False,
-    pre_expand=True, collect_rho=False, factor_terms=False,
-    cse_batch_size=None, cse_simplify=False,
-    hoist_rho_independent=True, symbolic_workers="auto",
-    max_symbolic_workers=None, nvrtc_options=(), timings=False,
-    return_timing_info=False, warmup_time=0.0, rho0=None,
-    rho0_var_arrays=None, rho0_values=None, return_time_trace=False,
-    time_trace_every=None, time_trace_samples_per_period=None,
-    solver_samples_per_period=None, Actual_Kernel_Save=False,
-    beep_on_error=False, ignore_non_finite_output=False,
-    t_in=0.0, return_device=False, calibrate_timesteps=None,
-    consts=None, initial=None, output=None, solver_options=None,
-    codegen=None, diagnostics=None,
-)
-```
-
-A [compiled RHS](#compiling-the-ode-once) can replace the model arguments `H`, `Drive`, `Col_Ops` and
-`mean_operator`.
-
-### Grouped Options
-
-Optional settings can also be passed in thematic groups. Each group is a dictionary that uses the
-usual option names, so the two styles are equivalent:
-
-```python
-result = mesolve_2D(
-    H, Drive, Col_Ops, mean_operator, tlist,
-    var_arrays={eps: eps_values, A: amplitude_values},
-    output=dict(warmup_time=0.2, return_time_trace=True, time_trace_every=16),
-    diagnostics=dict(timings=True, return_timing_info=True, ignore_non_finite_output=True),
-)
-```
-
-Options that are not set keep their defaults.
-
-| Group | Options |
-| --- | --- |
-| `consts` | `const_values`, `runtime_consts`, `keep_symbolic_consts`, `auto_runtime_consts` |
-| `initial` | `rho0`, `rho0_var_arrays`, `rho0_values` (Lindblad); `y0_values` (ODE); `t_in` |
-| `output` | `warmup_time`, `return_time_trace`, `time_trace_every`, `time_trace_samples_per_period`, `solver_samples_per_period`, `return_device` |
-| `solver_options` | `solver`, `fp64`, `solver_frequency`, `adaptive_options` |
-| `codegen` | `RHSreuse`, `kernel_template_file`, `unroll`, `pre_expand`, `collect_rho`, `factor_terms`, `cse_batch_size`, `cse_simplify`, `hoist_rho_independent`, `symbolic_workers`, `max_symbolic_workers`, `nvrtc_options` |
-| `diagnostics` | `timings`, `return_timing_info`, `Actual_Kernel_Save`, `beep_on_error`, `ignore_non_finite_output` |
-
-`odesolve_2D` accepts the same groups. Give each option either directly or inside its group, not both;
-unknown names and conflicting values raise `ValueError`. Model inputs, `var_arrays`, `output_mode`,
-`observable` and [`calibrate_timesteps`](#automatic-time-step-calibration) are always passed directly.
-
-### Repeated Sweeps And Explicit Initial States
-
-Keep changing constants symbolic to reuse compiled equations across frames or fitting iterations.
-For an independent numerical initial state at every sweep point, use `rho0_values`.
-
-| Parameter | Type/default | Meaning |
-| --- | --- | --- |
-| `runtime_consts` | `dict[Symbol, number]` | Values for constants intentionally left symbolic in the generated ODE. They are uploaded for each call, so they can change while the previously generated and compiled ODE kernel is reused. A value here overrides the same symbol in `const_values`. This is useful for animations and repeated calculations. |
-| `keep_symbolic_consts` | iterable, `"all"`, `"auto"`, `"const_values"`, or `None` | Selects which `const_values` symbols remain symbolic instead of being inserted as fixed numbers. This allows selected constants to change between animation frames while reusing the generated ODE and compiled kernel. `"all"`, `"auto"`, and `"const_values"` select every `const_values` key. |
-| `auto_runtime_consts` | `False` | Keep every `const_values` key symbolic so all constant values can change between repeated calls without regenerating the ODE. |
-| `rho0_var_arrays` | `dict[Symbol, 1D array]` | Sweep values for symbols used only in the symbolic `rho0` matrix. They are merged with `var_arrays`; the total remains limited to two sweep axes. These arrays select different initial states for independent simulations, not for different time samples. |
-| `rho0_values` | numeric array or `None` | Alternative to symbolic `rho0`: one explicit reduced initial state per simulation point. Shape is `(num_X, N*N-1)` for one sweep axis or `(num_X, num_Y, N*N-1)` for two axes. The last dimension stores density-matrix components, not time samples. Values can change without recompilation. Cannot be combined with `rho0`. |
-
-### Code Generation And Execution
-
-| Parameter | Type/default | Meaning |
-| --- | --- | --- |
-| `kernel_template_file` | `None` | Uses the canonical CUDA template packaged with GQIS. Supply an explicit path only to test or develop a custom kernel template; relative explicit paths are checked in the current directory and then inside the installed package. |
-| `RHSreuse` | `True` | Reuse the generated symbolic RHS independently of the solver-specific compiled CUDA kernel. Different solvers therefore share one symbolic RHS while retaining separate kernels. Sweep arrays, numerical initial states supplied through `rho0_values`, and numerical values assigned to selected constants kept symbolic may change between calls. `False` regenerates both stages on every call. |
-| `unroll` | `False` | `True` forces `#pragma unroll` on solver vector loops. `False` leaves the decision to NVRTC, preserving the existing behavior and avoiding mandatory unrolling when larger density vectors would create excessive register pressure. Changing this option produces a separately compiled cached kernel. |
-| `pre_expand` | `True` | Expand symbolic RHS expressions before code generation. |
-| `collect_rho` | `False` | Collect RHS terms by reduced density variables. Usually not needed: the Lindblad equations are already simplified for each state variable. |
-| `factor_terms` | `False` | Factor symbolic terms before common-subexpression elimination (CSE). This can reduce operations but increase preparation time. |
-| `cse_batch_size` | `None` | Equations per common-subexpression-elimination batch. `None` performs global CSE; smaller batches can lower CUDA register pressure. |
-| `cse_simplify` | `False` (`mesolve_2D`), `True` (`odesolve_2D`) | Simplify expressions during CSE. Lindblad equations are already simplified when they are generated; user-supplied ODE expressions are not, so `odesolve_2D` simplifies them here. `False` shortens the preparation of large ODEs that are already simple. |
-| `hoist_rho_independent` | `True` | Move state-independent expressions to per-thread static or per-RK-stage drive calculations. |
-| `symbolic_workers` | `"auto"` | Number of parallel processes that build the symbolic Lindblad equations. `"auto"` uses one process below Hilbert-space dimension 10 and up to `max_symbolic_workers` from there on; an integer sets the number. For large Hilbert spaces, parallel execution shortens preparation several times. Not used by `odesolve_2D`. |
-| `max_symbolic_workers` | `None` | Upper limit for `"auto"`; `None` uses half the logical CPUs. |
-| `nvrtc_options` | empty tuple | Additional NVIDIA Runtime Compilation (NVRTC) options passed to `cupy.RawKernel`. A string or iterable of strings is accepted. |
-| `Actual_Kernel_Save` | `False` | `True` saves `<caller>_Kernel.cu`; a string saves to that explicit path. Generated kernels are debugging artifacts and are ignored by the repository. |
-
-### Diagnostics
-
-| Parameter | Type/default | Meaning |
-| --- | --- | --- |
-| `timings` | `False` | Print the preparation time with its stages, GPU kernel time, total call time, and whether the generated ODE and kernel were reused. |
-| `return_timing_info` | `False` | Append a timing dictionary to the returned values, without console output. |
-| `beep_on_error` | `False` | Play a best-effort notification before raising for non-finite output. |
-| `ignore_non_finite_output` | `False` | Return not-a-number (NaN) or infinite (Inf) output instead of raising. Useful for accuracy sweeps that also record unstable working points. |
-
-The timing dictionary contains:
-
-| Key | Meaning |
-| --- | --- |
-| `rhs_stage_s` | All preparation before the kernel launch. |
-| `ode_prepare_s`, `ode_optimize_s`, `code_emit_s`, `kernel_build_s` | Its stages: symbolic ODE, optimization, CUDA code generation, kernel compilation. A reused stage reports zero. |
-| `rhs_codegen_s` | Sum of the first three stages. |
-| `gpu_kernel_s`, `total_s` | GPU kernel time and total call time. |
-| `cached_rhs` | `"hit"` or `"miss"` for reuse of the generated ODE; `"provided"` for a [compiled RHS](#compiling-the-ode-once). |
-| `cached_kernel` | Reuse of the compiled kernel of the selected solver. |
-| `solver`, `solver_frequency`, `unroll` | Settings used by the call. |
-
-### Reusing The ODE For Animations
-
-With `RHSreuse=True`, GQIS can reuse the generated right-hand side (RHS) of the
-ODE and its compiled CUDA kernel across repeated calls. The symbolic equation
-structure must remain unchanged; only the numerical values assigned to selected
-symbols may change. Constants that change between frames therefore need to
-remain symbolic. For example:
-
-```python
-result = mesolve_2D(
-    H, Drive, Col_Ops, mean_operator, tlist,
-    var_arrays={eps: eps_values, A: amplitude_values},
-    const_values={gamma: gamma_for_this_frame},
-    keep_symbolic_consts={gamma},
-    RHSreuse=True,
-)
-```
-
-On the next call, `gamma_for_this_frame` may change while the generated ODE and
-compiled kernel are reused. Without `keep_symbolic_consts={gamma}`, the value is
-inserted directly into the generated equations and changing it requires new
-symbolic generation and compilation. `runtime_consts={gamma: value}` can also
-supply or override the value of a constant kept symbolic this way.
 
 ## Compiling The ODE Once
 
@@ -508,19 +329,200 @@ symbolic can still be changed through `runtime_consts`.
 The returned `CompiledRHS` holds the prepared equations and observable as SymPy expressions and the
 stage `timings`, for analysis or for another code generator.
 
+## Summary
+
+Use `mesolve_2D` for a symbolic Lindblad model and `odesolve_2D` for real first-order ODEs.
+Supply the equations, a uniform grid of elapsed times and the sweep axes; choose initial values and the
+required final, mean or sampled output. Both APIs default to fixed-step RK4 and FP32.
+Check convergence for the observable you need before increasing the size of the parameter grid.
+
+The following sections describe optional settings: GPU continuation, reuse in repeated calls, grouped options,
+code generation and diagnostics, followed by the helper functions.
+
+## Optional Execution And Inspection
+
+### Continuing On The GPU
+
+Both APIs accept `t_in=0.0` and `return_device=False`. With `return_device=True`, result and
+trace arrays are CuPy arrays on the GPU; the trace times stay a NumPy array. Pass the returned
+state back through `y0_values` (ODE) or `rho0_values` (Lindblad) without downloading it. Checks for finite values
+still synchronize a scalar status; they do not copy the full state. For example:
+
+[Example 06](Examples/Example_06_symbolic_ode_sweep.py) demonstrates this continuation pattern
+with a sweep over initial conditions of the Duffing oscillator and a live phase-space display.
+
+```python
+state = odesolve_2D(rhs, states, y0, elapsed_times, t_in=10.0, return_device=True, **model_options)
+state = odesolve_2D(rhs, states, None, elapsed_times,
+                    y0_values=state, t_in=10.0 + elapsed_times[-1],
+                    return_device=True, **model_options)
+```
+
+Here `states` is the ordered list of state symbols and `model_options` contains the same sweep axes,
+constants and solver settings for both calls. Request the full state as output when continuing a trajectory.
+Stage times use `t_in + elapsed_stage_time`, with elapsed time derived from the integer step index.
+Zero and nonzero offsets share one kernel with the offset as a runtime parameter, cached after first use.
+Changing `t_in` does not require another compilation.
+FP32 still rounds the
+absolute time to its representable precision; use FP64 when small intervals at large times need it.
+
+### Repeated Sweeps And Explicit Initial States
+
+Keep constants that change between calls symbolic to reuse compiled equations across frames or fitting iterations.
+For an independent numerical initial state at every sweep point, use `rho0_values`.
+
+| Parameter | Type/default | Meaning |
+| --- | --- | --- |
+| `runtime_consts` | `dict[Symbol, number]` | Values for constants intentionally left symbolic in the generated ODE. They are uploaded for each call, so they can change while the previously generated and compiled ODE kernel is reused. A value here overrides the same symbol in `const_values`. This is useful for animations and repeated calculations. |
+| `keep_symbolic_consts` | iterable, `"all"`, `"auto"`, `"const_values"`, or `None` | Selects which `const_values` symbols remain symbolic instead of being inserted as fixed numbers. This allows selected constants to change between animation frames while reusing the generated ODE and compiled kernel. `"all"`, `"auto"`, and `"const_values"` select every `const_values` key. |
+| `auto_runtime_consts` | `False` | Keep every `const_values` key symbolic so all constant values can change between repeated calls without regenerating the ODE. |
+| `rho0_var_arrays` | `dict[Symbol, 1D array]` | Sweep values for symbols used only in the symbolic `rho0` matrix. They are merged with `var_arrays`; the total remains limited to two sweep axes. These arrays select different initial states for independent simulations, not for different time samples. |
+| `rho0_values` | numeric array or `None` | Alternative to symbolic `rho0`: one explicit reduced initial state per simulation point. Shape is `(num_X, N*N-1)` for one sweep axis or `(num_X, num_Y, N*N-1)` for two axes. The last dimension stores density-matrix components, not time samples. Values can change without recompilation. Cannot be combined with `rho0`. |
+
+### Reusing The ODE For Animations
+
+With `RHSreuse=True`, GQIS can reuse the generated right-hand side (RHS) of the
+ODE and its compiled CUDA kernel across repeated calls. The symbolic equation
+structure must remain unchanged; only the numerical values assigned to selected
+symbols may change. Constants that change between frames therefore need to
+remain symbolic. For example:
+
+```python
+result = mesolve_2D(
+    H, Drive, Col_Ops, mean_operator, tlist,
+    var_arrays={eps: eps_values, A: amplitude_values},
+    const_values={gamma: gamma_for_this_frame},
+    keep_symbolic_consts={gamma},
+    RHSreuse=True,
+)
+```
+
+On the next call, `gamma_for_this_frame` may change while the generated ODE and
+compiled kernel are reused. Without `keep_symbolic_consts={gamma}`, the value is
+inserted directly into the generated equations and changing it requires new
+symbolic generation and compilation. `runtime_consts={gamma: value}` can also
+supply or override the value of a constant kept symbolic this way.
+
+### Grouped Options
+
+Optional settings can also be passed in groups by topic. Each group is a dictionary that uses the
+usual option names, so the two styles are equivalent:
+
+```python
+result = mesolve_2D(
+    H, Drive, Col_Ops, mean_operator, tlist,
+    var_arrays={eps: eps_values, A: amplitude_values},
+    output=dict(warmup_time=0.2, return_time_trace=True, time_trace_every=16),
+    diagnostics=dict(timings=True, return_timing_info=True, ignore_non_finite_output=True),
+)
+```
+
+Options that are not set keep their defaults.
+
+| Group | Options |
+| --- | --- |
+| `consts` | `const_values`, `runtime_consts`, `keep_symbolic_consts`, `auto_runtime_consts` |
+| `initial` | `rho0`, `rho0_var_arrays`, `rho0_values` (Lindblad); `y0_values` (ODE); `t_in` |
+| `output` | `warmup_time`, `return_time_trace`, `time_trace_every`, `time_trace_samples_per_period`, `solver_samples_per_period`, `return_device` |
+| `solver_options` | `solver`, `fp64`, `solver_frequency`, `adaptive_options` |
+| `codegen` | `RHSreuse`, `kernel_template_file`, `unroll`, `pre_expand`, `collect_rho`, `factor_terms`, `cse_batch_size`, `cse_simplify`, `hoist_rho_independent`, `symbolic_workers`, `max_symbolic_workers`, `nvrtc_options` |
+| `diagnostics` | `timings`, `return_timing_info`, `Actual_Kernel_Save`, `beep_on_error`, `ignore_non_finite_output` |
+
+`odesolve_2D` accepts the same groups. Give each option either directly or inside its group, not both;
+unknown names and conflicting values raise `ValueError`. Model inputs, `var_arrays`, `output_mode`,
+`observable` and [`calibrate_timesteps`](#automatic-time-step-calibration) are always passed directly.
+
+### Code Generation And Execution
+
+| Parameter | Type/default | Meaning |
+| --- | --- | --- |
+| `kernel_template_file` | `None` | Uses the canonical CUDA template packaged with GQIS. Supply an explicit path only to test or develop a custom kernel template; relative explicit paths are checked in the current directory and then inside the installed package. |
+| `RHSreuse` | `True` | Reuse the generated symbolic RHS independently of the solver-specific compiled CUDA kernel. Different solvers therefore share one symbolic RHS while retaining separate kernels. Sweep arrays, numerical initial states supplied through `rho0_values`, and numerical values assigned to selected constants kept symbolic may change between calls. `False` regenerates both stages on every call. |
+| `unroll` | `False` | `True` forces `#pragma unroll` on solver vector loops. `False` leaves the decision to NVRTC, preserving the existing behavior and avoiding mandatory unrolling when larger density vectors would create excessive register pressure. Changing this option produces a separately compiled cached kernel. |
+| `pre_expand` | `True` | Expand symbolic RHS expressions before code generation. |
+| `collect_rho` | `False` | Collect RHS terms by reduced density variables. Usually not needed: the Lindblad equations are already simplified for each state variable. |
+| `factor_terms` | `False` | Factor symbolic terms before common-subexpression elimination (CSE). This can reduce operations but increase preparation time. |
+| `cse_batch_size` | `None` | Equations per batch of common-subexpression elimination. `None` performs global CSE; smaller batches can lower CUDA register pressure. |
+| `cse_simplify` | `False` (`mesolve_2D`), `True` (`odesolve_2D`) | Simplify expressions during CSE. Lindblad equations are already simplified when they are generated; user-supplied ODE expressions are not, so `odesolve_2D` simplifies them here. `False` shortens the preparation of large ODEs that are already simple. |
+| `hoist_rho_independent` | `True` | Evaluate expressions that do not depend on the state once per thread, or once per solver stage together with the drive. |
+| `symbolic_workers` | `"auto"` | Number of parallel processes that build the symbolic Lindblad equations. `"auto"` uses one process below Hilbert-space dimension 10 and up to `max_symbolic_workers` from there on; an integer sets the number. For large Hilbert spaces, parallel execution shortens preparation several times. Not used by `odesolve_2D`. |
+| `max_symbolic_workers` | `None` | Upper limit for `"auto"`; `None` uses half the logical CPUs. |
+| `nvrtc_options` | empty tuple | Additional NVIDIA Runtime Compilation (NVRTC) options passed to `cupy.RawKernel`. A string or iterable of strings is accepted. |
+| `Actual_Kernel_Save` | `False` | `True` saves `<caller>_Kernel.cu`; a string saves to that explicit path. Generated kernels are debugging artifacts and are ignored by the repository. |
+
+### ODE Code Generation
+
+For `odesolve_2D`, `solver`, `solver_frequency`, `fp64`, `unroll`, caching, runtime constants and the
+code-generation options above also apply. Defaults are RK4 and FP32. Nonlinear expressions are not expanded
+or collected by default. Common expressions are reused, combinations that depend only on parameters are
+moved out of the integration loop, and expressions that depend only on time are evaluated together
+with the drive at each solver stage. Combinations of runtime constants are precomputed on the CPU.
+Only the selected integrator is emitted. `cse_batch_size` can limit the lifetimes of temporary variables and
+help reduce register pressure for larger systems.
+
+### Diagnostics
+
+| Parameter | Type/default | Meaning |
+| --- | --- | --- |
+| `timings` | `False` | Print the preparation time with its stages, GPU kernel time, total call time, and whether the generated ODE and kernel were reused. |
+| `return_timing_info` | `False` | Append a timing dictionary to the returned values, without console output. |
+| `beep_on_error` | `False` | Play a best-effort notification before raising for non-finite output. |
+| `ignore_non_finite_output` | `False` | Return not-a-number (NaN) or infinite (Inf) output instead of raising. Useful for accuracy sweeps that also record unstable working points. |
+
+The timing dictionary contains:
+
+| Key | Meaning |
+| --- | --- |
+| `rhs_stage_s` | All preparation before the kernel launch. |
+| `ode_prepare_s`, `ode_optimize_s`, `code_emit_s`, `kernel_build_s` | Its stages: symbolic ODE, optimization, CUDA code generation, kernel compilation. A reused stage reports zero. |
+| `rhs_codegen_s` | Sum of the first three stages. |
+| `gpu_kernel_s`, `total_s` | GPU kernel time and total call time. |
+| `cached_rhs` | `"hit"` or `"miss"` for reuse of the generated ODE; `"provided"` for a [compiled RHS](#compiling-the-ode-once). |
+| `cached_kernel` | Reuse of the compiled kernel of the selected solver. |
+| `solver`, `solver_frequency`, `unroll` | Settings used by the call. |
+
+### Full Lindblad Call Signature
+
+The complete signature includes the optional controls described above:
+
+```python
+mesolve_2D(
+    H, Drive, Col_Ops, mean_operator, tlist,
+    var_arrays=None, const_values=None,
+    kernel_template_file=None, *,
+    RHSreuse=True, runtime_consts=None, keep_symbolic_consts=None,
+    auto_runtime_consts=False, output_mode="mean", solver="rk4",
+    solver_frequency=None, adaptive_options=None, unroll=False, fp64=False,
+    pre_expand=True, collect_rho=False, factor_terms=False,
+    cse_batch_size=None, cse_simplify=False,
+    hoist_rho_independent=True, symbolic_workers="auto",
+    max_symbolic_workers=None, nvrtc_options=(), timings=False,
+    return_timing_info=False, warmup_time=0.0, rho0=None,
+    rho0_var_arrays=None, rho0_values=None, return_time_trace=False,
+    time_trace_every=None, time_trace_samples_per_period=None,
+    solver_samples_per_period=None, Actual_Kernel_Save=False,
+    beep_on_error=False, ignore_non_finite_output=False,
+    t_in=0.0, return_device=False, calibrate_timesteps=None,
+    consts=None, initial=None, output=None, solver_options=None,
+    codegen=None, diagnostics=None,
+)
+```
+
+A [compiled RHS](#compiling-the-ode-once) can replace the model arguments `H`, `Drive`, `Col_Ops` and
+`mean_operator`.
+
 ## Density-Matrix Helpers
 
 ### `build_independent_rho(N)`
 
 Input: Hilbert-space dimension `N`.
 
-Output: `(rho, metadata)`. `rho` is an `N x N` Hermitian, trace-one SymPy
-matrix built from `N*N-1` real symbols. `metadata` contains `N`, `rho_syms`,
+Output: `(rho, metadata)`. `rho` is an `N x N` Hermitian SymPy
+matrix with unit trace, built from `N*N-1` real symbols. `metadata` contains `N`, `rho_syms`,
 `num_diag`, `num_coherences`, and `vec_len`. Here `num_coherences` is the number
-of upper-triangular coherence pairs; `M` remains reserved for the number of
-time samples.
+of upper-triangular coherence pairs.
 
-Reduced-vector order is:
+The order of the reduced vector is:
 
 1. Diagonal populations `rho[0,0]` through `rho[N-2,N-2]`.
 2. Real and imaginary parts of each upper-triangular coherence in row-major order.
@@ -535,7 +537,7 @@ equations in parallel processes (`1` here by default; `"auto"` as in `mesolve_2D
 
 Output: `(drho_eqs, mean_re, mean_im, metadata)`. `drho_eqs` contains the
 `N*N-1` real Lindblad ODE expressions in the ordering defined above. `mean_re`
-and `mean_im` are the expectation-value components. CUDA generation and the
+and `mean_im` are the components of the expectation value. CUDA generation and the
 benchmark Julia and central processing unit (CPU) solvers use this same function so their density-matrix
 equations cannot diverge through separately maintained symbolic derivations.
 
@@ -546,7 +548,7 @@ Input: a square SymPy density matrix, or an iterable already containing
 
 Output: a simplified expression list in the exact ordering used by
 `build_independent_rho`. Raises `ValueError` for a nonsquare matrix or invalid
-reduced-vector length.
+length of the reduced vector.
 
 ## Symbolic Code-Generation Helpers
 
@@ -573,8 +575,8 @@ Output: CUDA assignment lines. If `return_hoist=True`, returns
 
 ### `emit_drive_code(drive_map, *, array_name="Drive_arr", inline_single_use_funcs=True)`
 
-Inputs: placeholder-to-expression mapping, target CUDA array name, and a switch
-that permits one-use math functions to remain inline.
+Inputs: a mapping from placeholders to expressions, the target CUDA array name, and a switch
+that keeps math functions used only once inline.
 
 Output: `(drive_lines, alias_lines, drive_symbols)`. `alias_lines` is retained
 for compatibility and is currently empty.
@@ -598,11 +600,11 @@ These underscore-prefixed functions are implementation details, not stable
 public API:
 
 - `_resolve_kernel_template_file(kernel_template_file)` returns the canonical packaged template for `None`, resolves an explicit path otherwise, and raises `FileNotFoundError` when no matching template exists.
-- `_resolve_generated_kernel_path(actual_kernel_save)` returns the absolute generated-kernel output path.
+- `_resolve_generated_kernel_path(actual_kernel_save)` returns the absolute path of the saved kernel.
 - `_save_generated_kernel_file(actual_kernel_save, kernel_code)` writes requested CUDA source and returns its path, or returns `None` when disabled.
 - `_play_notification_beep(kind)` emits a best-effort error or completion sound and returns `None`.
 
 `mesolve_2D` also uses nested private helpers for expression iteration, runtime
-constant derivation, compiled-kernel reuse checks, constant-index compaction, and
+constant derivation, checks for reuse of compiled kernels, compaction of constant indices, and
 host-to-device conversion. They are intentionally local because they depend on
 the current solve call and are not callable package APIs.

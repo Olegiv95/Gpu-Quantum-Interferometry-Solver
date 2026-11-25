@@ -1,4 +1,4 @@
-# Installation and GPU Test
+# Installation and GPU test
 
 These instructions install the GPU Quantum Interferometry Solver (GQIS), verify its dependencies, and run a small CUDA
 calculation. A dedicated environment is not mandatory: install GQIS in an existing compatible environment unless
@@ -59,7 +59,7 @@ Environment check: PASS
 ```
 
 No separate environment is needed when this test passes. If installation or
-dependency checks fail, use one of the optional clean-environment procedures
+dependency checks fail, use one of the optional procedures with a clean environment
 below to distinguish a GQIS issue from a conflict in the existing environment.
 
 ## CUDA Version Selection
@@ -89,7 +89,7 @@ gqis-check --installation-test
 
 Both configurations have passed the GQIS installation test on Windows: the
 local CUDA Toolkit configuration with the reference NVIDIA GeForce RTX 3080
-desktop GPU and the pip-installed CUDA configuration with an NVIDIA GeForce
+desktop GPU and the pip-based CUDA configuration on an NVIDIA GeForce
 RTX 4060 Laptop GPU. The clean `ctk`
 test environment occupied approximately 2.5 GB because it included the CUDA
 runtime libraries.
@@ -101,9 +101,10 @@ installation options have not been tested on the reference desktop system.
 ## Summary
 
 For a compatible CUDA 12 environment, install `gqis[cuda12]` and run
-`gqis-check --installation-test`. A passing small-grid CUDA calculation confirms that the
-installed package can launch its solver. That smoke test does not establish convergence for
-your scientific model; use time-grid refinement and a reference comparison for that purpose.
+`gqis-check --installation-test`. The test checks each stage of the solver, from the symbolic equations to the
+GPU solution, against exact answers for small problems. It does not establish convergence for your scientific
+model; for that, use [automatic time-step calibration](GQIS_API.md#automatic-time-step-calibration), or refine
+the time grid and compare with a reference.
 
 The remaining sections cover optional clean environments, extra dependencies,
 [source development](#source-and-development-installation),
@@ -222,23 +223,22 @@ Use an older tag such as `v0.2.0` explicitly only when reproducing that release.
 compatible versions so pip does not reject an older version unnecessarily.
 `requirements.txt` is a CUDA 12-oriented environment recipe.
 
-The versions below record configurations tested during the GQIS 0.1.0 and 0.1.1
-release preparations; they are not an exclusive list of compatible versions.
+The versions below record the configuration tested for GQIS 0.3.0; they are not an exclusive list of compatible versions.
 Other compatible versions can be used within the declared dependency ranges.
 For troubleshooting, `gqis-check --installation-test` reports the local configuration
-and runs a small installation check.
+and checks each solver stage against exact answers.
 
 | Dependency | Declared requirement | Tested version |
 | --- | --- | --- |
 | Python | `>=3.10` | 3.10-3.12 in CI; 3.11.7 locally |
 | NumPy | `>=1.24` | 2.4.6 |
 | SymPy | `>=1.11` | 1.14.0 |
-| CuPy/CUDA | CUDA installation option | 14.1.1 with Toolkit; 14.2.0 with `ctk`; CUDA runtime 12.9 |
+| CuPy/CUDA | CUDA installation option | 14.2.0 with Toolkit and with `ctk`; CUDA runtime 12.9 |
 | Matplotlib | `>=3.7` (examples) | 3.11.1 |
-| SciPy | `>=1.10` (benchmarks) | 1.16.1 |
-| QuTiP | `>=5.0` (benchmarks) | 5.2.0 |
-| pytest | `>=8` (tests) | 8.4.2 |
-| build | `>=1` (release builds) | 1.5.0 |
+| SciPy | `>=1.10` (benchmarks) | 1.17.1 |
+| QuTiP | `>=5.0` (benchmarks) | 5.3.1 |
+| pytest | `>=8` (tests) | 9.1.1 |
+| build | `>=1` (release builds) | 1.6.0 |
 | Ruff | `==0.16.2` (development) | 0.16.2 |
 | Julia | external optional solver | 1.10.2 |
 | dynamiqs, JAX | external optional solver (Linux or WSL) | dynamiqs 0.3.7, JAX 0.12.0.1 |
@@ -249,7 +249,7 @@ Examples and benchmarks exercise realistic workflows but do not replace
 automated tests because they are slower, depend on local GPU/plotting software,
 and generally do not assert known numerical answers.
 
-Run the package and time-grid tests that do not require a GPU with:
+Run the tests that do not require a GPU with:
 
 ```text
 pytest -m "not gpu"

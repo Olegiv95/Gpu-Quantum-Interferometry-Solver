@@ -4,7 +4,7 @@ The accompanying benchmarks document GQIS solver accuracy and performance, inclu
 with QuTiP, SciPy, Python RK4, Julia DiffEqGPU and dynamiqs. To apply GQIS to your own model, use the
 [solver APIs](GQIS_API.md); the [working examples](README.md#examples) demonstrate those calls.
 
-Use Benchmark 01/02 to compare solver results and measure parameter-sweep scaling.
+Use Benchmark 01/02 to compare solver results and measure how the time scales with the size of the parameter grid.
 Use Benchmark 03 to choose a solver and time resolution that keep the RMS (root-mean-square)
 and maximum errors within set limits against a numerical reference.
 Use Benchmark 04 to see how the calculation time grows with the Hilbert-space dimension, compared with
@@ -33,8 +33,8 @@ python Benchmarks/Benchmark_02_four_level_Interferometry.py --mode diff --solver
 | --- | --- |
 | `single` | One solver's interferogram and timing |
 | `diff` | Two interferograms, timings, MSE, RMS and maximum absolute difference |
-| `all` | Attempt all listed backends, including every GQIS method (`gpu` repeats RK4) |
-| `full_benchmark` | Timings over powers-of-two square grids, saved as CSV and PNG |
+| `all` | Run all listed backends, including every GQIS method (`gpu` repeats RK4) |
+| `full_benchmark` | Timings over square grids whose sides are powers of two, saved as CSV and PNG |
 
 All four modes accept these solver names:
 
@@ -57,24 +57,21 @@ python Benchmarks/Benchmark_01_two_level.py full_benchmark --full-solvers gqis_r
 
 The scripts' configured `accuracy_dividers_file` loads a matching Benchmark 03 calibration.
 Set that setting to `None` to use the manually configured time grids. A calibrated scaling run uses the
-calibration's model, duration, adaptive settings and solver-specific step counts; only the parameter-grid size changes.
+calibration's model, duration, adaptive settings and solver-specific step counts; only the size of the parameter grid changes.
 See [calibration files](#calibration-files-and-compatibility) for overrides and older files.
 
 Benchmark 01/02 print each solver's total steps and steps per driving period. For QuTiP and SciPy,
 these counts describe requested output intervals; internal integration is adaptive. QuTiP also shows
-a column progress bar with completion percentage and estimated remaining time. Use `--no-progress`
-to hide the progress bar. If a solver is absent from the calibration JSON, the startup message
-identifies the fallback time grid explicitly. Missing CPU solvers use one tenth of the original
-`solver_steps_per_period` setting (256 by default, giving 26 after rounding), rather than one tenth
-of the calibration JSON's base density. Solvers present in the JSON use their saved calibration.
+a progress bar (`--no-progress` hides it). A solver missing from the calibration file uses an
+uncalibrated time grid, printed at startup; see [calibration files](#calibration-files-and-compatibility).
 
-Scaling CSVs record hardware, software, numerical settings and measured/extrapolated status in
+Scaling CSVs record hardware, software, numerical settings and whether each timing is measured or extrapolated in
 `Benchmarks/results/`. Circles denote measurements; squares denote estimates after a solver reaches
-or is predicted to exceed `bench_solver_time_limit`. CPU and Julia measurements run in terminable
-subprocesses. GQIS runs in the warmed parent process; its time limit is checked after a solve completes.
+or is predicted to exceed `bench_solver_time_limit`. CPU and Julia measurements run in separate
+processes that can be stopped at the time limit. GQIS runs in the main process after a warmup call; its time limit is checked after a solve completes.
 Use `--help` for all CLI options and [timing details](#timing-boundaries-and-preparation) when interpreting performance.
 
-### Two-Level time scaling:
+### Two-Level Time Scaling
 
 ![Two-level full benchmark](./Benchmarks/results/Benchmark_01_full_benchmark_plot.png)
 
@@ -86,7 +83,7 @@ That measurement comes from Benchmark 03 and is stored as a measured point in th
 
 [Timing data (CSV)](./Benchmarks/results/Benchmark_01_full_benchmark.csv) | [Figure file (PNG)](./Benchmarks/results/Benchmark_01_full_benchmark_plot.png)
 
-### Four-Level time scaling:
+### Four-Level Time Scaling
 
 ![Four-level full benchmark](./Benchmarks/results/Benchmark_02_full_benchmark_plot.png)
 
@@ -94,9 +91,59 @@ Benchmark 02 shows the same scaling comparison for the coupled qubit-resonator m
 state makes each simulation more expensive; GQIS RK4 completes the largest grid of 1.07 billion
 parameter sets in about **5 min 4 s**. Circles mark measurements; squares and dashed extensions
 mark extrapolated timings. The largest measured QuTiP grid is `256 x 256`, taking about
-**27 min 30 s**, versus **0.023219 s** for GQIS(RK4): approximately **71,100 times** speedup.
+**27 min 30 s**, versus **0.023219 s** for GQIS(RK4): a speedup of about **71,100 times**.
 
 [Timing data (CSV)](./Benchmarks/results/Benchmark_02_full_benchmark.csv) | [Figure file (PNG)](./Benchmarks/results/Benchmark_02_full_benchmark_plot.png)
+
+### Reference Results
+
+Reference desktop system:
+
+- CPU: 11th Gen Intel Core i9-11900K at 3.50 gigahertz (GHz)
+- GPU: NVIDIA GeForce RTX 3080 with 10 gigabytes (GB) VRAM
+- precision: 32-bit floating point (FP32) for the GQIS scaling runs
+- workload: 10,240 RK4 steps per two-level simulation; 5,840 per four-level simulation
+
+The largest measured `32768 x 32768` grids contain 1.07 billion independent simulations.
+GQIS(RK4) completed them in about **1 min 38 s** for the two-level model and **5 min 4 s** for the four-level model.
+The corresponding QuTiP estimates are **126.20 days** and **248.67 days**;
+these CPU values for the largest grids are extrapolated, not measured runs.
+
+The [Benchmark 01 scaling CSV](Benchmarks/results/Benchmark_01_full_benchmark.csv) includes the
+measured `2048 x 2048` QuTiP run imported from the
+[Benchmark 03 dense two-level sweep](<Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_dense grid_sweep.csv>).
+The CSV records **12 h 9 min** as a measurement, so regenerating the scaling figure retains the point.
+Other measured timings and existing extrapolations are preserved. The averages over the larger grids below
+use those stored extrapolations; they have not been refitted to the imported point.
+
+| Model and measurement | Grid | QuTiP CPU time | GQIS(RK4) calculation time | Measured speedup |
+| --- | --- | --- | --- | --- |
+| Two-level, Benchmark 03 measurement imported into scaling | `2048 x 2048` | 12 h 9 min | 0.36223 s | approximately 120,800 times |
+| Four-level | `256 x 256` | about 27 min 30 s | 0.023219 s | approximately 71,100 times |
+
+Displayed times are rounded to at most five significant digits; long durations use hours and
+minutes. Speedups are calculated from the unrounded recorded times. Each ratio compares measured
+QuTiP and GQIS times for the same size of the parameter grid, excluding GQIS preparation.
+
+The two-level QuTiP run used 32 requested output intervals per driving period (1,280 over
+40 periods), with adaptive internal integration. The calibrated RK4 run used 256 integration
+steps per period (10,240 total).
+
+The four-level runs use 5,840 RK4 steps and 1,280 QuTiP output intervals over 40 periods.
+QuTiP extrapolations use the updated measurements through `256 x 256`.
+
+For the four grid sizes from `4096 x 4096` through `32768 x 32768`, arithmetic means of the
+point-by-point timing ratios are approximately **118,110× over QuTiP and 17.9× over Julia** for the two-level
+model, and **88,040× over QuTiP and 60.6× over Julia** for the four-level model.
+These ratios use the linked CSV calculation times for GQIS(RK4) and Julia's
+`julia_gpu_fp32_fopt` variant, versus QuTiP's CPU run times; preparation is not added to the GPU calculation times.
+Julia reconstructs FP32 time from the integer step index in this comparison (experimental).
+QuTiP timings in this range, and Julia timings beyond its measured range, are extrapolated as marked in the CSV.
+
+The calibrated grids differ by solver. Per simulation, the two-level CSV records 10,240 RK4 steps,
+1,720 DOP853 steps, 4,080 Julia steps and 1,280 QuTiP output intervals. The four-level CSV records
+5,840 RK4 steps, 1,720 DOP853 steps, 5,840 Julia steps and 1,280 QuTiP output intervals.
+QuTiP's internal adaptive integration steps are distinct from these output intervals.
 
 ## Benchmark 03: Accuracy And Convergence
 
@@ -121,18 +168,15 @@ Time resolution is shown as **steps per driving period**. For adaptive SciPy and
 this quantity describes requested **output intervals per period**, not internal integration steps.
 Adaptive tolerances control internal error. A dense GQIS integration grid is not required for adaptive
 output: refine adaptive tolerances and output density separately until the compared observable converges.
-Output density affects sampled averaging; array-based QuTiP drives also require converged coefficient interpolation.
+Output density affects sampled averaging; QuTiP drives given as arrays also require converged coefficient interpolation.
 
 For more Benchmark 03 options, see [presets and saved runs](#reproducing-accuracy-figures),
 [calibration files](#calibration-files-and-compatibility), and [time-grid details](#time-grids-and-legacy-option-names).
 
-## Benchmark 03 Results
+The saved figures below show observable error and calculation time as time resolution changes;
+the calculation times were measured in these accuracy runs.
 
-The saved figures show observable error and calculation time as time resolution changes.
-For QuTiP, steps per period means requested output intervals; internal integration is adaptive.
-Calculation times belong to these accuracy runs, separately from the scaling measurements.
-
-### Small Two-Level Grid accuracy scaling: Independent QuTiP Reference
+### Small Two-Level Grid Accuracy Scaling With Independent QuTiP Reference
 
 ![Benchmark 03: two-level convergence against QuTiP](Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_sweep_GQIS_vs_QuTiP_plot.png)
 
@@ -141,7 +185,7 @@ At fine resolution, the recorded GQIS methods agree with QuTiP to roughly `3-4e-
 
 [Results (CSV)](Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_sweep_GQIS_vs_QuTiP.csv)
 
-### Dense Two-Level Grid accuracy scaling:
+### Dense Two-Level Grid Accuracy Scaling
 
 ![Benchmark 03: dense two-level convergence](<Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_dense grid_sweep.png>)
 
@@ -152,18 +196,19 @@ The measured QuTiP point takes about **12 h 9 min** and satisfies both limits.
 
 [Results (CSV)](<Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_dense grid_sweep.csv>)
 
-### Dense Four-Level Grid accuracy scaling:
+### Dense Four-Level Grid Accuracy Scaling
 
 ![Benchmark 03: dense four-level convergence](<Benchmarks/results/Benchmark_03_four_level_accuracy_timestep_dense grid_sweep.png>)
 
 The `2048 x 2048` sweep uses the same reference resolution and error limits as the dense two-level sweep.
 Here RK4 has the shortest recorded GQIS time among the coarsest accepted points:
 **0.98360 s** at **146 steps per period**. DOP853 needs only **43 steps per period** but takes
-**1.5141 s**, illustrating that even vastly different solvers, fourth-order for RK4 and eighth-order for DOP853, can provide quite similar performance when calibrated to the same accuracy limits.
+**1.5141 s**, showing that solvers of very different order, fourth for RK4 and eighth for DOP853, can take similar
+time when calibrated to the same accuracy limits.
 
 [Results (CSV)](<Benchmarks/results/Benchmark_03_four_level_accuracy_timestep_dense grid_sweep.csv>)
 
-The dense-grid errors measure agreement with a finer GQIS reference; the small-grid QuTiP result
+The errors on the dense grids measure agreement with a finer GQIS reference; the QuTiP result on the small grid
 provides the independent solver comparison. Each figure shows the methods recorded in its saved run.
 
 ## Benchmark 04: Hilbert-Space Scaling
@@ -175,16 +220,16 @@ GPU libraries, dynamiqs and Julia DiffEqGPU, for two model families:
 | System | Size parameter | Hilbert-space dimension |
 | --- | --- | --- |
 | `qubit_resonator` | Resonator Fock states `Nph`; `Nph=2` is the Benchmark 02 model | `2*Nph` |
-| `multi_qubit` | Number `n` of Benchmark 01 qubits with nearest-neighbour ZZ coupling; one qubit is driven | `2**n` |
+| `multi_qubit` | Number `n` of Benchmark 01 qubits with nearest-neighbor ZZ coupling; one qubit is driven | `2**n` |
 
-**Measured times.** The calculation time (solid curves) is the GPU time of one full-grid solve. The
+**Measured times.** The calculation time (solid curves) is the GPU time of one solve over the full grid. The
 total time (dotted curves) is the time of a first call: model construction, symbolic ODE generation,
 kernel compilation and that solve. Repeated calls with the same model cost only the calculation time.
 
 **Accuracy.** Each solver is calibrated so that the resulting observable map has an RMS error below
 `1e-3` and a maximum error below `1e-2`, refining the time grid until the result converges, as in
 [`calibrate_timesteps`](GQIS_API.md#automatic-time-step-calibration). The limits apply to the final
-time-averaged map, not to each step. Solvers with adaptive step size (GQIS(TSIT5A), dynamiqs) pass the same algorithm
+time-averaged map, not to each step. Solvers with adaptive step size (GQIS(TSIT5A), dynamiqs) use the same calibration procedure
 but adjust `atol` and `rtol` instead of steps per period, giving per-step tolerances of about
 `rtol = atol = 1.8e-4` (qubit-resonator) and `3.2e-5` (coupled qubits). Calibration is not included
 in the measured times.
@@ -211,7 +256,7 @@ python Benchmark_04_hilbert_space_scaling_dynamiqs.py
 Time limits, recalculation of selected points and calibration settings are described in
 [Benchmark 04 run options](#benchmark-04-run-options).
 
-### Hilbert-space time scaling:
+### Hilbert-Space Time Scaling
 
 ![Hilbert-space scaling](./Benchmarks/results/Benchmark_04_hilbert_space_scaling_calibrated_plot.png)
 
@@ -223,23 +268,32 @@ fixed step size on the GQIS equations).
 **Small systems.** While a solver's state vectors fit in GPU registers, GQIS calculations are tens to
 hundreds of times faster. For one qubit, GQIS(TSIT5) takes **0.084 s** against **42 s** for dynamiqs and
 **3.0 s** for DiffEqGPU; for 3 qubits, GQIS(LSERK4F) takes **2.0 s** against **271 s** and **98 s**.
-The first-call total times include preparation and differ less: **9.3 s** against **274 s** and
+The total times of the first call include preparation and differ less: **9.3 s** against **274 s** and
 **121 s** for 3 qubits.
 
 **Register spilling.** The jumps in the GQIS curves appear when a solver's state vectors no longer fit
 in GPU registers and spill to slower memory: earlier for TSIT5 (`Nph = 4`, 3 qubits), later for the
 low-storage LSERK4 and LSERK4F (`Nph = 6`, 4 qubits). LSERK4F stores one such vector fewer and is up to
-**2.2 times** faster than LSERK4 where spilling begins (`Nph = 7`). Once the registers are heavily
-overfilled, the two become close again: 1.3 times at `Nph = 10` and 1.1 times at 5 qubits.
+**2.2 times** faster than LSERK4 where spilling begins (`Nph = 7`). Once most of the state is
+spilled, the two become close again: 1.3 times at `Nph = 10` and 1.1 times at 5 qubits.
 
 **Large systems.** After spilling, the GQIS advantage decreases but remains. With the same integrator,
 GQIS(TSIT5) is about 2 times faster than DiffEqGPU (`Nph = 6` to `8`, 4 qubits). At 5 qubits GQIS(TSIT5A)
 takes **938 s** against **2358 s** for dynamiqs, while GQIS(LSERK4F) with fixed step size takes the same
 2358 s. At `Nph = 6` GQIS(LSERK4F) takes **34.7 s** against **624 s** for dynamiqs and **508 s** for
-DiffEqGPU. dynamiqs was measured up to `Nph = 6`. DiffEqGPU did not complete `Nph = 9` and 5 qubits,
-possibly because it ran out of GPU memory.
+DiffEqGPU. At `Nph = 10` GQIS(TSIT5A) takes **251 s** against **1370 s** for dynamiqs. DiffEqGPU did not complete `Nph = 9` and 5 qubits, possibly because it ran
+out of GPU memory.
 
 [Timing data (CSV)](./Benchmarks/results/Benchmark_04_hilbert_space_scaling_calibrated.csv) | [dynamiqs data (CSV)](./Benchmarks/results/Benchmark_04_hilbert_space_scaling_dynamiqs_calibrated.csv) | [Figure file (PNG)](./Benchmarks/results/Benchmark_04_hilbert_space_scaling_calibrated_plot.png)
+
+## Summary
+
+Compare maps with Benchmark 01/02 `diff`; choose accurate time grids with Benchmark 03;
+then use those grids in Benchmark 01/02 `full_benchmark`. Use Benchmark 04 to compare solvers as the
+Hilbert space grows, with every solver calibrated to the same accuracy. Replot the saved CSV when only figure
+formatting changes. Keep each result's settings with its CSV and figure so the calculation can be reproduced.
+
+The following sections describe plotting, saved settings, calibration files and timing details.
 
 ## Plot Saved CSV Data
 
@@ -255,7 +309,7 @@ On Windows, use [Plot_Benchmark_01.bat](Benchmarks/Plot_Benchmark_01.bat) for th
 or [Plot_Benchmark_02.bat](Benchmarks/Plot_Benchmark_02.bat) for the four-level figure.
 Each launcher selects its matching CSV and saves `Benchmark_01_full_benchmark_plot.png` or
 `Benchmark_02_full_benchmark_plot.png` beside the data. The launchers use stored measurements and
-estimates unchanged, keeping the figures consistent with the CSV-based speedup summaries.
+estimates unchanged, keeping the figures consistent with the speedup summaries from the CSV data.
 Set `GQIS_PYTHON` to select a Python environment with NumPy and Matplotlib installed.
 
 The equivalent command for Benchmark 01 is:
@@ -266,7 +320,7 @@ python Benchmarks/Benchmark_01_02_plot_from_csv.py --csv Benchmarks/results/Benc
 
 Use `--no-show` to save without opening a window, `--output` to choose another PNG path, or
 `--solvers gqis_rk4 julia_gpu_fp32_fopt qutip_cpu` to select curves. The batch launchers also forward
-these arguments. Figure styling continues to use the plot helper's `user_settings()`.
+these arguments. Figure style is set in the plot helper's `user_settings()`.
 
 Common settings are `csv_file`, `include_solvers` (empty selects all), `show_results_table`,
 `show_plot`, and `output_file`. With `output_file=None`, the figure is saved beside the CSV as
@@ -288,13 +342,6 @@ for alternative spacing and labels.
 model family. See [Benchmark 04 run options](#benchmark-04-run-options) for selecting curves and adding the
 dynamiqs results.
 
-## Summary
-
-Compare maps with Benchmark 01/02 `diff`; choose accurate time grids with Benchmark 03;
-then use those grids in Benchmark 01/02 `full_benchmark`. Use Benchmark 04 to compare solvers as the
-Hilbert space grows, with every solver calibrated to the same accuracy. Replot the saved CSV when only figure
-formatting changes. Keep each result's settings with its CSV and figure so the calculation can be reproduced.
-
 ## Reproducing Accuracy Figures
 
 The [Benchmark 03 preset details](Benchmarks/presets/Benchmark03_presets_details.md) describe
@@ -314,11 +361,11 @@ A preset is a starting configuration. The saved run's settings describe the actu
 use that export for an older result only if those settings still match the completed run.
 
 Enable `save_reference_map` on the first run and `load_reference_map` on later runs to reuse the
-reference. Keep the reference filename and physical/numerical settings consistent. Dense QuTiP runs
+reference. Keep the reference filename and the physical and numerical settings consistent. Dense QuTiP runs
 can take more than 12 hours. GQIS saves after each solver sweep; Julia and QuTiP save after each point,
 so completed portions can be plotted before the whole run finishes.
 
-See [Benchmark 03 results](#benchmark-03-results) for the three saved convergence figures and their CSV data.
+See [Benchmark 03](#benchmark-03-accuracy-and-convergence) for the three saved convergence figures and their CSV data.
 
 ## Calibration Files And Compatibility
 
@@ -366,7 +413,7 @@ Benchmark 03's settings and CSV schema retain divider names for compatibility. A
 `target_steps_per_period` is the meaningful resolution; the plots use steps per period by default.
 In Benchmark 03 and its plot helper, `time_grid_axis="divider"` restores the alternative axis.
 `divider_axis_scale="equidistant"` spaces tested grids evenly, and `divider_axis_labels="all"`
-labels every tested grid. These legacy-named controls also apply to the steps-per-period axis.
+labels every tested grid. These controls keep their legacy names and also apply to the axis of steps per period.
 
 ## Adding Measurements To A Scaling Plot
 
@@ -421,26 +468,26 @@ the curves and points shown, and `additional_csv_files` (`--add-csv`) adds the d
 
 **Julia:** the calculation timer encloses `solve(...)` and the following `CUDA.synchronize()`.
 The plotted calculation time therefore includes work inside the solve call, including any transfers
-performed by that interface. Symbolic preparation, Julia startup, warm-up, parameter setup and output
+performed by that interface. Symbolic preparation, Julia startup, warmup, parameter setup and output
 handling outside that interval contribute to preparation instead. The wrapper measures preparation
-as total wrapper/subprocess time minus solve time; each point launches a fresh Julia process.
+as the total time of the wrapper or subprocess minus the solve time; each point launches a fresh Julia process.
 All benchmarks print the Julia RHS from the same ODE that GQIS compiles (`compile_lindblad_rhs`,
 regenerated for each point) through [`Benchmarks/julia_diffeqgpu.py`](Benchmarks/julia_diffeqgpu.py),
 and compile the Julia kernel on a small batch before the timed solve.
 
-**GQIS:** scaling measurements use a warmed solve path. Benchmark 01 times its Python GPU wrapper;
+**GQIS:** scaling measurements are made after a warmup call, so compilation is not included. Benchmark 01 times its Python GPU wrapper;
 Benchmark 02 records wrapper total and the `mesolve_2D` call separately. The calibrated path times
-its GQIS wrapper. These measurements include host-side work and returned results, rather than only
+its GQIS wrapper. These measurements include CPU work and returned results, rather than only
 the CUDA kernel. The API's `gpu_kernel_s` is a separate, narrower timer.
 
 **CPU:** recorded times include the CPU solver workflow and its multiprocessing overhead.
-QuTiP's plotted time is not a GPU-kernel comparison.
+QuTiP's plotted time is not a comparison of GPU kernels.
 
-Scaling plots can add dotted total-time curves to the calculation-time curves with `show_startup_times=True`.
+Scaling plots can add dotted curves of total time to the curves of calculation time with `show_startup_times=True`.
 Julia uses recorded `prep_s`; missing values use the mean available preparation as an estimate.
-New GQIS runs record small-grid startup including a warm-up solve. Adding that startup to each
-measured calculation estimates first use; it is not a measured cold full-grid run.
-Older RHS-only metadata produces a `total time*` curve identified by a footnote.
+New GQIS runs record the startup on a small grid, including a warmup solve. Adding that startup to each
+measured calculation estimates first use; it is not a measured cold run on the full grid.
+Older metadata that records only the RHS stage produces a `total time*` curve identified by a footnote.
 No preparation curve is drawn when preparation data is absent.
 
 `preparation_overrides_s={"julia_gpu_fp32_fopt": seconds}` accepts a value recovered from a matching
@@ -455,13 +502,13 @@ Refining the time grid helps until other errors dominate. Both GQIS APIs support
 
 In the saved small two-level QuTiP comparison, GQIS at 2048 steps per period differs by roughly
 `3.1-4.4e-6` RMS and `3.5e-5` maximum. In the dense four-level sweep, GQIS at 2048 steps per period
-differs from the 4096-step-per-period GQIS RK4 reference by roughly `3-4e-7` RMS and `4-6e-6` maximum.
-The latter is agreement with a GQIS reference, not an independent absolute-error bound.
+differs from the GQIS RK4 reference with 4096 steps per period by roughly `3-4e-7` RMS and `4-6e-6` maximum.
+The latter is agreement with a GQIS reference, not an independent bound on the absolute error.
 These are model-specific observations, not universal FP32 accuracy limits.
 
-The tested stock Julia `GPUTsit5` showed FP32 time-accumulation drift in long driven calculations.
+The tested stock Julia `GPUTsit5` showed drift from accumulating time in FP32 in long driven calculations.
 Repeated addition of `dt` affected drive phase; finer steps did not always improve agreement.
-The experimental integer-step time reconstruction reduced this effect in the saved tests.
+The experimental reconstruction of time from the integer step index reduced this effect in the saved tests.
 Benchmark 03 and calibrated scaling retain all variants:
 
 | Benchmark name | Time and state arithmetic |
@@ -469,56 +516,4 @@ Benchmark 03 and calibrated scaling retain all variants:
 | `julia_gpu_fp32` | Stock FP32 time and state; drift observed in the tested long runs |
 | `julia_gpu_fp64` | FP64 time and state; slower on the reference GPU |
 | `julia_gpu_fp32_opt` | Modified FP64 time accumulator with FP32 stages/state |
-| `julia_gpu_fp32_fopt` | Modified integer-step reconstruction of FP32 time with FP32 state |
-
-## Reference Results
-
-Reference desktop system:
-
-- CPU: 11th Gen Intel Core i9-11900K at 3.50 gigahertz (GHz)
-- GPU: NVIDIA GeForce RTX 3080 with 10 gigabytes (GB) VRAM
-- precision: 32-bit floating point (FP32) for the GQIS scaling runs
-- workload: 10,240 RK4 steps per two-level simulation; 5,840 per four-level simulation
-
-The largest measured `32768 x 32768` grids contain 1.07 billion independent simulations.
-GQIS(RK4) completed them in about **1 min 38 s** for the two-level model and **5 min 4 s** for the four-level model.
-The corresponding QuTiP estimates are **126.20 days** and **248.67 days**;
-these largest-grid CPU values are extrapolated, not measured runs.
-
-The [Benchmark 01 scaling CSV](Benchmarks/results/Benchmark_01_full_benchmark.csv) includes the
-measured `2048 x 2048` QuTiP run imported from the
-[Benchmark 03 dense two-level sweep](<Benchmarks/results/Benchmark_03_two_level_accuracy_timestep_dense grid_sweep.csv>).
-The CSV records **12 h 9 min** as a measurement, so regenerating the scaling figure retains the point.
-Other measured timings and existing extrapolations are preserved. The larger-grid averages below
-use those stored extrapolations; they have not been refitted to the imported point.
-
-| Model and measurement | Grid | QuTiP CPU time | GQIS(RK4) calculation time | Measured speedup |
-| --- | --- | --- | --- | --- |
-| Two-level, Benchmark 03 measurement imported into scaling | `2048 x 2048` | 12 h 9 min | 0.36223 s | approximately 120,800 times |
-| Four-level | `256 x 256` | about 27 min 30 s | 0.023219 s | approximately 71,100 times |
-
-Displayed times are rounded to at most five significant digits; long durations use hours and
-minutes. Speedups are calculated from the unrounded recorded times. Each ratio compares measured
-QuTiP and GQIS times at the same parameter-grid size, excluding GQIS preparation.
-
-The two-level QuTiP run used 32 requested output intervals per driving period (1,280 over
-40 periods), with adaptive internal integration. The calibrated RK4 run used 256 integration
-steps per period (10,240 total).
-
-The four-level runs use 5,840 RK4 steps and 1,280 QuTiP output intervals over 40 periods.
-QuTiP extrapolations use the updated measurements through `256 x 256`.
-
-For the four grid sizes from `4096 x 4096` through `32768 x 32768`, arithmetic means of the
-point-by-point timing ratios are approximately **118,110× over QuTiP and 17.9× over Julia** for the two-level
-model, and **88,040× over QuTiP and 60.6× over Julia** for the four-level model.
-These ratios use the linked CSV calculation times for GQIS(RK4) and Julia's
-`julia_gpu_fp32_fopt` variant, versus QuTiP's CPU run times; preparation is not added to the GPU calculation times.
-Julia uses experimental integer-step FP32 time reconstruction in this comparison.
-QuTiP timings in this range, and Julia timings beyond its measured range, are extrapolated as marked in the CSV.
-
-The calibrated grids differ by solver. Per simulation, the two-level CSV records 10,240 RK4 steps,
-1,720 DOP853 steps, 4,080 Julia steps and 1,280 QuTiP output intervals. The four-level CSV records
-5,840 RK4 steps, 1,720 DOP853 steps, 5,840 Julia steps and 1,280 QuTiP output intervals.
-QuTiP's internal adaptive integration steps are distinct from these output intervals.
-
-
+| `julia_gpu_fp32_fopt` | FP32 time reconstructed from the integer step index, with FP32 state |

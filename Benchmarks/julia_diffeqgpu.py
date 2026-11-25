@@ -69,7 +69,7 @@ def julia_model(H, drive, col_ops, mean_op, sweep_symbols, *, const_values=None,
     ``H`` contains the placeholder symbol ``Drive``; ``drive`` is its expression of the sweep
     symbols and the time symbol ``t``. ``p[1]``, ``p[2]`` hold the two sweep values.
     ``average``: ``"after_warmup"`` integrates the real part of the observable from
-    ``p[3]`` (warm-up time) as one extra variable; ``"complex"`` integrates the real and imaginary
+    ``p[3]`` (warmup time) as one extra variable; ``"complex"`` integrates the real and imaginary
     parts from the start as two extra variables; ``None`` adds nothing. ``observe=True`` also
     prints ``observe(u, p, t)``, the real part of the observable of a state.
     """
@@ -151,7 +151,7 @@ def julia_map_script(model: JuliaModel, *, output_abs=False) -> str:
     Arguments: out_csv nx ny num_t dt eps_min eps_max A_min A_max warmup_steps t0 (see
     ``map_arguments``). Writes the ny x nx map to out_csv and prints ``JULIA_SOLVE_TIME``; the
     kernel is compiled on a small batch first, outside the timed solve. The map is the average of
-    the observable after the warm-up (``average="after_warmup"``) or the final observable
+    the observable after the warmup (``average="after_warmup"``) or the final observable
     (``average=None``, ``observe=True``); ``output_abs`` takes its absolute value.
     """
     integer_step = model.precision == "fp32_integer_step"

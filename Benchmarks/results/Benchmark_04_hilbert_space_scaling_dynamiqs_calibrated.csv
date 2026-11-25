@@ -1,4 +1,4 @@
-# timestamp_local,2026-11-24T17:36:16
+# timestamp_local,2026-11-25T20:07:19
 # gpu,NVIDIA GeForce RTX 3080
 # python,3.12.3
 # numpy,2.5.5
@@ -26,6 +26,10 @@ qubit_resonator,3,6,35,dynamiqs_tsit5,167.2658,12.98559,180.2513,3.138807,1521.1
 qubit_resonator,4,8,63,dynamiqs_tsit5,269.7079,7.132048,276.8399,3.244726,1496.422,37.41054,measured,calibrated at Nph=2; accuracy=0.000177828; max steps 3536,900,2026-11-18T22:14:17
 qubit_resonator,5,10,99,dynamiqs_tsit5,474.4064,5.326744,479.7332,3.272052,1479.991,36.99978,measured,calibrated at Nph=2; accuracy=0.000177828; max steps 3516,900,2026-11-19T18:46:23
 qubit_resonator,6,12,143,dynamiqs_tsit5,593.6369,30.63413,624.2711,3.367202,1467.733,36.69333,measured,calibrated at Nph=2; accuracy=0.000177828; max steps 3494,900,2026-11-20T07:39:48
+qubit_resonator,7,14,195,dynamiqs_tsit5,796.496,36.57882,833.0749,3.209878,1457.849,36.44622,measured,calibrated at Nph=2; accuracy=0.000177828; max steps 3472,3600,2026-11-25T19:26:18
+qubit_resonator,8,16,255,dynamiqs_tsit5,1026.898,28.64877,1055.546,3.321333,1449.437,36.23593,measured,calibrated at Nph=2; accuracy=0.000177828; max steps 3456,3600,2026-11-25T19:42:44
+qubit_resonator,9,18,323,dynamiqs_tsit5,1228.684,32.02584,1260.71,3.263665,1442.002,36.05004,measured,calibrated at Nph=2; accuracy=0.000177828; max steps 3439,3600,2026-11-25T20:02:14
+qubit_resonator,10,20,399,dynamiqs_tsit5,1370.182,33.25916,1403.441,3.042272,1435.231,35.88078,measured,calibrated at Nph=2; accuracy=0.000177828; max steps 3417,3600,2026-11-25T20:29:31
 multi_qubit,1,2,3,dynamiqs_rouchon3,,,,,0,,timeout,stopped after 900 s,900,2026-11-18T22:44:45
 multi_qubit,1,2,3,dynamiqs_tsit5,42.3593,7.130595,49.4899,1.603227,1878.306,46.95766,measured,tolerance calibrated here (not timed); accuracy=3.16228e-05; max steps 3611,900,2026-11-20T14:37:04
 multi_qubit,2,4,15,dynamiqs_tsit5,82.08744,11.75104,93.83848,2.862142,1663.78,41.59449,measured,calibrated at qubits=1; accuracy=3.16228e-05; max steps 3114,900,2026-11-20T06:57:21
