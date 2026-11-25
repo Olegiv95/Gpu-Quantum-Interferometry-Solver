@@ -400,22 +400,22 @@ Start with the [64×64 Benchmark 03 preset](https://github.com/Olegiv95/Gpu-Quan
 [Reproducing accuracy figures](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md#reproducing-accuracy-figures) explains launching presets,
 reusing references and rebuilding plots from saved CSV files.
 
-[Benchmark 04](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md#benchmark-04-hilbert-space-scaling)
-shows how the time grows with the Hilbert-space dimension, for a qubit-resonator model with up to 10 photon
-states and for up to 5 coupled qubits, on a `1024 x 1024` grid. Every solver is calibrated to the same accuracy
-of the resulting interferogram. GQIS is compared with dynamiqs (Tsit5 with adaptive step size) and Julia
-DiffEqGPU (Tsit5 with fixed step size) through the same integrators, GQIS(TSIT5A) and GQIS(TSIT5).
-
 <p align="center"><strong>Hilbert-space scaling at equal accuracy</strong></p>
 <p align="center">
   <a href="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Benchmarks/results/Benchmark_04_hilbert_space_scaling_summary_plot.png">
     <img src="https://raw.githubusercontent.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/main/Benchmarks/results/Benchmark_04_hilbert_space_scaling_summary_plot.png" alt="Calculation time versus Hilbert-space dimension" width="900">
   </a>
 </p>
-<p align="center"><em>Solid curves show the calculation time, dotted curves the first-call total time. While the
-solver state fits in GPU registers, GQIS calculations are tens to hundreds of times faster. The jumps in the GQIS
-curves appear where the state spills from the registers to slower memory; the advantage then decreases to a few
-times. The low-storage LSERK4F delays this spilling.</em></p>
+
+[Benchmark 04](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md#benchmark-04-hilbert-space-scaling)
+shows how the time grows with the Hilbert-space dimension, for a qubit-resonator model with up to 10 photon
+states and for up to 5 coupled qubits, on a `1024 x 1024` grid. Every solver is calibrated to the same accuracy
+of the resulting interferogram. GQIS is compared with dynamiqs (Tsit5 with adaptive step size) and Julia
+DiffEqGPU (Tsit5 with fixed step size) through the same integrators, GQIS(TSIT5A) and GQIS(TSIT5).
+While the solver state fits in GPU registers (typically up to Hilbert-space dimension 6-10), GQIS calculations
+are tens to hundreds of times faster. The jumps in the
+GQIS curves appear where the state spills from the registers to slower memory; the advantage then decreases to a
+few times. The low-storage LSERK4F delays this spilling.
 
 Benchmarks involving QuTiP, CPU ODE solvers, or Julia can take substantial time to run.
 
