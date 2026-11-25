@@ -253,49 +253,182 @@ def print_cuda_report() -> bool:
         return False
 
 
-def run_installation_test() -> bool:
-    """Run a tiny two-level GPU solve to verify NVRTC/kernel execution."""
+def _stage(number: int, total: int, title: str, check) -> bool:
+    """Run one self-test stage; ``check`` returns (passed, detail) or raises."""
+    import time
+
+    start = time.perf_counter()
     try:
-        import numpy as np
-        import sympy as sp
-
-        from gqis import mesolve_2D
-
-        N = 2
-        Delta, eps, Drive = sp.symbols("Delta eps Drive", real=True)
-        A, t = sp.symbols("A t", real=True)
-        gamma1_s, gamma2_s = sp.symbols("gamma1_s gamma2_s", real=True, nonnegative=True)
-
-        sz = sp.Matrix([[1, 0], [0, -1]])
-        sm = sp.Matrix([[0, 1], [0, 0]])
-        sx = sp.Matrix([[0, 1], [1, 0]])
-        mean_op = sp.zeros(N)
-        mean_op[1, 1] = 1
-
-        H = 0.5 * Delta * sx + 0.5 * Drive * sz
-        drive_expr = eps + A * sp.sin(1.14 * t)
-        col_ops = [sp.sqrt(gamma1_s) * sm, sp.sqrt(gamma2_s) * sz]
-
-        eps_list = np.linspace(-0.5, 0.5, 4, dtype=np.float32)
-        A_list = np.linspace(0.0, 0.5, 4, dtype=np.float32)
-        tlist = np.linspace(0.0, 2.0, 32, dtype=np.float32)
-
-        out = mesolve_2D(H, drive_expr, col_ops, mean_op, tlist,
-                         var_arrays={eps: eps_list, A: A_list},
-                         const_values={Delta: 1.0, gamma1_s: 0.01, gamma2_s: 0.01},
-                         timings=True)
-        arr = np.asarray(out)
-        if arr.shape != (len(eps_list), len(A_list)):
-            print(f"Installation test: FAILED unexpected shape {arr.shape}")
-            return False
-        if not np.all(np.isfinite(arr)):
-            print("Installation test: FAILED non-finite output")
-            return False
-        print(f"Installation test: PASS shape={arr.shape}")
-        return True
+        passed, detail = check()
     except Exception as exc:
-        print(f"Installation test: FAILED ({type(exc).__name__}: {exc})")
-        return False
+        passed, detail = False, f"{type(exc).__name__}: {exc}"
+    seconds = time.perf_counter() - start
+    print(f"  [{number}/{total}] {title:<46s} {'PASS' if passed else 'FAIL'}  ({detail}; {seconds:.2f} s)",
+          flush=True)
+    return passed
+
+
+def run_installation_test() -> bool:
+    """Check every GQIS stage with small problems that have exact answers."""
+    import numpy as np
+    import sympy as sp
+
+    from gqis import compile_lindblad_rhs, mesolve_2D, odesolve_2D
+
+    sx = sp.Matrix([[0, 1], [1, 0]])
+    excited = sp.diag(0, 1)
+    A, Drive, gamma, dummy = sp.symbols("A Drive gamma dummy", real=True)
+    one_point = {dummy: np.zeros(1, dtype=np.float32)}
+    rabi = (Drive / 2 * sx, A, [], excited)  # Rabi rotation; initial state is level 0
+
+    def symbolic_ode():
+        rhs = compile_lindblad_rhs(*rabi, [A, dummy])
+        # At rho = |0><0|, d rho/dt = -i[(A/2) sigma_x, rho] has Im(rho_01)' = A/2, the rest 0.
+        at_ground = dict(zip(rhs.state_symbols, (1, 0, 0)))
+        drive = rhs.drive_map[Drive] if isinstance(rhs.drive_map, dict) else rhs.drive_map
+        values = [float(e.subs(Drive, drive).subs({**at_ground, sp.Symbol("ParX", real=True): 2.0}))
+                  for e in rhs.equations]
+        error = float(np.max(np.abs(np.array(values) - [0.0, 0.0, 1.0])))
+        return (rhs.state_size == 3 and error < 1e-12,
+                f"{len(rhs.equations)} real equations, RHS error {error:.0e}")
+
+    def code_generation():
+        from gqis.solver import _emit_cuda_rhs
+
+        fragments, _, _ = _emit_cuda_rhs(compile_lindblad_rhs(*rabi, [A, dummy]), False, reuse=False)
+        lines = [line for line in fragments["drho_lines"] if "d_rho[" in line]
+        return len(lines) == 3, f"{len(lines)} CUDA RHS lines"
+
+    def gpu_solve():
+        amplitudes = np.array([1.0, 2.0], dtype=np.float32)
+        tlist = np.linspace(0.0, np.pi, 257, dtype=np.float32)
+        result, info = mesolve_2D(*rabi, tlist, var_arrays={A: amplitudes, **one_point},
+                                  output_mode="final", return_timing_info=True)
+        exact = np.sin(amplitudes * np.pi / 2) ** 2  # P(excited) = 1 and 0
+        error = float(np.max(np.abs(np.real(result[:, 0]) - exact)))
+        return error < 1e-4, (f"Rabi P = sin^2(A t/2), error {error:.1e}; kernel build "
+                              f"{info['kernel_build_s']:.2f} s, GPU {info['gpu_kernel_s'] * 1e3:.1f} ms")
+
+    def dissipation():
+        rates = np.array([0.5, 2.0], dtype=np.float32)
+        tlist = np.linspace(0.0, 1.0, 129, dtype=np.float32)
+        pump = sp.sqrt(gamma) * sp.Matrix([[0, 0], [1, 0]])
+        result = mesolve_2D(sp.zeros(2), 0, [pump], excited, tlist,
+                            var_arrays={gamma: rates, **one_point}, output_mode="final")
+        error = float(np.max(np.abs(np.real(result[:, 0]) - (1 - np.exp(-rates)))))
+        return error < 1e-5, f"P = 1 - exp(-gamma t), error {error:.1e}"
+
+    def ode_api():
+        x, v, w = sp.symbols("x v w", real=True)
+        frequencies = np.array([1.0, 2.0], dtype=np.float32)
+        result = odesolve_2D([v, -w**2 * x], [x, v], [1, 0], np.linspace(0, 2, 257),
+                             var_arrays={w: frequencies})
+        error = float(np.max(np.abs(result[:, 0, 0] - np.cos(2 * frequencies))))
+        return error < 1e-5, f"harmonic oscillator x = cos(w t), error {error:.1e}"
+
+    def calibration():
+        tlist = np.linspace(0.0, np.pi, 5, dtype=np.float32)  # deliberately too coarse
+        result, info = mesolve_2D(*rabi, tlist, var_arrays={A: np.array([1.0], np.float32), **one_point},
+                                  output_mode="final", calibrate_timesteps=True,
+                                  return_timing_info=True)
+        steps = info["timestep_calibration"]["steps"]
+        error = abs(float(np.real(result[0, 0])) - 1.0)
+        return steps > 4 and error < 1e-2, f"4 -> {steps} steps, error {error:.1e}"
+
+    stages = [("Symbolic ODE (Lindblad -> real equations)", symbolic_ode),
+              ("CUDA code generation", code_generation),
+              ("Kernel compilation and GPU solve", gpu_solve),
+              ("Lindblad dissipation", dissipation),
+              ("ODE API (odesolve_2D)", ode_api),
+              ("Automatic time-step calibration", calibration)]
+    print("GQIS self-test (exact answers for small problems):", flush=True)
+    passed = sum(_stage(i + 1, len(stages), title, check) for i, (title, check) in enumerate(stages))
+    print(f"Installation test: {'PASS' if passed == len(stages) else 'FAILED'} "
+          f"({passed}/{len(stages)} stages)")
+    return passed == len(stages)
+
+
+_BENCHMARK_BACKENDS = {
+    "QuTiP": "Benchmarks 01 and 02 (qutip_cpu) and Benchmark 03 (QuTiP reference)",
+    "Julia DiffEqGPU": "Benchmarks 01-04 (julia_gpu_* solvers)",
+    "dynamiqs": "Benchmark 04 dynamiqs comparison (GPU only on Linux or WSL)",
+}
+
+
+def run_benchmarks_test(julia_timeout: float = 900.0) -> int:
+    """Try each optional benchmark backend on a problem with an exact answer; returns the count
+    that work. A missing backend only disables the benchmarks that use it."""
+    import time
+
+    import numpy as np
+
+    def qutip_check():
+        import qutip
+
+        rates = 1.0
+        result = qutip.mesolve(qutip.qzero(2), qutip.basis(2, 0) * qutip.basis(2, 0).dag(),
+                               np.linspace(0, 1, 11),
+                               c_ops=[np.sqrt(rates) * qutip.basis(2, 1) * qutip.basis(2, 0).dag()],
+                               e_ops=[qutip.basis(2, 1) * qutip.basis(2, 1).dag()])
+        error = abs(float(np.real(result.expect[0][-1])) - (1 - np.exp(-1.0)))
+        return error < 1e-6, f"QuTiP {qutip.__version__}, decay error {error:.1e}"
+
+    def dynamiqs_check():
+        if os.name == "nt":  # JAX has no CUDA build for native Windows
+            return False, "dynamiqs runs on the GPU only on Linux or WSL; run this check and Benchmark 04's dynamiqs comparison there"
+        import dynamiqs as dq
+        import jax
+        import jax.numpy as jnp
+
+        gpus = [d for d in jax.devices() if d.platform == "gpu"]
+        jump = jnp.array([[0.0, 0.0], [1.0, 0.0]])
+        result = dq.mesolve(jnp.zeros((2, 2)), [jump], dq.basis_dm(2, 0), jnp.linspace(0, 1, 11),
+                            exp_ops=[dq.basis_dm(2, 1)])
+        error = abs(float(jnp.real(result.expects[0, -1])) - (1 - np.exp(-1.0)))
+        where = "GPU" if gpus else "CPU only (no JAX GPU)"
+        return error < 1e-4 and bool(gpus), f"dynamiqs {dq.__version__} on {where}, decay error {error:.1e}"
+
+    def julia_check():
+        julia = shutil.which("julia")
+        if julia is None:
+            return False, "julia not found in PATH"
+        script = ("using DifferentialEquations, DiffEqGPU, CUDA, StaticArrays\n"
+                  "f(u, p, t) = @SVector [-p[1] * u[1]]\n"
+                  "prob = ODEProblem{false}(f, @SVector[1.0f0], (0.0f0, 1.0f0), @SVector[1.0f0])\n"
+                  "ep = EnsembleProblem(prob; prob_func=(pr, i, r) -> remake(pr; p=@SVector[Float32(i)]),"
+                  " safetycopy=false)\n"
+                  "sol = solve(ep, GPUTsit5(), DiffEqGPU.EnsembleGPUKernel(CUDA.CUDABackend());"
+                  # dt = 1/64 is exact in FP32, so the stock time accumulation ends exactly at t = 1.
+                  " trajectories=4, adaptive=false, dt=0.015625f0, save_everystep=false)\n"
+                  "err = maximum(abs(sol[i][end][1] - exp(-Float32(i))) for i in 1:4)\n"
+                  'println("ERROR=", err)\n')
+        proc = subprocess.run([julia, "--startup-file=no", "-e", script], capture_output=True,
+                              text=True, timeout=julia_timeout, check=False)
+        match = re.search(r"ERROR=([0-9.eE+-]+)", proc.stdout)
+        if proc.returncode != 0 or not match:
+            tail = (proc.stdout + proc.stderr).strip().splitlines()[-1:] or ["no output"]
+            return False, f"Julia exit code {proc.returncode}: {tail[0][:120]}"
+        error = float(match.group(1))
+        return error < 1e-5, f"GPUTsit5 on the GPU, decay error {error:.1e}"
+
+    checks = {"QuTiP": qutip_check, "Julia DiffEqGPU": julia_check, "dynamiqs": dynamiqs_check}
+    print("Optional benchmark backends (exact decay e^(-t) solved by each):", flush=True)
+    available = 0
+    for name, check in checks.items():
+        start = time.perf_counter()
+        try:
+            passed, detail = check()
+        except subprocess.TimeoutExpired:
+            passed, detail = False, f"timed out after {julia_timeout:g} s"
+        except Exception as exc:
+            passed, detail = False, f"{type(exc).__name__}: {str(exc)[:120]}"
+        available += passed
+        seconds = time.perf_counter() - start
+        print(f"  {name:<16s} {'PASS' if passed else 'WARNING'}  ({detail}; {seconds:.1f} s)", flush=True)
+        if not passed:
+            print(f"  {'':<16s} needed only for {_BENCHMARK_BACKENDS[name]}")
+    print(f"Benchmark backends: {available}/{len(checks)} available (optional)")
+    return available
 
 
 def run_bounded_installation_test(timeout: float) -> bool:
@@ -332,6 +465,9 @@ def main() -> int:
                         help=argparse.SUPPRESS)
     parser.add_argument("--check-julia-packages", action="store_true",
                         help="import optional Julia benchmark packages")
+    parser.add_argument("--installation-benchmarks-test", action="store_true",
+                        help="also test the optional benchmark backends (QuTiP, Julia DiffEqGPU, "
+                             "dynamiqs); the first Julia run can take several minutes")
     args = parser.parse_args()
 
     if args.installation_test_worker:
@@ -344,6 +480,8 @@ def main() -> int:
     cuda_ok = print_cuda_report()
     installation_ok = (run_bounded_installation_test(args.installation_test_timeout)
                        if args.installation_test else True)
+    if args.installation_benchmarks_test:
+        run_benchmarks_test()  # optional backends: warnings only, never a failed check
 
     passed = packages_ok and cuda_ok and installation_ok
     if passed:

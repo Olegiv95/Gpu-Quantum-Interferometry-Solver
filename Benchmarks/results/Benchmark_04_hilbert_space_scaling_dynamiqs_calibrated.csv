@@ -1,0 +1,34 @@
+# timestamp_local,2026-11-24T17:36:16
+# gpu,NVIDIA GeForce RTX 3080
+# python,3.12.3
+# numpy,2.5.5
+# jax,0.12.0.1
+# dynamiqs,0.3.7
+# precision,fp32
+# qubit_resonator physics,"{""A_max/w"": 27.8315904255, ""Ap"": 2e-05, ""Delta"": 1.0, ""eps_max/w"": 22.74020028, ""g1"": 0.03279650630894309, ""gamma1"": 0.002, ""gammaph"": 0.0, ""kappa"": 0.005, ""w/Delta"": 0.0923105326317733, ""wq1"": 5.416499999999999, ""wr2"": 7.6767}"
+# multi_qubit topology,chain
+# multi_qubit drive,single
+# multi_qubit physics,"{""A_max/w"": 10.0, ""Delta"": 1.0, ""J/Delta"": 0.1, ""eps_max/w"": 10.0, ""gamma1_per_T"": 0.05, ""gamma_phi_per_T"": 0.04, ""gap_step"": 0.05, ""w/Delta"": 1.14}"
+# nx,1024
+# ny,1024
+# simulation_periods,40
+# calibrate_timesteps,"{""bisection_steps"": 2, ""max_atol"": 0.01, ""min_tol"": 1e-08, ""rms_atol"": 0.001, ""sample_stride"": 8, ""start_steps_per_period"": 32, ""start_tol"": 0.01}"
+# tsave_per_period,32
+# layout,dia
+# matmul_precision,highest
+# solvers,dynamiqs_tsit5
+# point_time_limit_s,3600
+
+system,size,hilbert_dim,ode_variables,solver,calc_s,prep_s,total_s,rhs_stage_s,steps_per_trajectory,steps_per_period,status,note,time_limit_s,measured_at
+qubit_resonator,2,4,15,dynamiqs_rouchon3,,,,,0,,timeout,stopped after 900 s,900,2026-11-18T21:59:37
+qubit_resonator,2,4,15,dynamiqs_tsit5,89.9679,13.88764,103.8555,3.213711,1565.63,39.14075,measured,tolerance calibrated here (not timed); accuracy=0.000177828; max steps 3631,900,2026-11-20T14:35:33
+qubit_resonator,3,6,35,dynamiqs_tsit5,167.2658,12.98559,180.2513,3.138807,1521.163,38.02908,measured,calibrated at Nph=2; accuracy=0.000177828; max steps 3571,900,2026-11-20T06:54:22
+qubit_resonator,4,8,63,dynamiqs_tsit5,269.7079,7.132048,276.8399,3.244726,1496.422,37.41054,measured,calibrated at Nph=2; accuracy=0.000177828; max steps 3536,900,2026-11-18T22:14:17
+qubit_resonator,5,10,99,dynamiqs_tsit5,474.4064,5.326744,479.7332,3.272052,1479.991,36.99978,measured,calibrated at Nph=2; accuracy=0.000177828; max steps 3516,900,2026-11-19T18:46:23
+qubit_resonator,6,12,143,dynamiqs_tsit5,593.6369,30.63413,624.2711,3.367202,1467.733,36.69333,measured,calibrated at Nph=2; accuracy=0.000177828; max steps 3494,900,2026-11-20T07:39:48
+multi_qubit,1,2,3,dynamiqs_rouchon3,,,,,0,,timeout,stopped after 900 s,900,2026-11-18T22:44:45
+multi_qubit,1,2,3,dynamiqs_tsit5,42.3593,7.130595,49.4899,1.603227,1878.306,46.95766,measured,tolerance calibrated here (not timed); accuracy=3.16228e-05; max steps 3611,900,2026-11-20T14:37:04
+multi_qubit,2,4,15,dynamiqs_tsit5,82.08744,11.75104,93.83848,2.862142,1663.78,41.59449,measured,calibrated at qubits=1; accuracy=3.16228e-05; max steps 3114,900,2026-11-20T06:57:21
+multi_qubit,3,8,63,dynamiqs_tsit5,270.5314,3.256475,273.7878,3.943877,1501.834,37.54586,measured,calibrated at qubits=1; accuracy=3.16228e-05; max steps 2671,900,2026-11-18T22:56:17
+multi_qubit,4,16,255,dynamiqs_tsit5,776.5033,13.70815,790.2115,4.599681,1443.555,36.08887,measured,calibrated at qubits=1; accuracy=3.16228e-05; max steps 2376,900,2026-11-19T19:12:12
+multi_qubit,5,32,1023,dynamiqs_tsit5,2325.574,32.25484,2357.829,6.082714,1514.43,37.86074,measured,calibrated at qubits=1; accuracy=3.16228e-05; max steps 2357,3600,2026-11-24T18:15:43

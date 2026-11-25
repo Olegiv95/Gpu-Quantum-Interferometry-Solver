@@ -135,7 +135,8 @@ def frame_params(animated_parameter, value, base, wq1):
 
 
 def gpu_time_evolution(A_list, eps_list, tlist, model, params, output_mode, animated_parameter, *,
-                       RHSreuse=True, averaging_skip_fraction=0.0, timings=False, fp64=False):
+                       RHSreuse=True, averaging_skip_fraction=0.0, timings=False, fp64=False,
+                       calibrate_timesteps=None, solver="rk4"):
     """Run one 2D GPU sweep for the four-level model."""
     # Values in const_values either get folded into the generated RHS or, for
     # selected sweep modes below, remain runtime constants so animation frames do
@@ -176,7 +177,9 @@ def gpu_time_evolution(A_list, eps_list, tlist, model, params, output_mode, anim
                         var_arrays={model["eps_sym"]: eps_list, model["A_sym"]: A_list},
                         const_values=const_values, RHSreuse=RHSreuse, runtime_consts=runtime_consts,
                         keep_symbolic_consts=keep_syms if keep_syms else None, output_mode="mean",
-                        warmup_time=averaging_skip_fraction, timings=timings, fp64=fp64)
+                        warmup_time=averaging_skip_fraction, timings=timings, fp64=fp64,
+                        solver=solver, solver_frequency=float(params["w"]),  # solver_frequency: used by anas5 only
+                        calibrate_timesteps=calibrate_timesteps)  # None uses tlist as given.
     return np.abs(np.real(np.asarray(result))).T
 
 
@@ -272,12 +275,13 @@ def main() -> None:
     map0 = gpu_time_evolution(A_list, eps_list, tlist0, model, params0, output_mode,
                               animated_parameter, RHSreuse=True,
                               averaging_skip_fraction=averaging_skip_fraction, timings=False,
-                              fp64=False)
+                              fp64=False, calibrate_timesteps=settings["calibrate_timesteps"],
+                              solver=settings["solver"])
     print(f"Initial frame calculation time: {time.time() - initial_frame_start:.2f}s")
 
     if output_mode == "response":
         img0 = 10.0 * np.log10(np.clip(map0, 1.0e-30, None))
-        cbar_label = r"$|S_{21}|\ (\mathrm{dB})$"
+        cbar_label = r"$|\mathrm{Re}\,\overline{\langle a \rangle}|$ (dB)"
     else:
         img0 = map0
         cbar_label = "Qubit population"
@@ -306,7 +310,8 @@ def main() -> None:
         map_lin = gpu_time_evolution(A_list, eps_list, tlist, model, params, output_mode,
                                      animated_parameter, RHSreuse=True,
                                      averaging_skip_fraction=averaging_skip_fraction,
-                                     timings=False, fp64=False)
+                                     timings=False, fp64=False,
+                                     calibrate_timesteps=settings["calibrate_timesteps"], solver=settings["solver"])
 
         if output_mode == "response":
             img_data = 10.0 * np.log10(np.clip(map_lin, 1.0e-30, None))
@@ -385,9 +390,14 @@ def user_settings() -> dict:
         "output_mode": "response",  # "response" or "qubit_population"
         "playback_mode": "pingpong",  # "forward" or "pingpong"
         # Increase if mesolve_2D reports non-finite output.
-        "solver_steps_per_period": 250,
+        "solver_steps_per_period": 256,
+        "solver": "rk4",  # "rk4", "lserk4", "lserk4f", "dp5", "tsit5", "anas5", "ab5", "alshina6", "dop853", "tsit5a".
+        "calibrate_timesteps": None,  # None: uses solver_steps_per_period; remove # below for automatic time steps.
+        # "calibrate_timesteps": dict(rms_atol=1e-3, max_atol=1e-2, sample_stride=8),
+        # rms_atol / max_atol: allowed RMS / maximum error of the resulting values all over the map.
+        # sample_stride: test grid subsampling coefficient.
         "grid_size": 512,  # square grid side per animation frame
-        "save_mp4": True,  # False shows interactive animation only
+        "save_mp4": False,  # False shows interactive animation only
         # Relative filenames are saved in Examples/results/.
         "video_filename": "Example_04_four_level_animation.mp4",
         "video_fps": 5,  # playback rate, not the number of calculated frames

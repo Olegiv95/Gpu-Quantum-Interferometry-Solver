@@ -256,7 +256,9 @@ def run_gpu_gate_map(settings: dict, *, regime: str | None = None,
     solver_start = time.perf_counter()
     final_rho = mesolve_2D(H, drive_expr, collapse_ops, mean_operator, tlist, var_arrays=None,
                            rho0_var_arrays={theta: theta_list, phi: phi_list}, rho0=rho0,
-                           output_mode="final_rho", timings=bool(settings["timings"]))
+                           output_mode="final_rho", timings=bool(settings["timings"]),
+                           solver=settings["solver"],
+                           calibrate_timesteps=settings["calibrate_timesteps"])  # None uses tlist as given.
     solver_elapsed = time.perf_counter() - solver_start
     error, avg_fidelity, avg_error = compute_error_map(final_rho, theta_list, phi_list, plan)
     return {
@@ -390,6 +392,11 @@ def user_settings() -> dict:
         # Fixed integration intervals; the generated tlist has solver_steps + 1 samples.
         # Increase if non-finite output or poor convergence appears.
         "solver_steps": 1200,
+        "solver": "rk4",  # "rk4", "lserk4", "lserk4f", "dp5", "tsit5", "anas5", "ab5", "alshina6", "dop853", "tsit5a".
+        "calibrate_timesteps": None,  # None: uses solver_steps; remove # below for automatic time steps.
+        # "calibrate_timesteps": dict(rms_atol=1e-3, max_atol=1e-2, sample_stride=8),
+        # rms_atol / max_atol: allowed RMS / maximum error of the resulting values all over the map.
+        # sample_stride: test grid subsampling coefficient.
         # Rabi settings.
         "omega": 1.0,  # Rabi angular frequency
         "gaussian_duration_factor": 4.0,

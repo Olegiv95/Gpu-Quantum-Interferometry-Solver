@@ -31,6 +31,10 @@ the GPU, and `t_in` supplies the next block's absolute starting time. GPU raster
 only the compact display image to Matplotlib. See [GPU continuation](../GQIS_API.md#continuing-on-the-gpu)
 for the corresponding API calls.
 
+The optional `calibrate_timesteps` line chooses the time step automatically. Because one frame is too short
+to test, the example first simulates `calibration_periods` drive periods once to choose the step, and all
+frames then reuse it. See [automatic time-step calibration](../GQIS_API.md#automatic-time-step-calibration).
+
 ## Read The Timings
 
 Console timings distinguish the ODE kernel, the whole solve call, and raster/copy work.

@@ -23,16 +23,20 @@ def save_map_csv(filename, eps_axis, A_axis, linear_values, db_values):
     """Save Origin-friendly XYZ data without creating another full-size grid."""
     path = example_output_path(filename)
     with path.open("w", encoding="utf-8", newline="") as output:
-        output.write("epsilon_over_Delta,A_over_Delta,response_linear,response_dB\n")
+        if db_values is None:  # probability output has no dB column
+            output.write("epsilon_over_Delta,A_over_Delta,qubit_occupation\n")
+            db_values = [None] * len(A_axis)
+        else:
+            output.write("epsilon_over_Delta,A_over_Delta,response_linear,response_dB\n")
         for A_value, linear_row, db_row in zip(A_axis, linear_values, db_values):
-            data = np.column_stack((eps_axis, np.full(eps_axis.size, A_value),
-                                    linear_row, db_row))
+            columns = [eps_axis, np.full(eps_axis.size, A_value), linear_row]
+            data = np.column_stack(columns if db_row is None else columns + [db_row])
             np.savetxt(output, data, delimiter=",", fmt="%.9g")
     print(f"Saved numerical data: {path}")
 
 
 def gpu_time_evolution(A_list, eps_list, tlist, delta, w, gamma1, gamma2, kappa, Ap, g1, wr2,
-                       averaging_skip_fraction=0.0):
+                       averaging_skip_fraction=0.0, output_mode="quadrature", calibrate_timesteps=None, solver="rk4"):
     """Build symbolic model and run GPU solver for one interferogram."""
     # Convert all numerical grids to single precision. The default GPU kernel is
     # FP32 for maximum performance of consumer GPU,
@@ -85,7 +89,11 @@ def gpu_time_evolution(A_list, eps_list, tlist, delta, w, gamma1, gamma2, kappa,
     # The solver time-averages Tr(mean_operator*rho). The skip fraction excludes
     # an initial fraction of time to suppress dependence on the initial state.
     # Here the returned expectation value is <a>.
-    mean_operator = a1
+    if output_mode not in {"quadrature", "probability"}:
+        raise ValueError("output_mode must be 'quadrature' or 'probability'.")
+    p0 = sp.zeros(N)
+    p0[0, 0] = 1  # projector onto the selected qubit basis state |0>, as in Example 04
+    mean_operator = p0 if output_mode == "probability" else a1
 
     # GPU solve ----------------------------------------------------------
     # The leading arguments are the Hamiltonian, explicit drive, collapse
@@ -95,10 +103,14 @@ def gpu_time_evolution(A_list, eps_list, tlist, delta, w, gamma1, gamma2, kappa,
                          var_arrays={eps: eps_list, A: A_list},
                          timings=False,  # True prints RHS/codegen/kernel timing breakdown.
                          # Initial fraction of time excluded from the time average.
-                         warmup_time=averaging_skip_fraction)
+                         warmup_time=averaging_skip_fraction,
+                         solver=solver, solver_frequency=float(w),  # solver_frequency: used by anas5 only
+                         calibrate_timesteps=calibrate_timesteps)  # None uses tlist as given.
 
     results_np = np.asarray(results)
-    return np.abs(np.real(results_np)).T  # transpose so rows=A and columns=eps for imshow
+    if output_mode == "probability":
+        return np.real(results_np).T
+    return np.abs(np.real(results_np)).T  # rows=A and columns=eps for imshow
 
 
 def main() -> None:
@@ -159,21 +171,28 @@ def main() -> None:
     gpu_start = time.time()
     p_mat = gpu_time_evolution(A_list, eps_list, tlist, delta_abs, w, gamma1, gamma2, kappa,
                                Ap_abs, g1_abs, wr2,
-                               averaging_skip_fraction=averaging_skip_fraction)
+                               averaging_skip_fraction=averaging_skip_fraction,
+                               output_mode=settings["output_mode"],
+                               calibrate_timesteps=settings["calibrate_timesteps"], solver=settings["solver"])
     print(f"GPU solve time: {time.time() - gpu_start:.2f}s")
 
     # 6) Plot interferogram map -------------------------------------------
     # Convert the response to dB for display and plot A vertically, eps horizontally.
-    map_db = 10.0 * np.log10(np.clip(p_mat, 1e-15, None))
+    probability = settings["output_mode"] == "probability"
+    map_db = None if probability else 10.0 * np.log10(np.clip(p_mat, 1e-15, None))
 
     if settings["save_data"]:
-        save_map_csv(settings["data_filename"], eps_list / wq1, A_list / wq1,
-                     p_mat, map_db)
+        filename = settings["data_filename"]
+        if probability:
+            name = Path(filename)
+            filename = name.with_name(name.stem + "_probability" + name.suffix)
+        save_map_csv(filename, eps_list / wq1, A_list / wq1, p_mat, map_db)
 
     fig, ax = plt.subplots(figsize=(8, 8))
-    im = ax.imshow(map_db, aspect="auto", cmap="jet", origin="lower",
+    im = ax.imshow(p_mat if probability else map_db, aspect="auto", cmap="jet", origin="lower",
                    extent=[eps_list[0] / wq1, eps_list[-1] / wq1, 0.0, A_max_abs / wq1])
-    fig.colorbar(im, ax=ax, label="10*log10(|Re(<a>)|)")
+    fig.colorbar(im, ax=ax, label=r"$\overline{P_+}$" if probability
+                 else r"$|\mathrm{Re}\,\overline{\langle a \rangle}|$ (dB)")
     ax.set_xlabel(r"$\epsilon/\Delta$")
     ax.set_ylabel(r"$A/\Delta$")
     ax.set_title("Four-level interferogram")
@@ -189,7 +208,7 @@ def user_settings() -> dict:
     wd_mhz, A_max_factor = 500.0, 1.15
 
     # Alternative regime. Comment the active assignment above and uncomment this line.
-    # wd_mhz, A_max_factor = 1500.0, 1.15*1.3
+    #wd_mhz, A_max_factor = 1500.0, 1.15*1.3
 
     return {
         # Fixed device/system constants.
@@ -199,18 +218,24 @@ def user_settings() -> dict:
         # Simulation parameter set. Keep one active by editing this block.
         "wd_mhz": wd_mhz,  # drive frequency in MHz
         "gammaph": 0.0e-3,  # pure-dephasing rate
-        "gamma1": 2.0e-3,  # qubit relaxation rate
-        "kappa": 5.0e-3,  # resonator relaxation rate
+        "gamma1": 2.1e-3,  # qubit relaxation rate
+        "kappa": 4.71e-3,  # resonator relaxation rate
         "Ap": 0.0002 / 10.0,  # probe amplitude
         "g1": 0.04033970276 / 1.23,  # qubit-resonator coupling
         "simulation_periods": 60,  # simulated duration in drive periods
         "eps_max": 2.09916,  # detuning half-range in units converted by wq1
         "A_max_factor": A_max_factor,  # drive-amplitude range scale
         "averaging_skip_fraction": 0.0,  # initial time fraction excluded from the average
+        "output_mode": "quadrature",  # "probability" returns time-averaged upper-qubit occupation
         # Grid and time.
         "grid_size": 512,  # square grid side; total simulations = grid_size**2
         # Increase if mesolve_2D reports non-finite output.
         "solver_steps_per_period": 256,
+        "solver": "rk4",  # "rk4", "lserk4", "lserk4f", "dp5", "tsit5", "anas5", "ab5", "alshina6", "dop853", "tsit5a".
+        "calibrate_timesteps": None,  # None: uses solver_steps_per_period; remove # below for automatic time steps.
+        # "calibrate_timesteps": dict(rms_atol=1e-3, max_atol=1e-2, sample_stride=8),
+        # rms_atol / max_atol: allowed RMS / maximum error of the resulting values all over the map.
+        # sample_stride: test grid subsampling coefficient.
         # Optional numerical-data export. Relative names go to Examples/results/.
         # CSV contains Origin-friendly XYZ columns and is ignored by Git.
         "save_data": False,

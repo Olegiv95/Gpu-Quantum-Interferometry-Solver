@@ -601,7 +601,7 @@ def plot_benchmark(rows: list[dict], solvers: tuple[str, ...], out_png: Path, *,
         linestyle = "-" if measured else "--"
         handle = ax.plot([], [], marker=marker, linestyle=linestyle, linewidth=2.0,
                          markersize=4, label=f"{labels.get(solver, solver)} "
-                         f"{'tot time' if solver == 'qutip_cpu' else 'calc time'}")[0]
+                         f"{'total time' if solver == 'qutip_cpu' else 'calculation time'}")[0]
         color = handle.get_color()
         legend_handles.append(handle)
         is_gqis = solver == "gpu" or solver.startswith("gqis_")
@@ -634,7 +634,7 @@ def plot_benchmark(rows: list[dict], solvers: tuple[str, ...], out_png: Path, *,
                 if partial:
                     partial_totals.append(labels.get(solver, solver))
                 legend_handles.append(ax.plot(total_x, total_y, color=color, linestyle=":",
-                    linewidth=1.8, label=f"{labels.get(solver, solver)} tot time")[0])
+                    linewidth=1.8, label=f"{labels.get(solver, solver)} total time")[0])
             else:
                 print(f"{solver}: startup curve omitted; preparation was not recorded. "
                       "A matching measured value can be supplied with preparation_overrides_s.")

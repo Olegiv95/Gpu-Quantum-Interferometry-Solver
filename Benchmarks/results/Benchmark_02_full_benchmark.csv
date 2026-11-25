@@ -46,9 +46,10 @@
 # benchmark_03_settings,"{""GQIS_unroll"": false, ""acceptable_max_abs"": 0.01, ""acceptable_rms"": 0.001, ""adaptive_nsteps"": 100000, ""comparison_output"": ""mean"", ""divider_axis_labels"": ""powers_of_two"", ""divider_axis_scale"": ""log2"", ""four_level_parameters"": {""amplitude_max_over_qubit_frequency"": 2.234042553191489, ""coupling_over_qubit_frequency"": 0.03279650630894309, ""eps_max_over_qubit_frequency"": 2.09916, ""gamma1"": 0.002, ""gamma_phi"": 0.0, ""kappa"": 0.005, ""photon_levels"": 2, ""probe_amplitude"": 2e-05, ""qubit_frequency"": 5.416499999999999, ""regimes"": {""wd1500"": {""amplitude_factor"": 1.4949999999999999, ""drive_frequency"": 1.5}, ""wd500"": {""amplitude_factor"": 1.15, ""drive_frequency"": 0.5}}, ""resonator_frequency"": 7.6767}, ""four_level_regime"": ""wd500"", ""grid_side_dimension"": 2048, ""ignore_non_finite_output"": true, ""julia_cmd"": ""julia"", ""load_reference_map"": false, ""optimal_dividers_file"": null, ""output_stem"": ""Benchmark_03_two_level_accuracy_timestep_sweep"", ""problem"": ""four_level"", ""qutip_drive_mode"": ""analytic"", ""qutip_largest_divider_only"": true, ""reference_atol"": 1e-12, ""reference_file"": null, ""reference_rtol"": 1e-10, ""reference_solver"": ""gqis_rk4"", ""reference_steps_per_period"": 4096, ""save_optimal_dividers"": true, ""save_reference_map"": false, ""save_settings_manifest"": true, ""show_best_summary_row"": false, ""show_plot"": true, ""show_results_table"": true, ""show_worker_progress"": true, ""simulation_periods"": 40.0, ""step_count_dividers"": [1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 20, 24, 32, 48, 64], ""table_times_only"": false, ""target_atol"": 1e-09, ""target_base_steps_per_period"": 2048, ""target_rtol"": 1e-07, ""target_solvers"": [""gqis_rk4"", ""gqis_ab5"", ""gqis_anas5"", ""gqis_tsit5"", ""gqis_dop853"", ""julia_gpu_fp32_fopt"", ""julia_gpu_fp32""], ""time_grid_axis"": ""steps_per_period"", ""two_level_parameters"": {""amplitude_max_over_w"": 10.0, ""delta"": 1.0, ""eps_max_over_w"": 10.0, ""gamma1_per_period"": 0.05, ""gamma_phi_per_period"": 0.04, ""w_over_delta"": 1.14}}"
 # time_definition,GQIS/Python/QuTiP solve-call wall time; Julia synchronized solve time
 # calibrated_solvers,"gqis_rk4,gqis_dop853,julia_gpu_fp32_fopt"
-# gpu_first_rhs_stage_s,1.25141215
+# gpu_first_rhs_stage_s,0.96471215
 # partial_update_timestamp_local,2026-09-08T18:06:00
 # partial_update_ranges,julia_gpu_fp32_fopt:16-2048
+# prep_adjustment,20261124: GQIS -0.287 s and Julia -9.37 s (new ODE preparation; CPU-measured old - new difference)
 
 side_dimension,number_of_simulations,solver,time_s,prep_s,calc_s,status
 16,256,gqis_rk4,0.0090212822,,,measured
@@ -75,15 +76,15 @@ side_dimension,number_of_simulations,solver,time_s,prep_s,calc_s,status
 8192,67108864,gqis_dop853,24.0580375,,,measured
 16384,268435456,gqis_dop853,97.5838521,,,measured
 32768,1073741824,gqis_dop853,386.651306,,,measured
-16,256,julia_gpu_fp32_fopt,0.0469999313,35.0787706,0.0469999313,measured
-32,1024,julia_gpu_fp32_fopt,0.0529999733,34.8030713,0.0529999733,measured
-64,4096,julia_gpu_fp32_fopt,0.0629999638,34.5569606,0.0629999638,measured
-128,16384,julia_gpu_fp32_fopt,0.19299984,34.759093,0.19299984,measured
-256,65536,julia_gpu_fp32_fopt,0.715999842,34.7649264,0.715999842,measured
-512,262144,julia_gpu_fp32_fopt,2.87199998,35.091465,2.87199998,measured
-1024,1048576,julia_gpu_fp32_fopt,12.096,40.6950676,12.096,measured
-2048,4194304,julia_gpu_fp32_fopt,46.5679998,38.7204504,46.5679998,measured
-4096,16777216,julia_gpu_fp32_fopt,207.586,112.218429,207.586,measured
+16,256,julia_gpu_fp32_fopt,0.0469999313,25.7084706,0.0469999313,measured
+32,1024,julia_gpu_fp32_fopt,0.0529999733,25.4327713,0.0529999733,measured
+64,4096,julia_gpu_fp32_fopt,0.0629999638,25.1866606,0.0629999638,measured
+128,16384,julia_gpu_fp32_fopt,0.19299984,25.388793,0.19299984,measured
+256,65536,julia_gpu_fp32_fopt,0.715999842,25.3946264,0.715999842,measured
+512,262144,julia_gpu_fp32_fopt,2.87199998,25.721165,2.87199998,measured
+1024,1048576,julia_gpu_fp32_fopt,12.096,31.3247676,12.096,measured
+2048,4194304,julia_gpu_fp32_fopt,46.5679998,29.3501504,46.5679998,measured
+4096,16777216,julia_gpu_fp32_fopt,207.586,102.848129,207.586,measured
 8192,67108864,julia_gpu_fp32_fopt,925.355342,,,extrapolated
 16384,268435456,julia_gpu_fp32_fopt,4124.95307,,,extrapolated
 32768,1073741824,julia_gpu_fp32_fopt,18387.788,,,extrapolated

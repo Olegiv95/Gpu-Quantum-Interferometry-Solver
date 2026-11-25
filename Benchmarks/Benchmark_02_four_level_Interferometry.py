@@ -10,9 +10,6 @@ import gc
 import multiprocessing as mp
 import os
 import queue
-import shutil
-import subprocess
-import tempfile
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -27,7 +24,7 @@ from Benchmark_full_tools import (accuracy_divider_for_solver, benchmark_output_
                                   extrapolate_loglog, load_accuracy_dividers,
                                   parse_solver_list, plot_benchmark, print_equipment_info,
                                   run_calibrated_csv_update, save_benchmark_csv,
-                                  should_extrapolate_next, sympy_to_julia_fp32,
+                                  should_extrapolate_next,
                                   terminate_process_tree, solver_time_grid_label,
                                   )
 from gqis import build_reduced_lindblad_rhs, mesolve_2D
@@ -395,146 +392,25 @@ def run_qutip_cpu_solver(cfg: FourCfg) -> Tuple[np.ndarray, SolverTiming]:
     return _run_parallel_columns("qutip_cpu", cfg)
 
 
-def _write_julia_helper(path: Path, drho_eqs, obs_expr, rho_syms):
-    rho_locals = [sp.Symbol(f"u{i}") for i in range(len(rho_syms))]
-    repl = {rho_syms[i]: rho_locals[i] for i in range(len(rho_syms))}
-    drho_local = [sp.simplify(e.subs(repl)) for e in drho_eqs]
-    obs_local = sp.simplify(obs_expr.subs(repl))
-    common, reduced = sp.cse([*drho_local, obs_local], symbols=sp.numbered_symbols("tmp"),
-                             optimizations="basic")
-
-    rhs_local_lines = [f"u{i} = u[{i + 1}]" for i in range(len(rho_syms))]
-    rhs_local_lines += [f"{symbol} = Float32({sympy_to_julia_fp32(expr)})"
-                        for symbol, expr in common]
-    rhs_local_lines += [f"du{i + 1} = Float32({sympy_to_julia_fp32(expr)})"
-                        for i, expr in enumerate(reduced[:-1])]
-    rhs_local_lines += [f"obs = Float32({sympy_to_julia_fp32(reduced[-1])})"]
-    rhs_local_lines += ["ds = (t >= warmup_t) ? obs : 0.0f0"]
-    rhs_vec = [f"du{i + 1}" for i in range(len(rho_syms))] + ["ds"]
-
-    u0_vals = ["1.0f0"] + ["0.0f0"] * (len(rho_syms) - 1) + ["0.0f0"]
-    code = f"""using DifferentialEquations
-using DiffEqGPU
-using CUDA
-using StaticArrays
-using DelimitedFiles
-
-@inline function rhs(u, p, t)
-    eps = p[1]
-    A = p[2]
-    warmup_t = p[3]
-    {"; ".join(rhs_local_lines)}
-    return @SVector [{", ".join(rhs_vec)}]
-end
-
-function main()
-    out_csv = ARGS[1]
-    nx = parse(Int, ARGS[2]); ny = parse(Int, ARGS[3])
-    num_t = parse(Int, ARGS[4]); dt = parse(Float64, ARGS[5])
-    eps_min = parse(Float64, ARGS[6]); eps_max = parse(Float64, ARGS[7])
-    A_min = parse(Float64, ARGS[8]); A_max = parse(Float64, ARGS[9])
-    warmup_steps = parse(Int, ARGS[10]); t0 = parse(Float64, ARGS[11])
-    timing_txt = ARGS[12]
-    eps_list = collect(Float32, range(Float32(eps_min), stop=Float32(eps_max), length=nx))
-    A_list = collect(Float32, range(Float32(A_min), stop=Float32(A_max), length=ny))
-    warmup_t = Float32(t0 + warmup_steps * dt)
-    denom_t = Float32(max(num_t - 1 - warmup_steps, 1)) * Float32(dt)
-
-    params = Vector{{SVector{{3, Float32}}}}(undef, nx * ny)
-    k = 1
-    for j in 1:ny
-        Aj = A_list[j]
-        for i in 1:nx
-            params[k] = @SVector [eps_list[i], Aj, warmup_t]
-            k += 1
-        end
-    end
-    u0 = @SVector [{", ".join(u0_vals)}]
-    tf = t0 + dt * max(num_t - 1, 0)
-    prob = ODEProblem{{false}}(rhs, u0, (Float32(t0), Float32(tf)), params[1])
-    prob_func = (pr, i, repeat) -> remake(pr; p=params[i])
-    eprob = EnsembleProblem(prob; prob_func=prob_func, safetycopy=false)
-    solve_start_ns = time_ns()
-    sol = solve(eprob, GPUTsit5(), DiffEqGPU.EnsembleGPUKernel(CUDA.CUDABackend());
-                trajectories=length(params), adaptive=false, dt=Float32(dt),
-                save_everystep=false)
-    CUDA.synchronize()
-    solve_elapsed = (time_ns() - solve_start_ns) / 1.0e9
-    out = zeros(Float32, ny, nx)
-    for idx in 1:length(params)
-        j = Int(fld(idx - 1, nx)) + 1
-        i = Int(mod(idx - 1, nx)) + 1
-        out[j, i] = abs(sol[idx][end][{len(rho_syms) + 1}] / denom_t)
-    end
-    writedlm(out_csv, out, ',')
-    open(timing_txt, "w") do io
-        write(io, string(solve_elapsed))
-    end
-    println("JULIA_SOLVE_TIME=", solve_elapsed)
-end
-main()
-"""
-    path.write_text(code, encoding="utf-8")
-
-
-def _parse_julia_solve_time(stdout: str, timing_path: Path) -> Optional[float]:
-    prefix = "JULIA_SOLVE_TIME="
-    for line in (stdout or "").splitlines():
-        if line.startswith(prefix):
-            return float(line[len(prefix):].strip())
-    if timing_path.exists():
-        text = timing_path.read_text(encoding="ascii").strip()
-        return float(text) if text else None
-    return None
-
-
 def run_julia_gpu_solver(cfg: FourCfg, julia_cmd: str = "julia",
                          timeout_s: Optional[float] = None) -> Tuple[np.ndarray, SolverTiming]:
-    if shutil.which(julia_cmd) is None:
-        raise RuntimeError(f"Julia executable '{julia_cmd}' was not found in PATH.")
-    prep_start = time.time()
-    H, drive_expr, col_ops, mean_op, _, _, _, Drive_sym = _build_four_level_symbolic(cfg)
-    H_sub = H.subs(Drive_sym, drive_expr)
-    drho_eqs, obs_expr, _, meta = build_reduced_lindblad_rhs(
-        cfg.N, H_sub, col_ops, mean_op)
-    rho_syms = meta["rho_syms"]
+    """Julia DiffEqGPU GPUTsit5 (FP32) on the GQIS-compiled RHS; |average| map and timings."""
+    from julia_diffeqgpu import julia_map_script, julia_model, map_arguments, run_julia_script
 
-    with tempfile.TemporaryDirectory() as td:
-        td_path = Path(td)
-        helper = td_path / "bench02_four_level_sympy_rhs.jl"
-        out_csv = td_path / "julia_out.csv"
-        timing_txt = td_path / "julia_timing.txt"
-        _write_julia_helper(helper, drho_eqs, obs_expr, rho_syms)
-        prep_time = time.time() - prep_start
-        cmd = [julia_cmd,
-               str(helper),
-               str(out_csv),
-               str(len(cfg.eps_list)),
-               str(len(cfg.A_list)),
-               str(cfg.num_t),
-               repr(cfg.dt),
-               repr(float(cfg.eps_list[0])),
-               repr(float(cfg.eps_list[-1])),
-               repr(float(cfg.A_list[0])),
-               repr(float(cfg.A_list[-1])),
-               str(cfg.warmup_steps),
-               repr(float(cfg.tlist[0]) if cfg.num_t > 0 else 0.0),
-               str(timing_txt)]
-        start = time.time()
-        try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, check=False,
-                                  timeout=timeout_s)
-        except subprocess.TimeoutExpired as exc:
-            raise TimeoutError(f"Julia backend exceeded {timeout_s:.3g}s and was "
-                               "terminated.") from exc
-        compute_time = time.time() - start
-        if proc.returncode != 0:
-            raise RuntimeError(f"Julia failed\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}")
-        solve_time = _parse_julia_solve_time(proc.stdout, timing_txt) or compute_time
-        if cfg.timings:
-            print(f"julia_gpu timings: prep={prep_time:.3f}s julia_solve={solve_time:.3f}s "
-                  f"subprocess_total={compute_time:.3f}s")
-        out = np.loadtxt(out_csv, delimiter=",", dtype=np.float32)
+    prep_start = time.time()
+    H, drive_expr, col_ops, mean_op, eps, A, _, _ = _build_four_level_symbolic(cfg)
+    source = julia_map_script(julia_model(H, drive_expr, col_ops, mean_op, (eps, A)),
+                              output_abs=True)
+    prep_time = time.time() - prep_start
+    arguments = map_arguments(len(cfg.eps_list), len(cfg.A_list), cfg.num_t, cfg.dt, cfg.eps_list,
+                              cfg.A_list, cfg.warmup_steps,
+                              float(cfg.tlist[0]) if cfg.num_t > 0 else 0.0)
+    values, out, compute_time, _ = run_julia_script(source, arguments, julia_cmd=julia_cmd,
+                                                    timeout=timeout_s)
+    solve_time = float(values["SOLVE_TIME"])
+    if cfg.timings:
+        print(f"julia_gpu timings: prep={prep_time:.3f}s julia_solve={solve_time:.3f}s "
+              f"subprocess_total={compute_time:.3f}s")
     return out, SolverTiming(total=solve_time, prep=max(0.0, prep_time + compute_time - solve_time),
                               compute=solve_time)
 
@@ -1163,6 +1039,7 @@ def user_settings() -> dict:
     # GQIS fixed-step CUDA solvers (available in every mode):
     # "gqis_rk4"     : classical fourth-order Runge-Kutta.
     # "gqis_lserk4"  : low-storage fourth-order Runge-Kutta.
+    # "gqis_lserk4f" : low-storage RK4 with the RHS fused into the residual.
     # "gqis_dp5"     : fifth-order Dormand-Prince.
     # "gqis_tsit5"   : fifth-order Tsitouras.
     # "gqis_anas5"   : frequency-fitted Anas5, using the model's drive frequency.

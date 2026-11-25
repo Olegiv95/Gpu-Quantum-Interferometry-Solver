@@ -66,7 +66,12 @@ def main(settings):
             solver_frequency=settings["attractor_frequency"], fp64=settings["fp64"],
             t_in=t_in, RHSreuse=True, return_device=True, return_timing_info=True,
             timings=settings.get("gqis_frame_timings", False),
-        )
+            calibrate_timesteps=settings.get("calibrate_timesteps"))  # None uses dt as given.
+
+    if settings.get("calibrate_timesteps") is not None:
+        # One frame is too short to test, so calibrate once here; the frames reuse the stored step.
+        calibration_steps = int(round(settings["calibration_periods"] * settings["attractor_steps_per_period"]))
+        advance(initial_state, settings.get("t_in", 0.0), calibration_steps)
 
     animate_phase_space(advance, initial_state, initial_color, render_settings,
                         drive_period=period, dt=dt, total_steps=total_steps,
@@ -82,6 +87,12 @@ if __name__ == "__main__":
         "t_in": 0.0,                     # Absolute time of the supplied initial cloud.
         "attractor_periods": 40,           # Additional simulated periods;
         "attractor_steps_per_period": 128, # FDefines solver step size.
+        "calibrate_timesteps": None,  # None: uses attractor_steps_per_period; remove # below for automatic time steps.
+        # "calibrate_timesteps": dict(rms_atol=1e-4, max_atol=1e-3, sample_stride=8, on_fail="ignore"),
+        # rms_atol / max_atol: allowed RMS / maximum error of the resulting values all over the map.
+        # sample_stride: test grid subsampling coefficient.
+        # on_fail="ignore": no warning when chaotic motion keeps FP32 from reaching the limits.
+        "calibration_periods": 5,         # Drive periods simulated for the calibration only.
         "animation_steps_per_frame": 1, # Exact fixed solver steps per frame; must divide total steps.
         "attractor_grid_size": 1024,       # Trajectories = side squared (1024 squared = 1,048,576).
         "attractor_position_range": (-2.0, 2.0), # Initial positions.
@@ -97,10 +108,10 @@ if __name__ == "__main__":
         "attractor_interpolation": "bilinear",  # GPU display: "bilinear" (smooth) or "nearest".
 
         # Solver / real-time animation.
-        "solver": "dop853",              # "rk4", "lserk4", "dp5", "tsit5", "anas5", "ab5", "alshina6", "dop853".
+        "solver": "dop853",  # "rk4", "lserk4", "lserk4f", "dp5", "tsit5", "anas5", "ab5", "alshina6", "dop853", "tsit5a".
         "fp64": False,                    # State/integration precision; raster always FP32.
         "animate": True,                  # False shows initial cloud only, unless saving a video.
-        "animation_max_fps": 60,         # Interactive FPS cap; 0 = uncapped. Does not change dt.
+        "animation_max_fps": 165,         # Interactive FPS cap; 0 = uncapped. Does not change dt.
         "frame_log_to_ram": False,        # Collect every callback; save once after closing the window.
 
         "save_mp4": False,                # Calculate/export frames; requires FFmpeg.

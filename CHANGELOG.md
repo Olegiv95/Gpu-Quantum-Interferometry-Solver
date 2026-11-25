@@ -12,6 +12,63 @@ semantic version numbers.
 
 - Collect validation and benchmark results from additional NVIDIA GPUs.
 
+## [0.3.0] - 2026-11-25
+
+### Added
+
+- Optional grouped arguments (`consts`, `initial`, `output`, `solver_options`, `codegen` and `diagnostics`) in
+  `mesolve_2D` and `odesolve_2D`; see [grouped options](GQIS_API.md#grouped-options).
+  Existing direct arguments remain supported.
+- `calibrate_timesteps` in both APIs chooses one uniform time step automatically: it refines the time grid on a
+  reduced set of sweep points until the RMS and maximum changes meet the limits, then calculates the full grid.
+  The accepted step is reused by later calls; see
+  [automatic time-step calibration](GQIS_API.md#automatic-time-step-calibration). All examples include a
+  one-line switch for it.
+- `lserk4f` solver: `lserk4` with the RHS accumulated directly into its residual, storing one state
+  vector fewer. Results match `lserk4` to rounding; it reduces register spilling for large systems.
+  Switching between `lserk4` and `lserk4f` reuses the generated ODE.
+- `tsit5a` solver with adaptive step size (Tsitouras 5(4) with its embedded error estimate) in both APIs: each system
+  adapts its step between the `tlist` output points, `mean` outputs integrate over the adaptive steps,
+  and time is kept in FP64 by default. Set its tolerances with `adaptive_options`; see
+  [adaptive step size](GQIS_API.md#adaptive-step-size-tsit5a). The other solvers' generated code is unchanged.
+- `compile_lindblad_rhs` / `compile_ode_rhs`: prepare and optimize the ODE once, without the GPU; both
+  solvers accept the result and start from code emission. Per-stage preparation timings; see
+  [compiling the ODE once](GQIS_API.md#compiling-the-ode-once).
+- `gqis-check --installation-test` checks each stage (symbolic ODE, code generation, GPU solve,
+  dissipation, ODE API, step calibration) against exact answers; `--installation-benchmarks-test` tests
+  the optional QuTiP, Julia DiffEqGPU and dynamiqs backends.
+- [Benchmark 04](BENCHMARKS.md#benchmark-04-hilbert-space-scaling) measures calculation and total time against
+  Hilbert-space dimension for qubit-resonator and coupled-qubit models, with GQIS, dynamiqs and Julia DiffEqGPU.
+
+### Changed
+
+- Faster `mesolve_2D` preparation, same generated code: `collect_rho`/`cse_simplify` default to `False`
+  and the Lindblad equations are built in parallel from Hilbert-space dimension 10 (`symbolic_workers`).
+  5 qubits: 566 s -> 32 s. `odesolve_2D` keeps `cse_simplify=True`.
+- Saved Benchmark 01-04 results: preparation and total times reduced by the measured old/new
+  preparation difference; calculation times unchanged.
+- Lindblad RHS generation simplifies each state coefficient separately. This removes redundant
+  multiplications such as `(1/E)*E` and makes symbolic preparation 1.3-2x faster on the tested models;
+  the generated equations are mathematically unchanged.
+- The CUDA kernel is compiled before its timed launch, so the reported `gpu_kernel_s` (`timings`,
+  `return_timing_info`) no longer includes compilation on the first call.
+- Benchmarks 01-04 build the Julia DiffEqGPU comparison from the ODE that GQIS compiles, through one shared
+  module (`Benchmarks/julia_diffeqgpu.py`). Benchmarks 01/02 now also compile the Julia kernel before the
+  timed solve, so new Julia calculation times exclude compilation, as in Benchmarks 03/04.
+
+### Fixed
+
+- Squares of sums, e.g. `(x + 1)**2`, lost their parentheses in the CUDA code (wrong `odesolve_2D`
+  results; nested squares did not compile).
+- Exact constants (`sp.pi`, `sp.E`, `sp.sqrt(2)`, ...) were printed as C macros that NVRTC does not
+  define; they are now FP32 literals.
+- The Benchmark 03 plot launchers point to the published result files.
+
+### Removed
+
+- The unused `Benchmarks/Benchmark_01_two_level_basic_julia_gpu.jl` and the committed CUDA kernel cache
+  (`.gqis_manual_test_kernel_cache/`, now ignored; Benchmark 03 recreates it).
+
 ## [0.2.0] - 2026-09-09
 
 ### Added
@@ -59,7 +116,8 @@ semantic version numbers.
 - Installable `gqis` package, environment checker, automated tests, public
   documentation, and MIT license.
 
-[Unreleased]: https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/releases/tag/v0.1.0

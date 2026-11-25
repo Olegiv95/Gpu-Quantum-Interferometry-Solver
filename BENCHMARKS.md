@@ -1,12 +1,14 @@
 # Benchmark Validation And Performance
 
 The accompanying benchmarks document GQIS solver accuracy and performance, including comparisons
-with QuTiP, SciPy, Python RK4 and Julia backends. To apply GQIS to your own model, use the
+with QuTiP, SciPy, Python RK4, Julia DiffEqGPU and dynamiqs. To apply GQIS to your own model, use the
 [solver APIs](GQIS_API.md); the [working examples](README.md#examples) demonstrate those calls.
 
 Use Benchmark 01/02 to compare solver results and measure parameter-sweep scaling.
-Use Benchmark 03 to choose a solver and time resolution that satisfy RMS (root-mean-square)
-and maximum-error limits against a numerical reference. The bundled problems are Lindblad systems;
+Use Benchmark 03 to choose a solver and time resolution that keep the RMS (root-mean-square)
+and maximum errors within set limits against a numerical reference.
+Use Benchmark 04 to see how the calculation time grows with the Hilbert-space dimension, compared with
+dynamiqs and Julia DiffEqGPU. The bundled problems are Lindblad systems;
 normal package use, including general ODE sweeps, is described in the [API reference](GQIS_API.md).
 
 ## Benchmark 01 And 02: Comparison And Scaling
@@ -38,16 +40,16 @@ All four modes accept these solver names:
 
 | Name | Implementation |
 | --- | --- |
-| `gqis_rk4`, `gqis_lserk4`, `gqis_dp5`, `gqis_tsit5`, `gqis_anas5`, `gqis_ab5`, `gqis_alshina6`, `gqis_dop853` | GQIS fixed-step CUDA methods; `gpu` is an RK4 default alias |
+| `gqis_rk4`, `gqis_lserk4`, `gqis_lserk4f`, `gqis_dp5`, `gqis_tsit5`, `gqis_anas5`, `gqis_ab5`, `gqis_alshina6`, `gqis_dop853` | GQIS fixed-step CUDA methods; `gpu` is an RK4 default alias |
 | `python_cpu` | Python fixed-step RK4 reference on CPU |
 | `python_ode_cpu` | Adaptive SciPy `solve_ivp`, RK45, on CPU |
 | `qutip_cpu` | Adaptive QuTiP `mesolve` on CPU |
 | `julia_gpu` | Julia DifferentialEquations/DiffEqGPU on the reduced physical ODE system |
 
-See [method choices and costs](GQIS_API.md#available-fixed-step-solvers) for the GQIS methods.
+See [method choices and costs](GQIS_API.md#available-solvers) for the GQIS methods.
 Anas5 uses the model's drive angular frequency as its fitted frequency.
 
-For scaling becnhmark, select several backends with `--full-solvers`:
+For the scaling benchmark, select several backends with `--full-solvers`:
 
 ```bash
 python Benchmarks/Benchmark_01_two_level.py full_benchmark --full-solvers gqis_rk4,gqis_tsit5,gqis_dop853,qutip_cpu
@@ -99,9 +101,12 @@ mark extrapolated timings. The largest measured QuTiP grid is `256 x 256`, takin
 ## Benchmark 03: Accuracy And Convergence
 
 Benchmark 03 varies time resolution and compares the resulting observable map with a reference.
-Choose `problem`, `target_solvers`, `reference_solver`, reference resolution, and RMS/maximum-error
-limits in `user_settings()` or a JSON settings file. Increase reference accuracy until the reference
+Choose `problem`, `target_solvers`, `reference_solver`, reference resolution, and the limits
+on the RMS and maximum errors in `user_settings()` or a JSON settings file. Increase reference accuracy until the reference
 is sufficiently converged for the limits you want to test.
+The calibration files saved here serve the benchmark scaling runs. To choose the time step automatically in
+your own calculations, use the solver option [`calibrate_timesteps`](GQIS_API.md#automatic-time-step-calibration),
+which applies the same limits on the RMS and maximum errors by refining the time grid until the result converges.
 
 ```bash
 python Benchmarks/Benchmark_03_accuracy_timestep_sweep.py --settings Benchmarks/presets/Benchmark_03_two_level_64.json
@@ -139,7 +144,7 @@ At fine resolution, the recorded GQIS methods agree with QuTiP to roughly `3-4e-
 ### Dense Two-Level Grid accuracy scaling:
 
 The `2048 x 2048` sweep uses GQIS RK4 at 4096 steps per period as the reference,
-with RMS/maximum-error limits of `1e-3`/`1e-2`. Among the coarsest accepted GQIS points,
+with limits of `1e-3` on the RMS error and `1e-2` on the maximum error. Among the coarsest accepted GQIS points,
 DOP853 has the shortest recorded time: **0.33592 s** at **43 steps per period**.
 The measured QuTiP point takes about **12 h 9 min** and satisfies both limits.
 
@@ -161,13 +166,89 @@ Here RK4 has the shortest recorded GQIS time among the coarsest accepted points:
 The dense-grid errors measure agreement with a finer GQIS reference; the small-grid QuTiP result
 provides the independent solver comparison. Each figure shows the methods recorded in its saved run.
 
+## Benchmark 04: Hilbert-Space Scaling
+
+Benchmark 04 measures how the calculation and total times grow with the Hilbert-space dimension on a
+fixed `1024 x 1024` parameter grid (40 drive periods, FP32). GQIS solvers are compared with two other
+GPU libraries, dynamiqs and Julia DiffEqGPU, for two model families:
+
+| System | Size parameter | Hilbert-space dimension |
+| --- | --- | --- |
+| `qubit_resonator` | Resonator Fock states `Nph`; `Nph=2` is the Benchmark 02 model | `2*Nph` |
+| `multi_qubit` | Number `n` of Benchmark 01 qubits with nearest-neighbour ZZ coupling; one qubit is driven | `2**n` |
+
+**Measured times.** The calculation time (solid curves) is the GPU time of one full-grid solve. The
+total time (dotted curves) is the time of a first call: model construction, symbolic ODE generation,
+kernel compilation and that solve. Repeated calls with the same model cost only the calculation time.
+
+**Accuracy.** Each solver is calibrated so that the resulting observable map has an RMS error below
+`1e-3` and a maximum error below `1e-2`, refining the time grid until the result converges, as in
+[`calibrate_timesteps`](GQIS_API.md#automatic-time-step-calibration). The limits apply to the final
+time-averaged map, not to each step. Solvers with adaptive step size (GQIS(TSIT5A), dynamiqs) pass the same algorithm
+but adjust `atol` and `rtol` instead of steps per period, giving per-step tolerances of about
+`rtol = atol = 1.8e-4` (qubit-resonator) and `3.2e-5` (coupled qubits). Calibration is not included
+in the measured times.
+
+**Running.** Results are saved after every point, and a later run calculates only the missing points:
+
+```bash
+python Benchmarks/Benchmark_04_hilbert_space_scaling.py
+python Benchmarks/Benchmark_04_hilbert_space_scaling.py --systems qubit_resonator --solvers gqis_lserk4f gqis_tsit5
+python Benchmarks/Benchmark_04_plot_from_csv.py
+```
+
+With the default limit of 900 s of calculation time per point, a full run over all sizes and solvers
+can take many hours. The dynamiqs measurement is a separate script,
+`Benchmarks/Benchmark_04_hilbert_space_scaling_dynamiqs.py`, with the same models, grid, precision
+and accuracy limits. JAX with CUDA does not run on native Windows, so run it in WSL or Linux; the
+plot script adds its CSV to the same panels.
+
+```bash
+# in WSL, from Benchmarks/
+python Benchmark_04_hilbert_space_scaling_dynamiqs.py
+```
+
+Time limits, recalculation of selected points and calibration settings are described in
+[Benchmark 04 run options](#benchmark-04-run-options).
+
+### Hilbert-space time scaling:
+
+The saved run covers the qubit-resonator model (`Nph` 2-10, dimension 4-20) and coupled qubits
+(1-5 qubits, dimension 2-32). GQIS is compared with each library through the same integrator:
+GQIS(TSIT5A) with dynamiqs (Tsit5 with adaptive step size), and GQIS(TSIT5) with DiffEqGPU (Tsit5 with
+fixed step size on the GQIS equations).
+
+**Small systems.** While a solver's state vectors fit in GPU registers, GQIS calculations are tens to
+hundreds of times faster. For one qubit, GQIS(TSIT5) takes **0.084 s** against **42 s** for dynamiqs and
+**3.0 s** for DiffEqGPU; for 3 qubits, GQIS(LSERK4F) takes **2.0 s** against **271 s** and **98 s**.
+The first-call total times include preparation and differ less: **9.3 s** against **274 s** and
+**121 s** for 3 qubits.
+
+**Register spilling.** The jumps in the GQIS curves appear when a solver's state vectors no longer fit
+in GPU registers and spill to slower memory: earlier for TSIT5 (`Nph = 4`, 3 qubits), later for the
+low-storage LSERK4 and LSERK4F (`Nph = 6`, 4 qubits). LSERK4F stores one such vector fewer and is up to
+**2.2 times** faster than LSERK4 where spilling begins (`Nph = 7`). Once the registers are heavily
+overfilled, the two become close again: 1.3 times at `Nph = 10` and 1.1 times at 5 qubits.
+
+**Large systems.** After spilling, the GQIS advantage decreases but remains. With the same integrator,
+GQIS(TSIT5) is about 2 times faster than DiffEqGPU (`Nph = 6` to `8`, 4 qubits). At 5 qubits GQIS(TSIT5A)
+takes **938 s** against **2358 s** for dynamiqs, while GQIS(LSERK4F) with fixed step size takes the same
+2358 s. At `Nph = 6` GQIS(LSERK4F) takes **34.7 s** against **624 s** for dynamiqs and **508 s** for
+DiffEqGPU. dynamiqs was measured up to `Nph = 6`. DiffEqGPU did not complete `Nph = 9` and 5 qubits,
+possibly because it ran out of GPU memory.
+
+[Timing data (CSV)](./Benchmarks/results/Benchmark_04_hilbert_space_scaling_calibrated.csv) | [dynamiqs data (CSV)](./Benchmarks/results/Benchmark_04_hilbert_space_scaling_dynamiqs_calibrated.csv) | [Figure file (PNG)](./Benchmarks/results/Benchmark_04_hilbert_space_scaling_calibrated_plot.png)
+
+![Hilbert-space scaling](./Benchmarks/results/Benchmark_04_hilbert_space_scaling_calibrated_plot.png)
+
 ## Plot Saved CSV Data
 
-Both plot helpers rebuild figures without running a solver. Edit their `user_settings()` and run:
+All plot helpers rebuild figures without running a solver. Edit their `user_settings()` and run:
 
 ```bash
 python Benchmarks/Benchmark_01_02_plot_from_csv.py
 python Benchmarks/Benchmark_03_plot_from_csv.py
+python Benchmarks/Benchmark_04_plot_from_csv.py
 ```
 
 On Windows, use [Plot_Benchmark_01.bat](Benchmarks/Plot_Benchmark_01.bat) for the two-level figure
@@ -203,10 +284,15 @@ solvers, these counts describe requested output intervals per period.
 `show_results_table=False` gives a compact figure. See [axis controls](#time-grids-and-legacy-option-names)
 for alternative spacing and labels.
 
+**Benchmark 04 plotter:** draws calculation and total time versus Hilbert-space dimension, one panel for each
+model family. See [Benchmark 04 run options](#benchmark-04-run-options) for selecting curves and adding the
+dynamiqs results.
+
 ## Summary
 
 Compare maps with Benchmark 01/02 `diff`; choose accurate time grids with Benchmark 03;
-then use those grids in Benchmark 01/02 `full_benchmark`. Replot the saved CSV when only figure
+then use those grids in Benchmark 01/02 `full_benchmark`. Use Benchmark 04 to compare solvers as the
+Hilbert space grows, with every solver calibrated to the same accuracy. Replot the saved CSV when only figure
 formatting changes. Keep each result's settings with its CSV and figure so the calculation can be reproduced.
 
 ## Reproducing Accuracy Figures
@@ -303,6 +389,34 @@ With `refresh_extrapolated_points=True`, estimates between measured neighbors ar
 log-log space; estimates beyond the measured range use the last two preceding measurements.
 Updated estimates remain marked as extrapolated.
 
+## Benchmark 04 Run Options
+
+Settings are in `user_settings()` of `Benchmarks/Benchmark_04_hilbert_space_scaling.py`; the
+command-line arguments in brackets override them.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `systems`, `sizes`, `solvers` (`--systems`, `--solvers`) | both systems | Model families, their sizes and the solvers to measure. |
+| `topology`, `drive` | `"chain"`, `"single"` | Coupled qubits: `"chain"` or `"square"` coupling mesh; drive on qubit 0 only or on `"all"` qubits. |
+| `action` (`--action`) | `"continue"` | `"continue"` keeps saved points and calculates the missing ones and those in `recalculate`; `"recalculate"` calculates only the listed points; `"full"` starts a new table and keeps the previous one as `<name>_previous.csv`. |
+| `recalculate` (`--recalculate`) | empty | Points to calculate again: `solver:size`, `*:size`, `solver:*`, `failed`, `timeout` or `all`. |
+| `point_time_limit_s` (`--time-limit`) | `900` | Time limit for each solver at each size. |
+| `time_limit_on` (`--time-limit-on`) | `"calc"` | The limit applies to the calculation time (`"calc"`) or to the total time (`"total"`). |
+| `preparation_time_limit_s` (`--prep-time-limit`) | `1800` | Separate limit for model construction and symbolic ODE generation. |
+| `time_limit_action` | `"abort"` | `"abort"` stops the point at the limit; `"finish"` lets it finish and marks it. |
+| `calibrate_timesteps` (`--calibrate`) | on | Automatic time-step calibration, saved in a separate `_calibrated` CSV; `None` uses `solver_steps_per_period`. |
+| `calibrate_smallest_size_only` | `True` | Calibrate each solver at its smallest size; larger sizes reuse that step count. |
+| `recalibrate_on_step_error` | `True` | If a reused step count gives non-finite output, calibrate at that size and retry once. |
+
+A point that fails or exceeds a limit stops the larger sizes of that solver. A later `"continue"` run
+with a longer limit retries the timed-out points; failed points are recalculated only when listed in
+`recalculate`. A CSV is reused only with the same parameter grid, time grid, calibration and physical
+settings.
+
+The figure is drawn at the end of the run. `Benchmarks/Benchmark_04_plot_from_csv.py` redraws it
+without calculating; its `include_solvers` (`--solvers`) and `exclude_points` (`--exclude`) select
+the curves and points shown, and `additional_csv_files` (`--add-csv`) adds the dynamiqs results.
+
 ## Timing Boundaries And Preparation
 
 **Julia:** the calculation timer encloses `solve(...)` and the following `CUDA.synchronize()`.
@@ -310,6 +424,9 @@ The plotted calculation time therefore includes work inside the solve call, incl
 performed by that interface. Symbolic preparation, Julia startup, warm-up, parameter setup and output
 handling outside that interval contribute to preparation instead. The wrapper measures preparation
 as total wrapper/subprocess time minus solve time; each point launches a fresh Julia process.
+All benchmarks print the Julia RHS from the same ODE that GQIS compiles (`compile_lindblad_rhs`,
+regenerated for each point) through [`Benchmarks/julia_diffeqgpu.py`](Benchmarks/julia_diffeqgpu.py),
+and compile the Julia kernel on a small batch before the timed solve.
 
 **GQIS:** scaling measurements use a warmed solve path. Benchmark 01 times its Python GPU wrapper;
 Benchmark 02 records wrapper total and the `mesolve_2D` call separately. The calibrated path times
@@ -319,11 +436,11 @@ the CUDA kernel. The API's `gpu_kernel_s` is a separate, narrower timer.
 **CPU:** recorded times include the CPU solver workflow and its multiprocessing overhead.
 QuTiP's plotted time is not a GPU-kernel comparison.
 
-Scaling plots can add dotted `tot time` curves to `calc time` curves with `show_startup_times=True`.
+Scaling plots can add dotted total-time curves to the calculation-time curves with `show_startup_times=True`.
 Julia uses recorded `prep_s`; missing values use the mean available preparation as an estimate.
 New GQIS runs record small-grid startup including a warm-up solve. Adding that startup to each
 measured calculation estimates first use; it is not a measured cold full-grid run.
-Older RHS-only metadata produces a `tot time*` curve identified by a footnote.
+Older RHS-only metadata produces a `total time*` curve identified by a footnote.
 No preparation curve is drawn when preparation data is absent.
 
 `preparation_overrides_s={"julia_gpu_fp32_fopt": seconds}` accepts a value recovered from a matching

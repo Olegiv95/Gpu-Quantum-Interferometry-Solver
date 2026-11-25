@@ -40,14 +40,21 @@ The short Python Package Index (PyPI) command works after the release has been u
 GitHub release directly, use:
 
 ```text
-python -m pip install "gqis[cuda12] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.2.0"
+python -m pip install "gqis[cuda12] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.3.0"
 gqis-check --installation-test
 ```
 
-A successful test ends with output similar to:
+The test checks each stage against an exact answer. A successful test ends with output similar to:
 
 ```text
-Installation test: PASS shape=(4, 4)
+GQIS self-test (exact answers for small problems):
+  [1/6] Symbolic ODE (Lindblad -> real equations)      PASS  (3 real equations, RHS error 0e+00; 0.15 s)
+  [2/6] CUDA code generation                           PASS  (3 CUDA RHS lines; 0.01 s)
+  [3/6] Kernel compilation and GPU solve               PASS  (Rabi P = sin^2(A t/2), error 1.2e-07; ...)
+  [4/6] Lindblad dissipation                           PASS  (P = 1 - exp(-gamma t), error 6.0e-08; 0.09 s)
+  [5/6] ODE API (odesolve_2D)                          PASS  (harmonic oscillator x = cos(w t), error 2.4e-07; 0.05 s)
+  [6/6] Automatic time-step calibration                PASS  (4 -> 8 steps, error 1.0e-04; 0.00 s)
+Installation test: PASS (6/6 stages)
 Environment check: PASS
 ```
 
@@ -189,7 +196,7 @@ section](#optional-external-programs) below.
 Before the PyPI release, or to install an exact tagged source revision, use:
 
 ```text
-python -m pip install "gqis[cuda12,examples] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.2.0"
+python -m pip install "gqis[cuda12,examples] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.3.0"
 ```
 
 From a local clone, install normally or in editable development mode:
@@ -203,10 +210,11 @@ An editable installation imports the package directly from the clone, so code
 changes become available without reinstalling. A normal installation is better
 for testing the built package as an end user would receive it.
 
-Version 0.2.0 includes the [general ODE interface and Duffing example](README.md#general-ode-sweeps),
-additional integrators and [accuracy sweeps](BENCHMARKS.md#benchmark-03-accuracy-and-convergence).
-The tagged commands require the `v0.2.0` tag to be published; until then, install from the local source checkout.
-Use `v0.1.1` explicitly only when reproducing that older release.
+Version 0.3.0 adds the `tsit5a` solver with adaptive step size, [compiling the ODE once](GQIS_API.md#compiling-the-ode-once),
+[automatic time-step calibration](GQIS_API.md#automatic-time-step-calibration), faster preparation for large
+systems and [Benchmark 04](BENCHMARKS.md#benchmark-04-hilbert-space-scaling).
+The tagged commands require the `v0.3.0` tag to be published; until then, install from the local source checkout.
+Use an older tag such as `v0.2.0` explicitly only when reproducing that release.
 
 ## Dependency Policy And Tested Versions
 
@@ -233,6 +241,7 @@ and runs a small installation check.
 | build | `>=1` (release builds) | 1.5.0 |
 | Ruff | `==0.16.2` (development) | 0.16.2 |
 | Julia | external optional solver | 1.10.2 |
+| dynamiqs, JAX | external optional solver (Linux or WSL) | dynamiqs 0.3.7, JAX 0.12.0.1 |
 
 ## Automated Tests And Package Build
 
@@ -277,6 +286,14 @@ The optional Julia GPU benchmark requires Julia plus `DifferentialEquations`,
 ```text
 gqis-check --check-julia-packages
 ```
+
+The optional dynamiqs comparison in Benchmark 04 requires dynamiqs with JAX; JAX uses the GPU only on Linux,
+or on Windows through WSL.
+
+To run a tiny exact test with each optional benchmark backend (QuTiP, Julia DiffEqGPU, dynamiqs), use
+`gqis-check --installation-benchmarks-test`. On native Windows the dynamiqs test always
+reports a warning; run the check in WSL to test dynamiqs on the GPU. A backend that fails gives a warning
+naming the benchmarks that need it; it does not fail the check. The first Julia run can take several minutes.
 
 ## Record Hardware Information
 
