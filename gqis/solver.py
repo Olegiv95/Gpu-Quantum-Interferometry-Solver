@@ -895,6 +895,36 @@ def _print_drive_plan(plan, array_name="Drive_arr"):
     return drive_lines
 
 
+def _print_timings(api_name, info, mode):
+    """Print the timing dictionary: one line (True / "compact") or every stage ("full")."""
+    ode = {"miss": "new ODE", "hit": "reused ODE", "provided": "compiled ODE"}[info["cached_rhs"]]
+    kernel = "new kernel" if info["cached_kernel"] == "miss" else "reused kernel"
+    preparation, gpu, total = info["rhs_stage_s"], info["gpu_kernel_s"], info["total_s"]
+
+    def show(seconds):
+        return f"{seconds * 1e3:.1f} ms" if seconds < 1.0 else f"{seconds:.2f} s"
+
+    if mode != "full":
+        print(f"{api_name}: preparation {show(preparation)} ({ode}, {kernel}), "
+              f"GPU {show(gpu)}, total {show(total)}")
+        return
+    stages = [("symbolic ODE", info["ode_prepare_s"]), ("optimization", info["ode_optimize_s"]),
+              ("CUDA code", info["code_emit_s"]), ("kernel build", info["kernel_build_s"])]
+    # Remainder of the preparation: cache lookups and argument setup.
+    stages.append(("setup", max(0.0, preparation - sum(seconds for _, seconds in stages))))
+    # The preparation stages are printed as a bracketed sum: ( a + b + ... ).
+    rows = [("  preparation", preparation, f"   {ode}, {kernel}")]
+    for i, (name, seconds) in enumerate(stages):
+        sign = "(" if i == 0 else "+"
+        rows.append((f"  {sign} {name}", seconds, " )" if i == len(stages) - 1 else ""))
+    rows += [("  GPU calculation", gpu, ""),
+             ("  other", max(0.0, total - preparation - gpu), "   transfer and checks"),
+             ("  total", total, "")]
+    print(f"{api_name} timings ({info['solver']}):")
+    for name, seconds, note in rows:
+        print(f"{name:<18}{show(seconds):>10}{note}")
+
+
 def _timestep_calibration_settings(value, ode=False):
     """Return validated calibrate_timesteps settings merged with the defaults."""
     settings = dict(TIMESTEP_CALIBRATION_DEFAULTS)
@@ -1800,8 +1830,8 @@ def _solve_symbolic_system(H, Drive, Col_Ops, mean_operator, tlist,
             (starting processes costs about 1-2 s); an integer sets the number. The generated
             equations are the same. ``max_symbolic_workers``: ``None`` means half the logical CPUs.
         nvrtc_options: Additional NVIDIA Runtime Compilation (NVRTC) options.
-        timings: If True, print a concise timing breakdown for right-hand-side
-            (RHS) generation, GPU-kernel execution, and the total call.
+        timings: True or "compact" prints one line with the preparation, GPU and
+            total time; "full" prints every preparation stage on its own line.
         return_timing_info: If True, collect and return a timing dict together
             with the result, without requiring printed timing output.
         warmup_time: Initial fraction [0, 1] of time excluded from the time
@@ -1986,6 +2016,8 @@ def _solve_symbolic_system(H, Drive, Col_Ops, mean_operator, tlist,
     if output_mode == "mean_state" and warmup_steps_host >= num_steps_host:
         effective_output_mode = "final_rho"
 
+    if timings not in (False, None, True, "compact", "full"):
+        raise ValueError("timings must be False, True, 'compact' or 'full'.")
     collect_timings = bool(timings or return_timing_info)
     total_start = time.time() if collect_timings else 0.0
     rhs_stage_start = time.time() if collect_timings else 0.0
@@ -2345,15 +2377,7 @@ def _solve_symbolic_system(H, Drive, Col_Ops, mean_operator, tlist,
             counts = cp.asnumpy(adaptive_steps)
             timing_info["adaptive_steps"] = {"accepted": counts[..., 0], "rejected": counts[..., 1]}
     if timings:
-        api_name = "mesolve_2D" if _ode_size is None else "odesolve_2D"
-        print(f"{api_name} timings: rhs_stage={rhs_stage_time:.3f}s "
-              f"(ode_prepare={stage_times['ode_prepare_s']:.3f}s "
-              f"ode_optimize={stage_times['ode_optimize_s']:.3f}s "
-              f"code_emit={stage_times['emit_s']:.3f}s "
-              f"kernel_build={stage_times['kernel_build_s']:.3f}s) "
-              f"rhs_codegen={rhs_codegen_time:.3f}s gpu_kernel={gpu_kernel_time:.3f}s "
-              f"total={total_time:.3f}s cachedRHS={rhs_cache_status} "
-              f"cachedKernel={kernel_cache_status}")
+        _print_timings("mesolve_2D" if _ode_size is None else "odesolve_2D", timing_info, timings)
     if saved_kernel_path:
         print(f"Generated kernel saved to: {saved_kernel_path}")
     if return_time_trace:

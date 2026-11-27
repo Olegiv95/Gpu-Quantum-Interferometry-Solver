@@ -483,7 +483,7 @@ together with the drive at each solver stage, and combinations of runtime consta
 
 | Parameter | Type/default | Meaning |
 | --- | --- | --- |
-| `timings` | `False` | Print the preparation time with its stages, GPU kernel time, total call time, and whether the generated ODE and kernel were reused. |
+| `timings` | `False` | `True` or `"compact"` prints one line: preparation, GPU and total time, and whether the generated ODE and kernel were reused. `"full"` prints every preparation stage on its own line. |
 | `return_timing_info` | `False` | Append a timing dictionary to the returned values, without console output. |
 | `beep_on_error` | `False` | Play a best-effort notification before raising for non-finite output. |
 | `ignore_non_finite_output` | `False` | Return not-a-number (NaN) or infinite (Inf) output instead of raising. Useful for accuracy sweeps that also record unstable working points. |

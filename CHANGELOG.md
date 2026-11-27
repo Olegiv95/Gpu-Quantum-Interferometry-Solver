@@ -53,6 +53,8 @@ semantic version numbers.
   the generated equations are mathematically unchanged.
 - The CUDA kernel is compiled before its timed launch, so the reported `gpu_kernel_s` (`timings`,
   `return_timing_info`) no longer includes compilation on the first call.
+- `timings=True` prints one short line (preparation, GPU and total time); `timings="full"` lists every
+  preparation stage on its own line.
 - Benchmarks 01-04 build the Julia DiffEqGPU comparison from the ODE that GQIS compiles, through one shared
   module (`Benchmarks/julia_diffeqgpu.py`). Benchmarks 01/02 now also compile the Julia kernel before the
   timed solve, so new Julia calculation times exclude compilation, as in Benchmarks 03/04.
