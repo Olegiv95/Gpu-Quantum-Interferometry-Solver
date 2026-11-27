@@ -5,18 +5,18 @@ parameters and initial conditions of driven open quantum systems and general ord
 GQIS evaluates independent simulations in parallel on an NVIDIA graphics processing unit (GPU), from small
 calculations to grids containing millions or even billions of parameter sets.
 
-The physical model is written symbolically: the Hamiltonian, drive, collapse operators, and measured operator are SymPy
-expressions in which selected physical parameters remain named symbols instead of immediately becoming fixed numbers.
-GQIS converts this model into the system of equations and CUDA code used for the parameter sweep.
+The model of the dissipative quantum system is written symbolically: the Hamiltonian, drive, collapse
+operators, and measured operator are SymPy expressions. GQIS converts this model into the system of
+equations and CUDA code used for the parameter sweep.
 
-The same CUDA engine also accepts general ODEs defined in SymPy directly, for applications such as maps of
-initial conditions. The Lindblad interface `mesolve_2D` and the ODE interface `odesolve_2D` both return final
-values, time averages or the sampled time evolution. See [General ODE Sweeps](#general-ode-sweeps).
+The same CUDA engine also accepts general ODEs defined in SymPy directly, for various applications; see
+[General ODE Sweeps](#general-ode-sweeps). The Lindblad interface `mesolve_2D` and the ODE interface
+`odesolve_2D` both return final values, time averages or the sampled time evolution.
 
 ## Why GQIS Was Created
 
 High-resolution quantum interferometry requires a parameter sweep that repeats the same time evolution calculation for
-many combinations of physical parameters, with each combination of parameters producing one point in a two-dimensional map. Fitting a
+every point of a two-dimensional map of physical parameters. Fitting a
 model to experimental data often requires the complete map to be recalculated for many candidate parameter sets. The
 slowness of these calculations on a central processing unit (CPU) motivated this project: one sufficiently resolved
 interferogram could take from 30 minutes to several hours. Repeating that calculation during parameter fitting could
@@ -30,13 +30,13 @@ before GPU execution. Structural changes to the Hamiltonian, collapse operators,
 required the reduced ODE system to be derived and implemented again. Since then, dynamiqs, built on JAX, has
 improved its batched parameter sweeps on the GPU (on Linux or WSL) to a performance similar to that of Julia.
 
-GQIS connects a symbolic open-system model directly to a CUDA kernel optimized for large parameter sweeps. Its symbolic
-generator derives the required density-matrix equations, eliminates repeated operations, and precomputes reusable
-parameter combinations. The generated equations are then inserted into a CUDA kernel that evolves one parameter
-set per GPU thread. On the reference NVIDIA GeForce RTX 3080 desktop GPU, representative `2048 x 2048` interferograms
+GQIS removes both limitations. It takes a symbolic open-system model, derives and optimizes the
+density-matrix equations automatically, and compiles them into a CUDA kernel that calculates the whole
+parameter sweep in one call, as described in [Solver Pipeline](#solver-pipeline). On the reference NVIDIA GeForce RTX 3080 desktop GPU, representative `2048 x 2048` interferograms
 complete in a few seconds,
 making repeated parameter studies and animations that vary an additional physical parameter feasible.
-Controlled timing comparisons are reported in [Validation And Performance](#validation-and-performance).
+Timing comparisons with QuTiP, Julia DiffEqGPU and dynamiqs are reported in
+[Validation And Performance](#validation-and-performance).
 
 ## Installation
 
@@ -71,8 +71,8 @@ optional dependencies, and troubleshooting.
 Use `mesolve_2D` for symbolic Lindblad models and `odesolve_2D` for symbolic ODE systems in your own Python code.
 The [examples](#examples) demonstrate both through working code.
 
-Supply the model, time grid, and sweep axes; optional settings use defaults. Initial-state and output options
-can be changed as needed. See the [API reference](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md) for all arguments and defaults.
+Supply the model, time grid, and sweep axes; optional settings use defaults. For more information, see the
+[API reference](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md) for all arguments and defaults.
 
 ### Lindblad Equation Parameter Sweep
 
@@ -84,18 +84,25 @@ from gqis import mesolve_2D
 result = mesolve_2D(
     H, Drive, Col_Ops, mean_operator, tlist,
     var_arrays={eps: eps_values, A: amplitude_values},
+    calibrate_timesteps=True,  # recommended: time step from the convergence of the result
 )
 ```
 
-Five mandatory positional arguments are:
+The mandatory arguments are five positional ones and the sweep axes:
 
 1. `H`: `N x N` symbolic Hamiltonian, where `N` is the number of simulated quantum levels.
 2. `Drive`: SymPy expression for the time-dependent drive, or a dictionary defining multiple time-dependent terms.
 3. `Col_Ops`: sequence of `N x N` Lindblad collapse operators representing processes such as relaxation and dephasing.
 4. `mean_operator`: `N x N` operator associated with the physical quantity whose expectation value is requested.
 5. `tlist`: one-dimensional, uniformly spaced time grid beginning at zero.
+6. `var_arrays`: one or two sweep axes, passed by keyword as a dictionary that maps each swept symbol to its
+   array of values.
 
-The solver evolves to the final time in `tlist` on the supplied uniform grid, using fourth-order Runge-Kutta (RK4) by default. The example
+`calibrate_timesteps=True` is optional and off by default, but recommended. It chooses the time step
+automatically from the convergence of the result, so `tlist` only needs to give the duration and a starting
+grid; see [Automatic Time-Step Calibration](#automatic-time-step-calibration).
+
+By default, the solver uses fourth-order Runge-Kutta (RK4), and the example
 above returns one time-averaged expectation value of `mean_operator` for every combination of parameter values from the
 two sweep arrays.
 
@@ -113,22 +120,24 @@ x, v, t, damping, amplitude = sp.symbols("x v t damping amplitude", real=True)
 result = odesolve_2D(
     [v, -damping*v + x - x**3 + amplitude*sp.cos(t)],
     [x, v], [0.1, 0], np.linspace(0, 20, 4097),
-    var_arrays={damping: np.linspace(0.1, 0.5, 64), amplitude: np.linspace(0.1, 0.4, 64)},
-    solver="rk4", output_mode="final")
+    var_arrays={damping: np.linspace(0.1, 0.5, 64), amplitude: np.linspace(0.1, 0.4, 64)})
 ```
 
-`result` contains final position and velocity at each parameter pair, with shape `(64, 64, 2)`.
+By default, `result` contains the final position and velocity at each parameter pair, with shape `(64, 64, 2)`.
 Use `output_mode="mean"` for averages, or `return_time_trace=True` for sampled evolution.
-Both public APIs share the integrators and symbolic optimizations; no quantum operators are needed here.
+Both `mesolve_2D` and `odesolve_2D` share the integrators and symbolic optimizations; no quantum operators are needed here.
 
 The [ODE API reference](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md#odesolve_2d-direct-sympy-ode-sweeps)
-describes output shapes and sampling options. Choose the time step with [automatic time-step calibration](#automatic-time-step-calibration), or check the
-accuracy by refining the time grid and comparing with an analytic solution or a numerical reference.
+describes output shapes and sampling options.
+
+## Optional Settings
+
+The solver and the time step are chosen in the same way for both `mesolve_2D` and `odesolve_2D`.
 
 ### Choosing A Solver
 
-Both APIs offer `rk4` (default), `lserk4`, `lserk4f`, `dp5`, `tsit5`, `anas5`, `ab5`, `alshina6`, `dop853` and
-`tsit5a` with adaptive step size. Set `solver="tsit5"`, for example, to change the integration method. RK4 is a useful starting
+The available solvers are `rk4` (default), `lserk4`, `lserk4f`, `dp5`, `tsit5`, `anas5`, `ab5`, `alshina6`, `dop853` and
+`tsit5a`. Set `solver="tsit5"`, for example, to change the integration method. RK4 is a useful starting
 point. The low-storage `lserk4` and `lserk4f` are faster for large systems, higher-order methods can reach tighter
 accuracy with coarser steps, and `tsit5a` adapts its step size for each parameter point between the `tlist`
 output times. The [solver comparison table](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md#available-solvers)
@@ -143,12 +152,12 @@ final result, so no reference solution or manual step search is needed. Starting
 time grid on a reduced set of sweep points until the requested output changes by less than the limits (by
 default `1e-3` RMS and `1e-2` maximum for `mesolve_2D`), takes the coarsest grid that passes, and calculates
 the full grid once. The chosen step is reused by later calls, so animations and repeated fits pay for this
-test only once. Every example contains a one-line switch for this option. Limits, settings and use in
-animations are described in [automatic time-step calibration](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md#automatic-time-step-calibration).
+test only once. For `tsit5a`, which adapts its step size, the same procedure tightens the step tolerances
+instead of the step count. Every example contains a one-line switch for it; Example 02 has it on.
+Limits, settings and use in animations are described in [automatic time-step calibration](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md#automatic-time-step-calibration).
 
 ## Supported Models And Outputs
 
-For a Lindblad sweep, supply the Hamiltonian, collapse operators and requested observable.
 The `mesolve_2D` interface supports:
 
 - any finite-dimensional SymPy Hamiltonian, optionally containing named symbols mapped to one or more time-dependent
@@ -159,9 +168,8 @@ The `mesolve_2D` interface supports:
   simulation point
 - selected physical constants whose numerical values can change without regenerating the ODE system
 
-For the Lindblad master equation of an `N x N` Hermitian density matrix with unit trace, let $D=N^2-1$ denote the number
-of retained real equations. GQIS removes equations made redundant by unit trace and Hermiticity (conjugate symmetry)
-and derives a coupled system of $D$ independent real ODEs.
+GQIS solves the Lindblad master equation as a coupled system of independent real ODEs; see
+[Solver Pipeline](#solver-pipeline).
 Output modes include a time-averaged expectation value, the expectation value at the final time, the final reduced
 density matrix, and an optional sampled time trace of the expectation value; see the [API
 output-mode
@@ -170,9 +178,7 @@ for details. [Example 05](https://github.com/Olegiv95/Gpu-Quantum-Interferometry
 uses `output_mode="final_rho"` to calculate gate fidelities from the final state. GQIS does not interpret physical units or basis
 labels; define all model quantities in compatible units and one consistent basis.
 
-For general real ODE systems, `odesolve_2D` takes symbolic derivatives, state variables and initial values
-directly. Parameters and initial conditions can vary across the sweep. The solver returns final states,
-state averages or a chosen observable, with optional sampled evolution and outputs kept on the GPU.
+For general real ODE systems, use `odesolve_2D`; see [General ODE Sweeps](#general-ode-sweeps).
 
 ## Solver Pipeline
 
@@ -184,7 +190,7 @@ GQIS consists of two principal components:
    derivatives in the ODE system.
 2. **CUDA execution kernel:** uses the selected integration method, with RK4 as the default and one parameter set per GPU thread. In
    the output modes for averaged and final values, it retains only the state and intermediate values needed for integration, calculates
-   the requested expectation values during evolution, and returns the time average or final reduced density matrix
+   the requested expectation values during evolution, and returns the time average, the final expectation value or the final reduced density matrix
    without storing the complete time evolution in GPU memory.
 
 The symbolic generator starts from the Lindblad master equation
@@ -199,8 +205,9 @@ The symbolic generator starts from the Lindblad master equation
 where $\rho$ is the density matrix, $H(t)$ is the time-dependent Hamiltonian, and each $C_j$ is a collapse operator.
 The Hamiltonian coefficients and time variable must use mutually consistent units.
 
-The generator then retains the $D=N^2-1$ independent real components of the density matrix, $y_1,\ldots,y_D$ (see
-[Supported Models And Outputs](#supported-models-and-outputs)), and generates the system of ODEs
+The density matrix of an `N`-level system is Hermitian (conjugate symmetric) with unit trace, so only $D=N^2-1$ of
+its real components are independent. The generator retains these components, $y_1,\ldots,y_D$, and generates the
+system of ODEs
 
 ```math
 \begin{cases}
@@ -211,7 +218,7 @@ The generator then retains the $D=N^2-1$ independent real components of the dens
 \end{cases}
 ```
 
-Here, $R_i$ is the generated right-hand side of equation $i$. The vector function $f$ used below combines all $D$
+Here, $R_i$ is the generated right-hand side of equation $i$, and the vector function $\mathbf{f}$ combines all $D$
 right-hand sides. The fourth-order Runge-Kutta (RK4) update is:
 
 ```math
@@ -225,10 +232,7 @@ right-hand sides. The fourth-order Runge-Kutta (RK4) update is:
 \end{aligned}
 ```
 
-In this formula, $n$ is the index of the time sample that starts the current interval, $y_n$ is the state at time $t_n$, and
-$f(t_n,y_n)$ is the vector of all derivatives evaluated at that time and state. A grid of
-$M$ time samples contains $t_0,\ldots,t_{M-1}$ and therefore defines $M-1$ integration intervals, each with duration
-$h=t_{n+1}-t_n$.
+In this formula, $\mathbf{y}_n$ is the state at time $t_n$ and $h=t_{n+1}-t_n$ is the time step.
 
 With RK4 selected, each GPU thread applies this update to its own evolution and parameter set.
 Other available methods include LSERK4, DP5, TSIT5, ANAS5, AB5, ALSHINA6 and DOP853, as well as LSERK4F with
@@ -275,18 +279,9 @@ For a new model, the pipeline has the following stages (`odesolve_2D` starts fro
 Later calls can reuse the generated RHS and compiled CUDA kernel when the symbolic structure of the model is unchanged,
 so they can start from stage 8. Sweep arrays, numerically supplied initial states, and the numerical values of selected
 constants deliberately kept symbolic may then change without recompilation. This supports parameter fitting, repeated sweeps and animations
-that vary physical parameters between calls. See [Reusing The ODE For
-Animations](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md#reusing-the-ode-for-animations)
+that vary physical parameters between calls. See [Reusing The ODE In Repeated
+Calls](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/GQIS_API.md#reusing-the-ode-in-repeated-calls)
 for details.
-
-Important implementation choices are:
-
-- the Hamiltonian and collapse operators are supplied as symbolic SymPy matrices
-- a coupled system of independent real ODEs is generated automatically rather than derived and maintained by
-  hand
-- only independent density-matrix components are evolved after applying the unit trace and Hermiticity relations to remove
-  redundant calculations
-- only the requested sweep output is transferred back to CPU memory, without storing other intermediate data to save memory
 
 ## Examples
 
@@ -307,7 +302,7 @@ pip install "gqis[cuda12,examples]"
 | `Examples/Example_03_two_level_animation.py` | Two-level animation that reuses the generated equations and compiled kernel between frames. |
 | `Examples/Example_04_four_level_animation.py` | Four-level animation that changes selected physical constants without recompilation. |
 | `Examples/Example_05_initial_condition_sweep_gate_fidelity.py` | Sweep over initial states and comparison of gate fidelities. |
-| `Examples/Example_06_symbolic_ode_sweep.py` | Live Duffing phase-space flow, GPU rasterization and optional MP4 export through the general ODE API. |
+| `Examples/Example_06_symbolic_ode_sweep.py` | General ODE API: live Duffing phase-space animation. |
 
 [Example 06](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/Examples/Example_06_symbolic_ode_sweep.py) demonstrates the general ODE API with a live
 Duffing attractor animation. The simulation stays on the GPU, with fast display and optional video export;
@@ -350,23 +345,17 @@ parameter grid or the Hilbert space grows:
   with the GPU libraries dynamiqs and Julia DiffEqGPU
 
 On the reference NVIDIA GeForce RTX 3080 desktop GPU, the largest measured `32768 x 32768` grids contain
-1.07 billion independent parameter sets. GQIS(RK4) completed the two-level run in about **1 min 38 s** with
-10,240 steps per simulation, and the four-level run in about **5 min 4 s** with 5,840 steps per simulation.
-These time grids were selected through accuracy calibration.
-The largest measured two-level QuTiP grid is `2048 x 2048`: about **12 h 9 min** for QuTiP
-versus **0.36223 s** for GQIS(RK4), a speedup of about **120,800 times**.
+1.07 billion independent parameter sets. GQIS(RK4) completed the two-level run in about **1 min 38 s** and the
+four-level run in about **5 min**, with time steps selected through accuracy calibration.
 
-The largest measured four-level QuTiP grid is `256 x 256`: about **27 min 30 s** for QuTiP
-versus **0.023219 s** for GQIS(RK4), a speedup of about **71,100 times**.
-These comparisons exclude GQIS preparation.
+The largest grids measured with QuTiP are `2048 x 2048` for the two-level model, about **12 h** for QuTiP versus
+**0.36 s** for GQIS(RK4), and `256 x 256` for the four-level model, about **27 min** versus **0.023 s**. The
+speedups are about **120,000** and **70,000** times, excluding GQIS preparation. See the
+[benchmark results](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md#reference-results)
+for timing definitions and estimates for larger grids.
 
-Across grids from `4096 x 4096` to `32768 x 32768`, average point-by-point speedups were approximately
-118,110 times and 88,040 times over extrapolated QuTiP timings for the two- and four-level models, respectively.
-See the [benchmark results](https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver/blob/main/BENCHMARKS.md#reference-results) for timing definitions and for which timings are measured and which are extrapolated.
-
-The GQIS kernel keeps only the reduced state and the working values of the solver (RK4 by default) instead of storing
-each complete time evolution. In the tested large sweeps, it used less video random-access memory (VRAM) than the
-Julia comparison solver.
+In large sweeps, the Julia comparison solver was limited by video random-access memory (VRAM), while GQIS
+continued to much larger sweeps and system sizes.
 
 <p align="center"><strong>Calculation time of the two-level model</strong></p>
 <p align="center">

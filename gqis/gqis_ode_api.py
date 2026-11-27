@@ -43,8 +43,9 @@ def odesolve_2D(rhs, state_symbols=None, y0=None, tlist=None, *, var_arrays=None
     return_time_trace: Also return sampled states, or the selected observable.
         Returns (result, trace, trace_times); time_trace_every=k samples at
         t_in + dt, t_in + (k+1)*dt, ... . The initial state is not included in the trace.
-    calibrate_timesteps: None, True or a dict; chooses a uniform step on an
-        undersampled grid before the full run, as in mesolve_2D. Default limits
+    calibrate_timesteps: None, True or a dict; chooses a uniform step (or, for
+        tsit5a, the step tolerances) on an undersampled grid before the full run,
+        as in mesolve_2D. Default limits
         for ODEs: rms_atol=1e-4, max_atol=1e-3.
 
     Results have shape (nx, ny, nstate) without an observable, otherwise (nx, ny).

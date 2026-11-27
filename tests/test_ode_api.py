@@ -262,7 +262,7 @@ class OdeApiTests(unittest.TestCase):
             with patch.object(core, "_solve_symbolic_system", side_effect=fake):
                 _, info = real(H=sp.eye(2), Drive=sp.Integer(0), Col_Ops=[], mean_operator=sp.eye(2),
                                tlist=np.linspace(0, 1, start + 1), var_arrays={self.a: np.ones(4)},
-                               return_timing_info=True,
+                               return_timing_info=True, output_mode="final",  # fourth-order fake error
                                calibrate_timesteps=dict(rms_atol=1e-3, max_atol=1e-2,
                                                         bisection_steps=bisection_steps))
             return info["timestep_calibration"]["steps"]
@@ -271,6 +271,55 @@ class OdeApiTests(unittest.TestCase):
         self.assertEqual(steps_for(16, 2), 76)    # bracket [64, 128] -> 91 -> 76
         self.assertEqual(steps_for(512, 2), 76)   # a passing start is halved until 64 fails
         self.assertEqual(steps_for(512, 0), 512)  # without bisection the supplied grid is the coarsest
+
+    def _calibrated(self, fake, **kwargs):
+        """Run mesolve_2D calibration with the solver replaced by ``fake`` (uncalibrated calls)."""
+        real = core._solve_symbolic_system
+
+        def solve(**call):
+            if call.get("calibrate_timesteps"):
+                return real(**call)
+            shape = tuple(len(v) for v in call["var_arrays"].values()) + (1,)
+            result = np.full(shape[:2], fake(call), dtype=complex)
+            return (result, {}) if call.get("return_timing_info") else result
+
+        core._TIMESTEP_CALIBRATION_CACHE.clear()
+        with patch.object(core, "_solve_symbolic_system", side_effect=solve):
+            _, info = real(H=sp.eye(2), Drive=sp.Integer(0), Col_Ops=[], mean_operator=sp.eye(2),
+                           tlist=np.linspace(0, 1, 17), var_arrays={self.a: np.ones(4)},
+                           return_timing_info=True, **kwargs)
+        return info["timestep_calibration"]
+
+    def test_timestep_calibration_mean_uses_first_order_estimate(self):
+        # Fake right-endpoint mean with error 1/steps: the limit 1e-3 needs 1000 steps.
+        def fake(call):
+            return 0.3 + 1.0 / (len(call["tlist"]) - 1)
+        limits = dict(rms_atol=1e-3, max_atol=1e-2)
+        self.assertEqual(self._calibrated(fake, output_mode="mean", calibrate_timesteps=limits)["steps"], 1024)
+        # The same error treated with the RK4 order would accept 724 steps (error 1.4e-3).
+        self.assertEqual(self._calibrated(fake, output_mode="final", calibrate_timesteps=limits)["steps"], 724)
+
+    def test_tsit5a_calibration_scales_both_tolerances(self):
+        # Fake result error 7*tol: the limit 1e-3 is met for tol <= 1.4e-4; the search steps by 10.
+        def fake(call):
+            self.assertEqual(len(call["tlist"]), 17)  # output times are never changed
+            options = call["adaptive_options"]
+            return 0.3 + 7.0 * max(options["step_rtol"], options["step_atol"])
+        for start in (1e-5, 1e-2):  # a passing start is coarsened, a failing one refined
+            report = self._calibrated(fake, solver="tsit5a", calibrate_timesteps=dict(rms_atol=1e-3, max_atol=1e-2),
+                                      adaptive_options=dict(step_rtol=start, step_atol=start / 5))
+            self.assertAlmostEqual(report["step_tol"], 1e-4)
+            self.assertAlmostEqual(report["step_rtol"], 1e-4)
+            self.assertAlmostEqual(report["step_atol"], 2e-5)  # the rtol/atol ratio is kept
+
+    def test_tsit5a_calibration_stops_at_max_substeps(self):
+        def fake(call):  # tolerances below 1e-6 exceed max_substeps
+            tol = call["adaptive_options"]["step_rtol"]
+            return np.nan if tol < 0.99e-6 else 0.3 + 1e3 * tol
+        with self.assertWarnsRegex(RuntimeWarning, "max_substeps"):
+            report = self._calibrated(fake, solver="tsit5a", calibrate_timesteps=dict(rms_atol=1e-3, max_atol=1e-2))
+        self.assertAlmostEqual(report["step_tol"], 1e-6)
+        self.assertEqual(report["details"]["status"], "max_substeps")
 
     def test_timestep_calibration_defaults_differ_for_lindblad_and_ode(self):
         lindblad = core._timestep_calibration_settings(True)

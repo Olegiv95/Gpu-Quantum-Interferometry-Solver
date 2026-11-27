@@ -18,7 +18,7 @@ implementing a substantial application programming interface (API) change or cha
 
 ## Development
 
-Fork the repository, create a branch from `main`, and install an editable
+Fork the repository, create a branch from `develop`, and install an editable
 development environment. For CUDA 12:
 
 ```bash

@@ -11,10 +11,7 @@ comparisons across different NVIDIA graphics processing units (GPUs).
 - an NVIDIA CUDA-capable GPU with a compatible NVIDIA driver
 - a matching CUDA Toolkit, or CUDA runtime libraries installed by pip through CuPy 14's `ctk` option
 - Python 3.10 or newer
-- Git when installing directly from GitHub
 
-Continuous integration tests Python 3.10 through 3.12. On Windows, GQIS has been tested with both a locally
-installed CUDA Toolkit and CUDA runtime libraries installed by pip through CuPy's `ctk` option.
 See [CUDA Version Selection](#cuda-version-selection) for the tested configurations and commands.
 
 Confirm that the NVIDIA driver is visible:
@@ -36,13 +33,8 @@ python -m pip install "gqis[cuda12]"
 gqis-check --installation-test
 ```
 
-The short Python Package Index (PyPI) command works after the release has been uploaded. To install the tagged public
-GitHub release directly, use:
-
-```text
-python -m pip install "gqis[cuda12] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.3.0"
-gqis-check --installation-test
-```
+This installs the release from the Python Package Index (PyPI). To install from GitHub or from a local clone
+instead, see [Source And Development Installation](#source-and-development-installation).
 
 The test checks each stage against an exact answer. A successful test ends with output similar to:
 
@@ -64,14 +56,8 @@ below to distinguish a GQIS issue from a conflict in the existing environment.
 
 ## CUDA Version Selection
 
-The commands above use the locally tested CUDA 12 configuration:
-
-```text
-python -m pip install "gqis[cuda12]"
-```
-
-Replace `cuda12` with `cuda11` or `cuda13` when using a different CUDA major
-version.
+The commands above use the tested CUDA 12 configuration. Replace `cuda12` with `cuda11` or `cuda13`
+when using a different CUDA major version.
 
 The `cuda12` installation option installs the matching CuPy package. By
 default, this installation expects the corresponding CUDA Toolkit libraries
@@ -183,9 +169,7 @@ Install QuTiP and SciPy for the benchmark comparison solvers with:
 python -m pip install "gqis[cuda12,examples,benchmarks]"
 ```
 
-The `cuda12` installation option selects the matching CuPy package. The
-`examples` option adds Matplotlib used by the reference scripts, while the
-`benchmarks` option adds Matplotlib, QuTiP, and SciPy. Julia is used by the
+The `cuda12` option is described in [CUDA Version Selection](#cuda-version-selection). Julia is used by the
 optional Julia benchmark solver, while FFmpeg is used to save animations as
 `.mp4` files. These external programs are not installed by pip; install and
 verify them manually if you need those features. Installation and verification
@@ -194,7 +178,7 @@ section](#optional-external-programs) below.
 
 ## Source And Development Installation
 
-Before the PyPI release, or to install an exact tagged source revision, use:
+To install an exact tagged source revision from GitHub (this requires Git), use:
 
 ```text
 python -m pip install "gqis[cuda12,examples] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@v0.3.0"
@@ -211,12 +195,6 @@ An editable installation imports the package directly from the clone, so code
 changes become available without reinstalling. A normal installation is better
 for testing the built package as an end user would receive it.
 
-Version 0.3.0 adds the `tsit5a` solver with adaptive step size, [compiling the ODE once](GQIS_API.md#compiling-the-ode-once),
-[automatic time-step calibration](GQIS_API.md#automatic-time-step-calibration), faster preparation for large
-systems and [Benchmark 04](BENCHMARKS.md#benchmark-04-hilbert-space-scaling).
-The tagged commands require the `v0.3.0` tag to be published; until then, install from the local source checkout.
-Use an older tag such as `v0.2.0` explicitly only when reproducing that release.
-
 ## Dependency Policy And Tested Versions
 
 `pyproject.toml` is the package dependency source of truth. It declares minimum
@@ -225,8 +203,6 @@ compatible versions so pip does not reject an older version unnecessarily.
 
 The versions below record the configuration tested for GQIS 0.3.0; they are not an exclusive list of compatible versions.
 Other compatible versions can be used within the declared dependency ranges.
-For troubleshooting, `gqis-check --installation-test` reports the local configuration
-and checks each solver stage against exact answers.
 
 | Dependency | Declared requirement | Tested version |
 | --- | --- | --- |
@@ -291,8 +267,8 @@ The optional dynamiqs comparison in Benchmark 04 requires dynamiqs with JAX; JAX
 or on Windows through WSL.
 
 To run a tiny exact test with each optional benchmark backend (QuTiP, Julia DiffEqGPU, dynamiqs), use
-`gqis-check --installation-benchmarks-test`. On native Windows the dynamiqs test always
-reports a warning; run the check in WSL to test dynamiqs on the GPU. A backend that fails gives a warning
+`gqis-check --installation-benchmarks-test`. On native Windows the dynamiqs test therefore
+reports a warning. A backend that fails gives a warning
 naming the benchmarks that need it; it does not fail the check. The first Julia run can take several minutes.
 
 ## Record Hardware Information
@@ -317,9 +293,9 @@ python -m pip install --upgrade "gqis[cuda12]"
 gqis-check --installation-test
 ```
 
-To test the newest public development commit instead of a tagged release:
+To test the newest commit of the public `develop` branch instead of a tagged release:
 
 ```text
-python -m pip install --upgrade --force-reinstall "gqis[cuda12] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@main"
+python -m pip install --upgrade --force-reinstall "gqis[cuda12] @ git+https://github.com/Olegiv95/Gpu-Quantum-Interferometry-Solver.git@develop"
 gqis-check --installation-test
 ```

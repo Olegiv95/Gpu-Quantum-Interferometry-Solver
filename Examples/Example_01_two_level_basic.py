@@ -137,11 +137,11 @@ def user_settings() -> dict:
         "A_max": 16.0 * w,  # maximum drive amplitude
         # Grid and time.
         "grid_size": 512,  # square grid side; total simulations = grid_size**2
-        # Increase if mesolve_2D reports non-finite output.
+        # Increase if mesolve_2D reports non-finite output; with calibration, the starting grid.
         "solver_steps_per_period": 256,
         "solver": "rk4",  # "rk4", "lserk4", "lserk4f", "dp5", "tsit5", "anas5", "ab5", "alshina6", "dop853", "tsit5a".
-        "calibrate_timesteps": None,  # None: uses solver_steps_per_period; remove # below for automatic time steps.
-        # "calibrate_timesteps": dict(rms_atol=1e-3, max_atol=1e-2, sample_stride=8),
+        "calibrate_timesteps": None,  # off for maximum speed: uses solver_steps_per_period as given.
+        # "calibrate_timesteps": dict(rms_atol=1e-3, max_atol=1e-2, sample_stride=8),  # automatic time step
         # rms_atol / max_atol: allowed RMS / maximum error of the resulting values all over the map.
         # sample_stride: test grid subsampling coefficient.
         # Optional numerical-data export. Relative names go to Examples/results/.

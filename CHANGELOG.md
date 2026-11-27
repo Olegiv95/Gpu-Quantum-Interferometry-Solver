@@ -12,22 +12,23 @@ semantic version numbers.
 
 - Collect validation and benchmark results from additional NVIDIA GPUs.
 
-## [0.3.0] - 2026-11-25
+## [0.3.0] - 2026-11-27
 
 ### Added
 
 - Optional grouped arguments (`consts`, `initial`, `output`, `solver_options`, `codegen` and `diagnostics`) in
   `mesolve_2D` and `odesolve_2D`; see [grouped options](GQIS_API.md#grouped-options).
   Existing direct arguments remain supported.
-- `calibrate_timesteps` in both APIs chooses one uniform time step automatically: it refines the time grid on a
-  reduced set of sweep points until the RMS and maximum changes meet the limits, then calculates the full grid.
-  The accepted step is reused by later calls; see
-  [automatic time-step calibration](GQIS_API.md#automatic-time-step-calibration). All examples include a
-  one-line switch for it.
+- `calibrate_timesteps` in `mesolve_2D` and `odesolve_2D` chooses one uniform time step automatically: it
+  refines the time grid on a reduced set of sweep points until the estimated RMS and maximum errors of the
+  result meet the limits, then calculates the full grid. The accepted step is reused by later calls; see
+  [automatic time-step calibration](GQIS_API.md#automatic-time-step-calibration). With `tsit5a` the same
+  search tightens `step_rtol` and `step_atol` together instead of the step count. Every example includes a
+  one-line switch for it; Example 02 has it on.
 - `lserk4f` solver: `lserk4` with the RHS accumulated directly into its residual, storing one state
   vector fewer. Results match `lserk4` to rounding; it reduces register spilling for large systems.
   Switching between `lserk4` and `lserk4f` reuses the generated ODE.
-- `tsit5a` solver with adaptive step size (Tsitouras 5(4) with its embedded error estimate) in both APIs: each system
+- `tsit5a` solver with adaptive step size (Tsitouras 5(4) with its embedded error estimate) in `mesolve_2D` and `odesolve_2D`: each system
   adapts its step between the `tlist` output points, `mean` outputs integrate over the adaptive steps,
   and time is kept in FP64 by default. Set its tolerances with `adaptive_options`; see
   [adaptive step size](GQIS_API.md#adaptive-step-size-tsit5a). The other solvers' generated code is unchanged.

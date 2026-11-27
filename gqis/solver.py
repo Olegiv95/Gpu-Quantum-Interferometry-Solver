@@ -20,7 +20,7 @@ from sympy.printing.c import C99CodePrinter
 from sympy.printing.precedence import PRECEDENCE
 
 from ._options import OPTION_GROUPS, apply_option_groups
-from .cuda_solvers import get_solver_spec, normalize_solver_name
+from .cuda_solvers import TSIT5A_DEFAULTS, get_solver_spec, normalize_solver_name
 
 try:
     import winsound
@@ -38,6 +38,7 @@ TIMESTEP_CALIBRATION_DEFAULTS = {
     "max_atol": 1e-2, "max_rtol": 0.0,   # limit for the largest pointwise change
     "sample_stride": 8,                  # test every k-th point on each sweep axis (plus axis ends)
     "max_steps": 2**20,                  # no refinement beyond this step count
+    "min_step_tol": 1e-12,               # tsit5a: no refinement below this step tolerance
     "bisection_steps": 2,                # halvings of the failing/passing bracket; 0: doubling only
     "full_grid_bisection": False,        # True: bisect also when the test points are the full grid
     "recalibrate_every": None,           # None: calibrate once, then reuse; N: every N-th call
@@ -917,8 +918,9 @@ def _timestep_calibration_settings(value, ode=False):
         raise ValueError("calibrate_timesteps needs at least one non-zero RMS or max tolerance.")
     settings["sample_stride"] = int(settings["sample_stride"])
     settings["max_steps"] = int(settings["max_steps"])
-    if settings["sample_stride"] < 1 or settings["max_steps"] < 1:
-        raise ValueError("calibrate_timesteps sample_stride and max_steps must be positive.")
+    settings["min_step_tol"] = float(settings["min_step_tol"])
+    if settings["sample_stride"] < 1 or settings["max_steps"] < 1 or not settings["min_step_tol"] > 0.0:
+        raise ValueError("calibrate_timesteps sample_stride, max_steps and min_step_tol must be positive.")
     settings["bisection_steps"] = int(settings["bisection_steps"])
     if settings["bisection_steps"] < 0:
         raise ValueError("calibrate_timesteps bisection_steps must be zero or a positive integer.")
@@ -960,12 +962,35 @@ def _timestep_calibration_key(args, settings):
         model = (key(args["H"]), key(args["Drive"]), tuple(key(L) for L in args["Col_Ops"]),
                  key(args["mean_operator"]),
                  key(args["rho0"]) if args["rho0"] is not None else None, fixed_consts)
-    return ("timestep_calibration_v2", *model, sweep_symbols,
-            get_solver_spec(args["solver"]).name, bool(args["fp64"]), args["output_mode"],
-            float(args["warmup_time"]), args["_ode_size"],
+    solver = get_solver_spec(args["solver"]).name
+    adaptive = None
+    if solver == "tsit5a":
+        # The tolerance magnitude is the starting point (like tlist for fixed steps); its
+        # rtol/atol ratio and the other adaptive settings change the result.
+        options = {**TSIT5A_DEFAULTS, **(args["adaptive_options"] or {})}
+        rtol, atol = float(options["step_rtol"]), float(options["step_atol"])
+        adaptive = (atol / rtol if rtol > 0.0 else np.inf, int(options["max_substeps"]),
+                    bool(options["fp64_time"]), settings["min_step_tol"])
+    return ("timestep_calibration_v3", *model, sweep_symbols, solver, adaptive,
+            bool(args["fp64"]), args["output_mode"], float(args["warmup_time"]), args["_ode_size"],
             *(settings[name] for name in ("rms_atol", "rms_rtol", "max_atol", "max_rtol",
                                           "sample_stride", "max_steps", "bisection_steps",
                                           "full_grid_bisection")))
+
+
+def _step_tolerance(args):
+    """Larger of the tsit5a step tolerances: the quantity refined by calibrate_timesteps."""
+    options = {**TSIT5A_DEFAULTS, **(args["adaptive_options"] or {})}
+    return max(float(options["step_rtol"]), float(options["step_atol"]))
+
+
+def _scaled_adaptive_options(args, tol):
+    """adaptive_options with step_rtol and step_atol scaled together, the larger one to tol."""
+    options = dict(args["adaptive_options"] or {})
+    merged = {**TSIT5A_DEFAULTS, **options}
+    scale = tol / _step_tolerance(args)
+    options.update(step_rtol=float(merged["step_rtol"]) * scale, step_atol=float(merged["step_atol"]) * scale)
+    return options
 
 
 def _sweep_ranges(args):
@@ -1009,33 +1034,61 @@ def _undersampled_arguments(args, stride):
 
 
 def _calibrate_timestep(args, settings, base_steps, duration):
-    """Find the coarsest step count whose undersampled result map meets the limits.
+    """Find the coarsest resolution whose undersampled result map meets the limits.
 
-    The step count is doubled until the error estimate passes. With ``bisection_steps > 0`` the
-    bracket between the last failing and the first passing count is then halved (geometrically)
-    that many times; if the supplied grid already passes, it is first halved until a count fails.
+    One search serves both kinds of solver; only the refined quantity x differs:
+
+    * fixed step size: x is the step count, doubled per refinement, and the error estimate uses
+      the Richardson factor of the method order;
+    * adaptive step size (``tsit5a``): x is 1/tolerance of one step (``step_rtol`` and
+      ``step_atol`` scaled together), refined by 10, with the error of the result taken as
+      proportional to the tolerance. ``tlist`` keeps its output times.
+
+    x is refined until the error estimate passes. With ``bisection_steps > 0`` the bracket
+    between the last failing and the first passing x is then narrowed geometrically that many
+    times; if the starting x already passes, it is first coarsened until one fails.
     Bisection is skipped when the test grid is the full grid (no undersampling): the passing
     full-grid result is already computed, so coarser candidates would only add full-grid runs.
-    ``full_grid_bisection=True`` bisects anyway, giving a coarser stored step for repeated calls.
+    ``full_grid_bisection=True`` bisects anyway, giving a coarser stored value for repeated calls.
     """
     start = time.time()
     test, full_grid = _undersampled_arguments(args, settings["sample_stride"])
-    order = get_solver_spec(args["solver"]).order
+    adaptive = get_solver_spec(args["solver"]).name == "tsit5a"
+    if adaptive:
+        factor, order = 10.0, 1
+        base, x_limit, label = 1.0 / _step_tolerance(args), 1.0 / settings["min_step_tol"], "step_tol"
+    else:
+        # The mean is a right-endpoint average over the steps: first order in the step size,
+        # whatever the order of the method, so its error estimate uses order 1.
+        mean = args.get("output_mode") in ("mean", "mean_state") and float(args.get("warmup_time", 0.0)) < 1.0
+        factor, order = 2, (1 if mean else get_solver_spec(args["solver"]).order)
+        base, x_limit, label = base_steps, settings["max_steps"], "steps"
+
+    def value(x):
+        """Solver setting of resolution x: a step count or a step tolerance."""
+        return 1.0 / x if adaptive else x
+
+    def coarser(x):
+        return x / factor if adaptive else x // 2
+
     results = {}  # kept only when the test grid is the full grid, for reuse by the final run
 
-    def run(steps):
-        test["tlist"] = np.linspace(0.0, duration, steps + 1)
+    def run(x):
+        if adaptive:
+            test["adaptive_options"] = _scaled_adaptive_options(args, value(x))
+        else:
+            test["tlist"] = np.linspace(0.0, duration, x + 1)
         result = np.asarray(_solve_symbolic_system(**test))
         if full_grid:
-            results[steps] = result
+            results[value(x)] = result
         return result
 
-    def check(steps, coarse, fine_steps, fine):
-        """Richardson error estimate of the ``steps`` result from a finer one; returns (record, passed)."""
-        record = {"steps": steps, "rms": np.inf, "max": np.inf}
+    def check(x, coarse, fine_x, fine):
+        """Richardson error estimate of the ``x`` result from a finer one; returns (record, passed)."""
+        record = {label: value(x), "rms": np.inf, "max": np.inf}
         if not (np.all(np.isfinite(coarse)) and np.all(np.isfinite(fine))):
             return record, False  # an unstable run never passes, also with relative limits
-        scale = 1.0 / (1.0 - (steps / fine_steps)**order)  # 2**p/(2**p-1) for an M -> 2M pair
+        scale = 1.0 / (1.0 - (x / fine_x)**order)  # 2**p/(2**p-1) for an M -> 2M pair
         difference = np.abs(fine - coarse) * scale
         magnitude = np.abs(fine)
         record.update(rms=float(np.sqrt(np.mean(difference**2))), max=float(np.max(difference)))
@@ -1045,45 +1098,50 @@ def _calibrate_timestep(args, settings, base_steps, duration):
                   and (not settings["check_max"] or record["max"] <= max_limit))
         return record, passed
 
-    steps, coarse = base_steps, run(base_steps)
+    x, coarse = base, run(base)
     tested, status, accepted = [], None, None
     while status is None:
-        if 2 * steps > settings["max_steps"]:
-            status, accepted = "max_steps", steps
+        if factor * x > x_limit:
+            status, accepted = ("min_step_tol" if adaptive else "max_steps"), x
             break
-        fine = run(2 * steps)
-        record, passed = check(steps, coarse, 2 * steps, fine)
+        fine = run(factor * x)
+        if adaptive and np.all(np.isfinite(coarse)) and not np.all(np.isfinite(fine)):
+            # A tighter tolerance only adds substeps: the finer run hit max_substeps.
+            status, accepted = "max_substeps", x
+            break
+        record, passed = check(x, coarse, factor * x, fine)
         tested.append(record)
         if passed:
-            status, accepted = "converged", steps
-            reference_steps, reference = 2 * steps, fine
+            status, accepted = "converged", x
+            reference_x, reference = factor * x, fine
         elif len(tested) > 1 and np.isfinite(record["rms"]) and record["rms"] >= tested[-2]["rms"]:
             # Refinement no longer reduces the change: the rounding floor was reached.
             best = min(tested, key=lambda item: item["rms"])
-            status, accepted = "precision_floor", best["steps"]
-        steps, coarse = 2 * steps, fine
+            status, accepted = "precision_floor", (1.0 / best[label] if adaptive else best[label])
+        x, coarse = factor * x, fine
 
-    doubling_steps = accepted
+    doubling = accepted
     if (status == "converged" and settings["bisection_steps"] > 0
             and (settings["full_grid_bisection"] or not full_grid)):
-        # Every candidate is compared with the finest result computed so far (2x the passing
-        # count), which is far more accurate than any candidate, so the estimate stays reliable.
+        # Every candidate is compared with the finest result computed so far (one refinement
+        # beyond the passing x), which is far more accurate than any candidate.
         def passes(candidate):
-            record, passed = check(candidate, run(candidate), reference_steps, reference)
-            tested.append({**record, "reference_steps": reference_steps})
+            record, passed = check(candidate, run(candidate), reference_x, reference)
+            tested.append({**record, f"reference_{label}": value(reference_x)})
             return passed
 
-        failing = accepted // 2 if accepted > base_steps else None
+        failing = coarser(accepted) if accepted > base else None
         halvings = 0
-        while failing is None and accepted >= 2 and halvings < _CALIBRATION_MAX_HALVINGS:
-            halvings += 1  # the supplied grid passed: look for a failing coarser count
-            candidate = accepted // 2
+        while failing is None and (adaptive or accepted >= 2) and halvings < _CALIBRATION_MAX_HALVINGS:
+            halvings += 1  # the starting value passed: look for a failing coarser one
+            candidate = coarser(accepted)
             if passes(candidate):
                 accepted = candidate
             else:
                 failing = candidate
         for _ in range(settings["bisection_steps"] if failing is not None else 0):
-            candidate = int(round(np.sqrt(failing * accepted)))
+            candidate = np.sqrt(failing * accepted)
+            candidate = float(candidate) if adaptive else int(round(candidate))
             if candidate <= failing or candidate >= accepted:
                 break
             if passes(candidate):
@@ -1091,20 +1149,33 @@ def _calibrate_timestep(args, settings, base_steps, duration):
             else:
                 failing = candidate
 
-    info = {"status": status, "steps": accepted, "dt": duration / accepted, "tested": tested,
-            "doubling_steps": doubling_steps, "test_grid": coarse.shape[:2],
+    info = {"status": status, "tested": tested, "test_grid": coarse.shape[:2],
             "calibration_s": time.time() - start, "full_grid_results": results}
+    if adaptive:
+        info.update(step_tol=value(accepted), doubling_step_tol=value(doubling),
+                    start_step_tol=value(base))
+    else:
+        info.update(steps=accepted, dt=duration / accepted, doubling_steps=doubling)
+
+    def describe(x):
+        return f"step tolerance {value(x):.2e}" if adaptive else f"{x} steps"
+
     if status != "converged":
         def limit(kind):
             atol, rtol = settings[f"{kind}_atol"], settings[f"{kind}_rtol"]
             return f"{'RMS' if kind == 'rms' else 'max'} {atol:g}" + (f" + {rtol:g} relative" if rtol else "")
         requested = ", ".join(limit(kind) for kind in ("rms", "max") if settings[f"check_{kind}"])
-        reason = "does not converge" if status == "precision_floor" else "is not reached within max_steps"
+        reason = {"precision_floor": "does not converge",
+                  "max_steps": "is not reached within max_steps",
+                  "min_step_tol": "is not reached above min_step_tol",
+                  "max_substeps": ("needs more than max_substeps steps per output interval "
+                                   "(increase adaptive_options max_substeps)")}[status]
         if tested:
-            best = next((item for item in tested if item["steps"] == accepted), tested[-1])
-            achieved = f"best achieved RMS {best['rms']:.2e}, max {best['max']:.2e} with {accepted} steps"
+            best = next((item for item in tested if item[label] == value(accepted)), tested[-1])
+            achieved = (f"best achieved RMS {best['rms']:.2e}, max {best['max']:.2e} "
+                        f"with {describe(accepted)}")
         else:
-            achieved = f"no refinement beyond {accepted} steps was possible"
+            achieved = f"no refinement beyond {describe(accepted)} was possible"
         message = f"calibrate_timesteps: requested precision ({requested}) {reason}; {achieved}."
         if status == "precision_floor" and not args["fp64"]:
             message += " If better precision is required, consider switching to the much slower fp64=True."
@@ -1116,12 +1187,14 @@ def _calibrate_timestep(args, settings, base_steps, duration):
 
 
 def _solve_with_timestep_calibration(args):
-    """Choose a uniform time step on an undersampled grid, then run the full sweep."""
+    """Choose a uniform time step (or a tsit5a step tolerance) on an undersampled grid, then
+    run the full sweep."""
     settings = _timestep_calibration_settings(args["calibrate_timesteps"], ode=args["_ode_size"] is not None)
     tlist = np.asarray(args["tlist"], dtype=np.float64)
     if tlist.ndim != 1 or len(tlist) < 2:
         raise ValueError("tlist must be a one-dimensional array with at least two samples.")
     base_steps, duration = len(tlist) - 1, float(tlist[-1] - tlist[0])
+    adaptive = get_solver_spec(args["solver"]).name == "tsit5a"
     key = _timestep_calibration_key(args, settings)
     entry = None if settings["reset"] else _TIMESTEP_CALIBRATION_CACHE.get(key)
     calls = entry["calls"] if entry else 0
@@ -1131,12 +1204,14 @@ def _solve_with_timestep_calibration(args):
     if entry is None or (every is not None and calls % every == 0):
         info = _calibrate_timestep(args, settings, base_steps, duration)
         # Only refine: a recalibration never makes later calls coarser than earlier ones.
-        dt = info["dt"] if entry is None else min(entry["dt"], info["dt"])
-        if entry is not None:  # the stored step now covers both the old and the new range
+        # The stored value is dt for fixed steps and the step tolerance for tsit5a.
+        found = info["step_tol"] if adaptive else info["dt"]
+        stored = found if entry is None else min(entry["value"], found)
+        if entry is not None:  # the stored value now covers both the old and the new range
             ranges = tuple((min(a[0], b[0]), max(a[1], b[1])) for a, b in zip(entry["ranges"], ranges))
-        entry = {"dt": dt, "ranges": ranges, "range_warned": False}
+        entry = {"value": stored, "ranges": ranges, "range_warned": False}
     else:
-        dt = entry["dt"]
+        stored = entry["value"]
         outside = any(lo < old_lo or hi > old_hi for (lo, hi), (old_lo, old_hi) in zip(ranges, entry["ranges"]))
         if outside and settings["range_warning"] and not entry["range_warned"]:
             entry["range_warned"] = True  # warn once per stored step
@@ -1146,43 +1221,68 @@ def _solve_with_timestep_calibration(args):
     entry["calls"] = calls + 1
     _TIMESTEP_CALIBRATION_CACHE[key] = entry
 
-    aligned = args["return_time_trace"] or args["solver_samples_per_period"] is not None
-    # Without bisection (or with aligned traces) the supplied tlist is the coarsest grid used.
-    steps = int(np.ceil(duration / dt * (1.0 - 1e-9)))
-    if settings["bisection_steps"] == 0 or aligned:
-        steps = max(base_steps, steps)
-    factor = 1
-    if aligned:
-        # Trace samples must stay aligned with the supplied grid: refine it by a power of two.
-        while base_steps * factor < steps and base_steps * factor < settings["max_steps"]:
-            factor *= 2
-        steps = base_steps * factor
-    steps = min(steps, max(base_steps, settings["max_steps"]))
-    run_args = dict(args, calibrate_timesteps=None, tlist=np.linspace(0.0, duration, steps + 1))
-    if args["return_time_trace"] and args["time_trace_samples_per_period"] is None:
-        run_args["time_trace_every"] = (args["time_trace_every"] or 1) * factor
-    if args["solver_samples_per_period"] is not None:
-        run_args["solver_samples_per_period"] = args["solver_samples_per_period"] * factor
+    if adaptive:
+        # tsit5a: tlist keeps its output times (also for traces); only the tolerance changes.
+        aligned, chosen = False, stored
+        run_args = dict(args, calibrate_timesteps=None)
+
+        def configure(tol):
+            run_args["adaptive_options"] = _scaled_adaptive_options(args, tol)
+
+        start_text = f"step tolerance {info['start_step_tol']:.2e}" if info else ""
+        chosen_text = f"step tolerance {chosen:.2e}"
+    else:
+        aligned = bool(args["return_time_trace"])
+        # Without bisection (or with aligned traces) the supplied tlist is the coarsest grid used.
+        chosen = int(np.ceil(duration / stored * (1.0 - 1e-9)))
+        if settings["bisection_steps"] == 0 or aligned:
+            chosen = max(base_steps, chosen)
+        factor = 1
+        if aligned:
+            # Trace samples must stay aligned with the supplied grid: refine it by a power of two.
+            while base_steps * factor < chosen and base_steps * factor < settings["max_steps"]:
+                factor *= 2
+            chosen = base_steps * factor
+        chosen = min(chosen, max(base_steps, settings["max_steps"]))
+        run_args = dict(args, calibrate_timesteps=None)
+        if aligned and factor > 1:
+            # Same sample times on the finer grid: stride times factor, first sample at step factor-1.
+            if args["time_trace_samples_per_period"] is not None:
+                stride = max(1, int(round(int(args["solver_samples_per_period"])
+                                          / int(args["time_trace_samples_per_period"]))))
+            else:
+                stride = int(args["time_trace_every"] or 1)
+            run_args.update(time_trace_every=stride * factor, time_trace_samples_per_period=None,
+                            solver_samples_per_period=None, _time_trace_offset=factor - 1)
+
+        def configure(steps):
+            run_args["tlist"] = np.linspace(0.0, duration, steps + 1)
+
+        start_text = f"{base_steps} steps"
+        chosen_text = f"{chosen} steps"
+    configure(chosen)
     if info is not None and args["timings"]:
         tested = info["tested"]
         last = f"; last RMS/max change {tested[-1]['rms']:.2e}/{tested[-1]['max']:.2e}" if tested else ""
-        print(f"calibrate_timesteps: {steps} steps ({info['status']}), tested from "
-              f"{base_steps} steps on {info['test_grid'][0]}x{info['test_grid'][1]} points in "
+        print(f"calibrate_timesteps: {chosen_text} ({info['status']}), tested from "
+              f"{start_text} on {info['test_grid'][0]}x{info['test_grid'][1]} points in "
               f"{info['calibration_s']:.2f}s{last}")
 
-    # With a full-grid test, the result for the chosen step count is already available.
-    reusable = (info is not None and steps in info["full_grid_results"]
+    # With a full-grid test, the result for the chosen value is already available.
+    reusable = (info is not None and chosen in info["full_grid_results"]
                 and not args["return_time_trace"] and not args["return_timing_info"])
     if reusable:
-        result = info["full_grid_results"][steps]
+        result = info["full_grid_results"][chosen]
         if not np.all(np.isfinite(result)) and not args["ignore_non_finite_output"]:
             raise RuntimeError("Non-finite values detected in mesolve_2D output. Try reducing dt "
                                "(increase time samples) or check model parameters/RHS.")
         return cp.asarray(result) if args["return_device"] else result
-    # A step refined below the doubling result is tested only on undersampled points; if the
-    # full grid is unstable somewhere, fall back to the doubling result and store that step.
-    fallback = (info is not None and info["status"] == "converged" and not aligned
-                and info["doubling_steps"] > steps)
+    # A value coarsened below the doubling result is tested only on undersampled points; if the
+    # full grid is unstable somewhere, fall back to the doubling result and store that value.
+    if info is not None:
+        doubling = info["doubling_step_tol"] if adaptive else info["doubling_steps"]
+        finer = doubling < chosen if adaptive else doubling > chosen
+    fallback = info is not None and info["status"] == "converged" and not aligned and finer
     if fallback:
         run_args["ignore_non_finite_output"] = True
     result = _solve_symbolic_system(**run_args)
@@ -1190,18 +1290,24 @@ def _solve_with_timestep_calibration(args):
         values = result[0] if isinstance(result, tuple) else result
         xp = cp if args["return_device"] else np
         if not bool(xp.all(xp.isfinite(values))):
-            warnings.warn(f"calibrate_timesteps: {steps} steps passed on the test points but gave non-finite "
-                          f"values on the full grid; using {info['doubling_steps']} steps instead.",
+            new_text = f"step tolerance {doubling:.2e}" if adaptive else f"{doubling} steps"
+            warnings.warn(f"calibrate_timesteps: {chosen_text} passed on the test points but gave non-finite "
+                          f"values on the full grid; using {new_text} instead.",
                           RuntimeWarning, stacklevel=3)
-            steps = info["doubling_steps"]
-            entry["dt"] = duration / steps
-            run_args.update(tlist=np.linspace(0.0, duration, steps + 1),
-                            ignore_non_finite_output=args["ignore_non_finite_output"])
+            chosen = doubling
+            entry["value"] = chosen if adaptive else duration / chosen
+            configure(chosen)
+            run_args["ignore_non_finite_output"] = args["ignore_non_finite_output"]
             result = _solve_symbolic_system(**run_args)
     if args["return_timing_info"]:
-        result[-1]["timestep_calibration"] = {
-            "steps": steps, "dt": duration / steps, "calibrated_this_call": info is not None,
-            "details": {k: v for k, v in info.items() if k != "full_grid_results"} if info else None}
+        details = {k: v for k, v in info.items() if k != "full_grid_results"} if info else None
+        if adaptive:
+            options = run_args["adaptive_options"]
+            report = {"step_tol": chosen, "step_rtol": options["step_rtol"], "step_atol": options["step_atol"]}
+        else:
+            report = {"steps": chosen, "dt": duration / chosen}
+        result[-1]["timestep_calibration"] = {**report, "calibrated_this_call": info is not None,
+                                              "details": details}
     return result
 
 
@@ -1615,7 +1721,7 @@ def _solve_symbolic_system(H, Drive, Col_Ops, mean_operator, tlist,
                time_trace_samples_per_period=None, solver_samples_per_period=None,
                Actual_Kernel_Save=False, beep_on_error=False, ignore_non_finite_output=False,
                t_in=0.0, return_device=False, calibrate_timesteps=None, compiled_rhs=None,
-               _ode_size=None, _state_trace=False):
+               _ode_size=None, _state_trace=False, _time_trace_offset=0):
     """
     Solve a Lindblad master equation over a two-dimensional parameter sweep on GPU.
 
@@ -1736,8 +1842,10 @@ def _solve_symbolic_system(H, Drive, Col_Ops, mean_operator, tlist,
             the last failing and the first passing count by bisection_steps (default 2)
             geometric bisections, and run with that uniform step. tlist sets the
             duration and the starting grid; with bisection_steps=0 it is also the
-            coarsest grid. The accepted step
-            is cached per model and reused on later calls. Settings and defaults
+            coarsest grid. With solver="tsit5a", the same search tightens step_rtol and
+            step_atol together (by 10 per refinement, starting from adaptive_options)
+            instead of the step count, and tlist keeps its output times. The accepted
+            value is cached per model and reused on later calls. Settings and defaults
             (rms_atol=1e-3, max_atol=1e-2): ``gqis.solver.TIMESTEP_CALIBRATION_DEFAULTS``.
         consts / initial / output / solver_options / codegen / diagnostics: Optional
             dicts grouping the options above under their usual names, for
@@ -1760,9 +1868,6 @@ def _solve_symbolic_system(H, Drive, Col_Ops, mean_operator, tlist,
         responsibility. The kernel cache exists only for the current process.
     """
     if calibrate_timesteps is not None and calibrate_timesteps is not False:
-        if normalize_solver_name(solver) == "tsit5a":
-            raise ValueError("calibrate_timesteps chooses a fixed step; tsit5a adapts its own step "
-                             "(set adaptive_options step_rtol/step_atol instead).")
         return _solve_with_timestep_calibration(dict(locals()))
     valid_output_modes = {"mean", "final", "final_rho", "mean_state"}
     if output_mode not in valid_output_modes:
@@ -1868,7 +1973,10 @@ def _solve_symbolic_system(H, Drive, Col_Ops, mean_operator, tlist,
             raise ValueError("time_trace_every must be a positive integer.")
     else:
         time_trace_stride_host = 1
-    num_time_trace_host = (int(np.ceil(num_steps_host /
+    # _time_trace_offset: first sampled step index (calibrate_timesteps keeps the sample times of a
+    # refined grid on those of the supplied one); samples are steps offset, offset+stride, ...
+    time_trace_offset_host = int(_time_trace_offset)
+    num_time_trace_host = (int(np.ceil((num_steps_host - time_trace_offset_host) /
                                        time_trace_stride_host)) if return_time_trace else 0)
 
     effective_output_mode = output_mode
@@ -2041,8 +2149,8 @@ def _solve_symbolic_system(H, Drive, Col_Ops, mean_operator, tlist,
             trace_store = ("for (int i=0; i<N; ++i) time_trace_results[trace_offset * N + i] = rho[i];"
                            if _state_trace else trace_obs_line)
             trace_line_out = (
-                "if ((step % time_trace_stride) == 0) {\n"
-                "                    const int trace_idx = step / time_trace_stride;\n"
+                "if (step >= time_trace_offset && ((step - time_trace_offset) % time_trace_stride) == 0) {\n"
+                "                    const int trace_idx = (step - time_trace_offset) / time_trace_stride;\n"
                 "                    if (trace_idx < num_time_trace) {\n"
                 "                        const size_t trace_offset = (size_t)result_idx * "
                 "num_time_trace + trace_idx;\n"
@@ -2066,6 +2174,7 @@ def _solve_symbolic_system(H, Drive, Col_Ops, mean_operator, tlist,
             trace_type = scalar_type if _state_trace else complex_type
             result_arg_decl += (f",\n    {trace_type}* __restrict__ time_trace_results,"
                                 "\n    const int time_trace_stride,"
+                                "\n    const int time_trace_offset,"
                                 "\n    const int num_time_trace")
         else:
             result_arg_decl += result_arg_comment
@@ -2195,7 +2304,7 @@ def _solve_symbolic_system(H, Drive, Col_Ops, mean_operator, tlist,
     kernel_args.append(results)
     if cached.get("uses_time_trace", False):
         kernel_args.extend([time_trace_results, np.int32(time_trace_stride_host),
-                            np.int32(num_time_trace_host)])
+                            np.int32(time_trace_offset_host), np.int32(num_time_trace_host)])
     time_evolution_kernel(grid_dim, block_dim, tuple(kernel_args))
 
     if collect_timings:
@@ -2250,7 +2359,7 @@ def _solve_symbolic_system(H, Drive, Col_Ops, mean_operator, tlist,
     if return_time_trace:
         dt_host = uniform_dt_host
         trace_steps = np.arange(num_time_trace_host, dtype=np.float64 if fp64 else np.float32) * time_trace_stride_host
-        trace_t = t_in + (trace_steps + 1.0) * dt_host
+        trace_t = t_in + (trace_steps + 1.0 + time_trace_offset_host) * dt_host
         output = (results_np, time_trace_np, trace_t)
         return (*output, timing_info) if return_timing_info else output
     if return_timing_info:
