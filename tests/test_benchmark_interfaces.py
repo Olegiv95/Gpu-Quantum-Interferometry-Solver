@@ -67,7 +67,7 @@ def test_four_level_mode_shorthands():
 def test_benchmark_metadata_records_numerical_package_versions():
     metadata = collect_equipment_info()
     assert metadata["python"]
-    assert metadata["gqis"] == "0.2.0"
+    assert metadata["gqis"] == "0.3.0"
     assert metadata["numpy"]
     assert metadata["sympy"]
     assert metadata["matplotlib"]
@@ -168,37 +168,33 @@ def test_julia_scalar_codegen_preserves_float32_and_removes_broadcast_operators(
     assert not any(operator in code for operator in (".^", ".*", "./"))
 
 
-def test_four_level_julia_helper_uses_common_subexpressions(tmp_path):
-    rho0, rho1, t = sp.symbols("rho0 rho1 t", real=True)
-    shared = sp.sqrt((sp.cos(sp.Float("0.5") * t) + 1)**2 + sp.Float("2.0"))
-    helper = tmp_path / "compact_rhs.jl"
+def test_julia_rhs_uses_common_subexpressions():
+    from julia_diffeqgpu import julia_model
 
-    benchmark_02._write_julia_helper(helper, [shared * rho0, shared * rho1],
-                                     rho0 + rho1, [rho0, rho1])
-    code = helper.read_text(encoding="utf-8")
+    eps, A, t, drive = sp.symbols("eps A t Drive", real=True)
+    H = (sp.sqrt(drive**2 + sp.Float("2.0")) * sp.Matrix([[1, 0], [0, -1]]) / 2
+         + sp.Float("0.3") * sp.Matrix([[0, 1], [1, 0]]))
+    code = julia_model(H, eps + A * sp.cos(sp.Float("0.5") * t), [sp.Float("0.1") * sp.Matrix([[0, 1], [0, 0]])],
+                       sp.diag(1, 0), (eps, A)).rhs
 
-    assert code.count("sqrt(") == 1
-    assert code.count("cos(") == 1
+    assert code.count("sqrt(") == 1  # shared by the equations through CSE
+    assert code.count("cos(") == 1  # the drive is evaluated once per RHS call
     assert "0.5f0" in code
     assert not any(operator in code for operator in (".^", ".*", "./"))
 
 
-def test_accuracy_julia_helper_uses_common_observable_transform(tmp_path):
+def test_accuracy_julia_map_uses_common_observable_transform():
+    from julia_diffeqgpu import julia_map_script, julia_model
+
     assert benchmark_03.observable_output(-0.25, "four_level") == pytest.approx(0.25)
     assert benchmark_03.observable_output(-0.25, "two_level") == pytest.approx(-0.25)
     settings = benchmark_03.user_settings()
     settings.update({"grid_side_dimension": 2, "simulation_periods": 1})
-
-    settings["problem"] = "four_level"
-    four_cfg = benchmark_03._accuracy_config(settings, 8, reference=False)
-    four_helper = tmp_path / "four_level.jl"
-    benchmark_03.write_julia_helper(four_helper, four_cfg)
-    four_code = four_helper.read_text(encoding="utf-8")
-    assert "out[j, i] = abs(sol[idx][end][" in four_code
-
-    settings["problem"] = "two_level"
-    two_cfg = benchmark_03._accuracy_config(settings, 8, reference=False)
-    two_helper = tmp_path / "two_level.jl"
-    benchmark_03.write_julia_helper(two_helper, two_cfg)
-    two_code = two_helper.read_text(encoding="utf-8")
-    assert "out[j, i] = sol[idx][end][" in two_code
+    for problem, value in (("four_level", "out[j, i] = abs(sol[idx][end]["),
+                           ("two_level", "out[j, i] = sol[idx][end][")):
+        settings["problem"] = problem
+        cfg = benchmark_03._accuracy_config(settings, 8, reference=False)
+        _, H, drive, col_ops, mean_op, const_values, sweep = benchmark_03.problem_definition(cfg)
+        code = julia_map_script(julia_model(H, drive, col_ops, mean_op, sweep, const_values=const_values),
+                                output_abs=problem == "four_level")
+        assert value in code

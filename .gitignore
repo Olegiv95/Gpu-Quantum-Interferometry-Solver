@@ -56,3 +56,9 @@ Reports/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Superseded results kept locally under their original paths (not committed)
+outdated/
+
+# CuPy kernel cache created by Benchmark 03 (machine- and GPU-specific)
+.gqis_manual_test_kernel_cache/

@@ -97,7 +97,7 @@ def frame_params(animated_parameter, value, base):
 
 
 def gpu_time_evolution(A_list, eps_list, tlist, model, params, *, RHSreuse=True,
-                       averaging_skip_fraction=0.0, timings=False):
+                       averaging_skip_fraction=0.0, timings=False, calibrate_timesteps=None, solver="rk4"):
     """Run one animation frame with runtime constants for fast RHS reuse."""
     # Runtime constants remain symbolic during CUDA code generation and are
     # passed as a small GPU array at launch time. This avoids recompiling the RHS
@@ -114,7 +114,9 @@ def gpu_time_evolution(A_list, eps_list, tlist, model, params, *, RHSreuse=True,
     result = mesolve_2D(model["H"], model["Drive"], model["Col_Ops"], model["Mean_Operator"], tlist,
                         var_arrays={model["eps_sym"]: eps_list, model["A_sym"]: A_list},
                         const_values=const_values, keep_symbolic_consts="all", RHSreuse=RHSreuse,
-                        warmup_time=averaging_skip_fraction, timings=timings)
+                        warmup_time=averaging_skip_fraction, timings=timings,
+                        solver=solver, solver_frequency=float(params["w"]),  # solver_frequency: used by anas5 only
+                        calibrate_timesteps=calibrate_timesteps)  # None uses tlist as given.
     return np.abs(np.real(np.asarray(result))).T
 
 
@@ -188,7 +190,8 @@ def main() -> None:
     params0, subtitle0 = frame_params(animated_parameter, float(parameter_values[0]), base)
     tlist0 = build_time_grid(params0["w"], simulation_periods, solver_steps_per_period)
     p0 = gpu_time_evolution(A_list, eps_list, tlist0, model, params0, RHSreuse=True,
-                            averaging_skip_fraction=averaging_skip_fraction, timings=False)
+                            averaging_skip_fraction=averaging_skip_fraction, timings=False,
+                            calibrate_timesteps=settings["calibrate_timesteps"], solver=settings["solver"])
     print(f"Initial frame calculation time: {time.time() - initial_frame_start:.2f}s")
 
     fig, ax = plt.subplots(figsize=(8, 8))
@@ -209,7 +212,8 @@ def main() -> None:
         params, subtitle = frame_params(animated_parameter, value, base)
         tlist = build_time_grid(params["w"], simulation_periods, solver_steps_per_period)
         p = gpu_time_evolution(A_list, eps_list, tlist, model, params, RHSreuse=True,
-                               averaging_skip_fraction=averaging_skip_fraction, timings=False)
+                               averaging_skip_fraction=averaging_skip_fraction, timings=False,
+                               calibrate_timesteps=settings["calibrate_timesteps"], solver=settings["solver"])
         img.set_data(p)
         img.set_clim(float(np.nanmin(p)), float(np.nanmax(p)))
         title.set_text(f"Example 03 | animated={animated_parameter} | {subtitle}")
@@ -265,6 +269,11 @@ def user_settings() -> dict:
         "grid_size": 512,  # square grid side per animation frame
         # Increase if mesolve_2D reports non-finite output.
         "solver_steps_per_period": 250,
+        "solver": "rk4",  # "rk4", "lserk4", "lserk4f", "dp5", "tsit5", "anas5", "ab5", "alshina6", "dop853", "tsit5a".
+        "calibrate_timesteps": None,  # None: uses solver_steps_per_period; remove # below for automatic time steps.
+        # "calibrate_timesteps": dict(rms_atol=1e-3, max_atol=1e-2, sample_stride=8),
+        # rms_atol / max_atol: allowed RMS / maximum error of the resulting values all over the map.
+        # sample_stride: test grid subsampling coefficient.
         # Animation parameter and values.
         "forward_frame_count": forward_frame_count,  # before optional reverse playback
         "animated_parameter": animated_parameter,  # defined before return block

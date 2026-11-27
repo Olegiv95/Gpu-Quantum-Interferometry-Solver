@@ -17,9 +17,6 @@ import json
 import multiprocessing as mp
 import os
 import re
-import shutil
-import subprocess
-import tempfile
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -37,8 +34,7 @@ MANUAL_CUPY_CACHE.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("CUPY_CACHE_DIR", str(MANUAL_CUPY_CACHE))
 
 # Set the cache environment before these imports can load CuPy.
-from Benchmark_full_tools import (benchmark_output_path, print_equipment_info,  # noqa: E402
-                                  sympy_to_julia_fp32)
+from Benchmark_full_tools import benchmark_output_path, print_equipment_info  # noqa: E402
 from gqis import build_reduced_lindblad_rhs, mesolve_2D  # noqa: E402
 
 JULIA_SOLVER_MODES = {"julia_gpu_fp64": "fp64", "julia_gpu_fp32": "fp32",
@@ -58,12 +54,13 @@ SOLVER_METHOD_LABELS = {"python_cpu": "RK4", "python_ode_cpu": "RK45",
                         "julia_gpu_fp32": "Tsit5 FP32",
                         "julia_gpu_fp32_opt": "Tsit5 FP32-opt",
                         "julia_gpu_fp32_fopt": "Tsit5 FP32-fopt"}
-GQIS_SOLVER_LABELS = {"rk4": "RK4", "lserk4": "LSRK4", "dp5": "DP5",
+GQIS_SOLVER_LABELS = {"rk4": "RK4", "lserk4": "LSRK4", "lserk4f": "LSRK4F", "dp5": "DP5",
                       "ab5": "AB5", "anas5": "Anas5", "tsit5": "Tsit5",
                       "alshina6": "Alshina6", "dop853": "DOP853"}
 GQIS_SOLVER_DESCRIPTIONS = {
     "rk4": "fixed-step classical RK4",
     "lserk4": "fixed-step Carpenter-Kennedy 2N54",
+    "lserk4f": "fixed-step Carpenter-Kennedy 2N54, RHS fused into the residual",
     "dp5": "fixed-step Dormand-Prince fifth-order formula",
     "ab5": "fixed-step fifth-order Adams-Bashforth",
     "anas5": "fixed-step frequency-fitted Anas5(w)",
@@ -79,7 +76,6 @@ SOLVER_METHOD_LABELS.update({name: GQIS_SOLVER_LABELS[method]
                              for name, method in GQIS_ACCURACY_SOLVERS.items()})
 SOLVER_METHODS.update({name: GQIS_SOLVER_DESCRIPTIONS[method]
                        for name, method in GQIS_ACCURACY_SOLVERS.items()})
-JULIA_HELPER_NAME = "Benchmark_01_two_level_basic_julia_gpu.jl"
 LAST_JULIA_TOTAL_S = np.nan
 LAST_JULIA_PRECALC_S = np.nan
 LAST_GQIS_RHS_CODEGEN_S = np.nan
@@ -272,6 +268,10 @@ def run_gpu_solver(cfg: BenchConfig) -> tuple[np.ndarray, float]:
     scalar_dtype = np.float64 if fp64 else np.float32
     _, H, drive_expr, col_ops, mean_op, const_values, (eps, A) = problem_definition(cfg)
 
+    # Diagnostic settings are passed as one group; the flat form (timings=..., return_timing_info=True,
+    # ignore_non_finite_output=...) remains fully supported and equivalent.
+    diagnostics = dict(timings=cfg.timings, return_timing_info=True,
+                       ignore_non_finite_output=cfg.ignore_non_finite_output)
     result, timing_info = mesolve_2D(
         H, drive_expr, col_ops, mean_op, np.asarray(cfg.tlist, dtype=scalar_dtype),
         var_arrays={eps: np.asarray(cfg.eps_list, dtype=scalar_dtype),
@@ -279,8 +279,7 @@ def run_gpu_solver(cfg: BenchConfig) -> tuple[np.ndarray, float]:
         const_values=const_values, output_mode=cfg.comparison_output, fp64=fp64,
         solver=cfg.gqis_solver, unroll=cfg.gqis_unroll,
         solver_frequency=(cfg.w if cfg.gqis_solver.lower() == "anas5" else None),
-        timings=cfg.timings, warmup_time=cfg.warmup_time,
-        ignore_non_finite_output=cfg.ignore_non_finite_output, return_timing_info=True)
+        warmup_time=cfg.warmup_time, diagnostics=diagnostics)
     LAST_GQIS_RHS_CODEGEN_S = float(timing_info["rhs_codegen_s"])
     LAST_GQIS_RHS_CACHE = str(timing_info["cached_rhs"])
 
@@ -567,344 +566,34 @@ def run_cpu_solver(solver: str, cfg: BenchConfig,
 # -----------------------------------------------------------------------------
 
 
-def write_julia_helper(path: Path, cfg: BenchConfig) -> None:
-    N, H, drive_expr, col_ops, mean_op, const_values, _ = problem_definition(cfg)
-
-    Delta, eps, Drive = sp.symbols("Delta eps Drive", real=True)
-    A, t = sp.symbols("A t", real=True)
-    gamma1S, gamma2S = sp.symbols("gamma1S gamma2S", real=True, nonnegative=True)
-
-    H_sub = H.subs(Drive, drive_expr).subs(const_values)
-    col_ops_sub = [L.subs(const_values) for L in col_ops]
-    drho_eqs, obs_expr, _, meta = build_reduced_lindblad_rhs(
-        N, H_sub, col_ops_sub, mean_op)
-    rho_syms = meta["rho_syms"]
-
-    u_syms = [sp.Symbol(f"u{i}") for i in range(len(rho_syms))]
-    repl = {rho_syms[i]: u_syms[i] for i in range(len(rho_syms))}
-    t_rhs = sp.Symbol("t_rhs", real=True)
-    drho_local = [sp.simplify(e.subs(repl).subs(t, t_rhs)) for e in drho_eqs]
-    obs_local = sp.simplify(obs_expr.subs(repl).subs(t, t_rhs))
-    expressions = ([*drho_local, obs_local] if cfg.comparison_output == "mean"
-                   else drho_local)
-    common, reduced = sp.cse(expressions, symbols=sp.numbered_symbols("tmp"),
-                             optimizations="basic")
-
-    state_type = "Float64" if cfg.julia_time_precision == "fp64" else "Float32"
-    def julia_expr(expr):
-        return (re.sub(r"(?<=\d)f(?=[+-]?\d)", "e", sympy_to_julia_fp32(expr))
-                if state_type == "Float64" else sympy_to_julia_fp32(expr))
-    rhs_lines = [f"u{i} = u[{i + 1}]" for i in range(len(rho_syms))]
-    rhs_lines += [f"{symbol} = {state_type}({julia_expr(expr)})"
-                  for symbol, expr in common]
-    rhs_lines += [f"du{i + 1} = {state_type}({julia_expr(expr)})"
-                  for i, expr in enumerate(reduced[:len(rho_syms)])]
-    rhs_vec = [f"du{i + 1}" for i in range(len(rho_syms))]
-    if cfg.comparison_output == "mean":
-        rhs_lines += [f"obs = {state_type}({julia_expr(reduced[-1])})",
-                      f"ds = (t_rhs >= warmup_t) ? obs : {state_type}(0)"]
-        rhs_vec.append("ds")
-        u0_vals = [f"{state_type}(1)"] + [f"{state_type}(0)"] * len(rho_syms)
-        observer_function = ""
-        mean_expression = f"sol[idx][end][{len(rho_syms) + 1}] / denom_t"
-        output_expression = julia_observable_output(mean_expression, cfg.problem)
-    else:
-        u0_vals = ([f"{state_type}(1)"]
-                   + [f"{state_type}(0)"] * (len(rho_syms) - 1))
-        obs_common, obs_reduced = sp.cse(
-            [obs_local], symbols=sp.numbered_symbols("obs_tmp"), optimizations="basic")
-        observer_lines = [f"u{i} = u[{i + 1}]" for i in range(len(rho_syms))]
-        observer_lines += [f"{symbol} = {state_type}({julia_expr(expr)})"
-                           for symbol, expr in obs_common]
-        observer_lines += [f"obs = {state_type}({julia_expr(obs_reduced[0])})"]
-        observer_function = f"""
-@inline function observe(u, p, t)
-    eps = p[1]
-    A = p[2]
-    t_rhs = RhsTimeType(t)
-    {"; ".join(observer_lines)}
-    return obs
-end
-"""
-        final_expression = "observe(sol[idx][end], params[idx], TimeType(tf))"
-        output_expression = julia_observable_output(final_expression, cfg.problem)
-    time_type = ("Float64" if cfg.julia_time_precision in {"fp64", "fp64_only_step"}
-                 else "Float32")
-    rhs_time_type = "Float64" if cfg.julia_time_precision == "fp64" else "Float32"
-    mixed_step = "" if cfg.julia_time_precision != "fp64_only_step" else """
-# Experimental mixed-precision specialization of DiffEqGPU's fixed-step Tsit5.
-# The solver clock and stage times remain Float64; state updates remain Float32.
-@eval DiffEqGPU begin
-@inline function step!(integ::GPUT5I{false, S, Float64}, ts, us) where {S}
-    c1, c2, c3, c4, c5, c6 = integ.cs
-    dt = integ.dt
-    t = integ.t
-    p = integ.p
-    a21, a31, a32, a41, a42, a43, a51, a52, a53, a54,
-    a61, a62, a63, a64, a65, a71, a72, a73, a74, a75, a76 = Float32.(integ.as)
-    f = integ.f
-    integ.uprev = integ.u
-    uprev = integ.u
-    integ.tprev = t
-    if integ.tstops !== nothing && integ.tstops_idx <= length(integ.tstops) &&
-       integ.tstops[integ.tstops_idx] - integ.t - integ.dt - 100 * eps(Float64) < 0
-        integ.t = integ.tstops[integ.tstops_idx]
-        dt = integ.t - integ.tprev
-        integ.tstops_idx += 1
-    else
-        integ.t += dt
-    end
-    dt32 = Float32(dt)
-    if integ.u_modified
-        k1 = f(uprev, p, t)
-        integ.u_modified = false
-    else
-        @inbounds k1 = integ.k7
-    end
-    tmp = uprev + dt32 * a21 * k1
-    k2 = f(tmp, p, t + c1 * dt)
-    tmp = uprev + dt32 * (a31 * k1 + a32 * k2)
-    k3 = f(tmp, p, t + c2 * dt)
-    tmp = uprev + dt32 * (a41 * k1 + a42 * k2 + a43 * k3)
-    k4 = f(tmp, p, t + c3 * dt)
-    tmp = uprev + dt32 * (a51 * k1 + a52 * k2 + a53 * k3 + a54 * k4)
-    k5 = f(tmp, p, t + c4 * dt)
-    tmp = uprev + dt32 * (a61 * k1 + a62 * k2 + a63 * k3 + a64 * k4 + a65 * k5)
-    k6 = f(tmp, p, t + dt)
-    integ.u = uprev + dt32 * ((a71 * k1 + a72 * k2 + a73 * k3 + a74 * k4) +
-                              a75 * k5 + a76 * k6)
-    k7 = f(integ.u, p, t + dt)
-    @inbounds begin
-        integ.k1 = k1; integ.k2 = k2; integ.k3 = k3; integ.k4 = k4
-        integ.k5 = k5; integ.k6 = k6; integ.k7 = k7
-    end
-    _, saved_in_cb = handle_callbacks!(integ, ts, us)
-    return saved_in_cb
-end
-end
-"""
-    integer_step = "" if cfg.julia_time_precision != "fp32_integer_step" else """
-# Experimental fixed-grid specialization: reconstruct FP32 time from the integer
-# step counter instead of accumulating t += dt. This benchmark uses no saveat,
-# callbacks, or tstops, so cur_t is available as the fixed-step counter.
-@eval DiffEqGPU begin
-@inline function step!(integ::GPUT5I{false, S, Float32}, ts, us) where {S}
-    c1, c2, c3, c4, c5, c6 = integ.cs
-    dt = integ.dt
-    p = integ.p
-    a21, a31, a32, a41, a42, a43, a51, a52, a53, a54,
-    a61, a62, a63, a64, a65, a71, a72, a73, a74, a75, a76 = integ.as
-    f = integ.f
-    step_index = integ.cur_t
-    t = muladd(Float32(step_index), dt, integ.t0)
-    next_t = muladd(Float32(step_index + 1), dt, integ.t0)
-    integ.cur_t = step_index + 1
-    integ.tprev = t
-    # tf is p[4]. Clamp only the loop marker near the final grid point so
-    # independently rounded Float32 dt and tf cannot cause one extra step.
-    integ.t = next_t >= p[4] - 0.5f0 * abs(dt) ? p[4] : next_t
-    integ.uprev = integ.u
-    uprev = integ.u
-    if integ.u_modified
-        k1 = f(uprev, p, t)
-        integ.u_modified = false
-    else
-        @inbounds k1 = integ.k7
-    end
-    tmp = uprev + dt * a21 * k1
-    k2 = f(tmp, p, muladd(c1, dt, t))
-    tmp = uprev + dt * (a31 * k1 + a32 * k2)
-    k3 = f(tmp, p, muladd(c2, dt, t))
-    tmp = uprev + dt * (a41 * k1 + a42 * k2 + a43 * k3)
-    k4 = f(tmp, p, muladd(c3, dt, t))
-    tmp = uprev + dt * (a51 * k1 + a52 * k2 + a53 * k3 + a54 * k4)
-    k5 = f(tmp, p, muladd(c4, dt, t))
-    tmp = uprev + dt * (a61 * k1 + a62 * k2 + a63 * k3 + a64 * k4 + a65 * k5)
-    k6 = f(tmp, p, next_t)
-    integ.u = uprev + dt * ((a71 * k1 + a72 * k2 + a73 * k3 + a74 * k4) +
-                            a75 * k5 + a76 * k6)
-    k7 = f(integ.u, p, next_t)
-    @inbounds begin
-        integ.k1 = k1; integ.k2 = k2; integ.k3 = k3; integ.k4 = k4
-        integ.k5 = k5; integ.k6 = k6; integ.k7 = k7
-    end
-    _, saved_in_cb = handle_callbacks!(integ, ts, us)
-    return saved_in_cb
-end
-end
-"""
-    parameter_count = 4 if cfg.julia_time_precision == "fp32_integer_step" else 3
-    parameter_tail = ", Float32(tf)" if cfg.julia_time_precision == "fp32_integer_step" else ""
-
-    helper = f"""using DifferentialEquations
-using DiffEqGPU
-using CUDA
-using StaticArrays
-using DelimitedFiles
-
-const TimeType = {time_type}
-const RhsTimeType = {rhs_time_type}
-const StateType = {state_type}
-{mixed_step}
-{integer_step}
-
-@inline function rhs(u, p, t)
-    eps = p[1]
-    A = p[2]
-    warmup_t = p[3]
-    t_rhs = RhsTimeType(t)
-    {"; ".join(rhs_lines)}
-    return @SVector [{", ".join(rhs_vec)}]
-end
-{observer_function}
-
-function main()
-    if length(ARGS) < 12
-        println(stderr, "Expected 12 args.")
-        exit(2)
-    end
-
-    out_csv = ARGS[1]
-    nx = parse(Int, ARGS[2])
-    ny = parse(Int, ARGS[3])
-    num_t = parse(Int, ARGS[4])
-    dt = parse(Float64, ARGS[5])
-    eps_min = parse(Float64, ARGS[6])
-    eps_max = parse(Float64, ARGS[7])
-    A_min = parse(Float64, ARGS[8])
-    A_max = parse(Float64, ARGS[9])
-    warmup_steps = parse(Int, ARGS[10])
-    t0 = parse(Float64, ARGS[11])
-    timing_txt = ARGS[12]
-
-    eps_list = collect(StateType, range(StateType(eps_min), stop=StateType(eps_max), length=nx))
-    A_list = collect(StateType, range(StateType(A_min), stop=StateType(A_max), length=ny))
-    warmup_t = StateType(t0 + warmup_steps * dt)
-    denom_t = StateType(max(num_t - 1 - warmup_steps, 1)) * StateType(dt)
-
-    tf = t0 + dt * max(num_t - 1, 0)
-    params = Vector{{SVector{{{parameter_count}, StateType}}}}(undef, nx * ny)
-    k = 1
-    for j in 1:ny
-        for i in 1:nx
-            params[k] = @SVector [eps_list[i], A_list[j], warmup_t{parameter_tail}]
-            k += 1
-        end
-    end
-
-    u0 = @SVector [{", ".join(u0_vals)}]
-    prob = ODEProblem{{false}}(rhs, u0, (TimeType(t0), TimeType(tf)), params[1])
-    prob_func = (pr, i, repeat) -> remake(pr; p=params[i])
-    eprob = EnsembleProblem(prob; prob_func=prob_func, safetycopy=false)
-
-    # Compile and initialize the solver without including that one-time cost in
-    # the measured full-grid calculation.
-    warm_sol = solve(
-        eprob,
-        GPUTsit5(),
-        DiffEqGPU.EnsembleGPUKernel(CUDA.CUDABackend());
-        trajectories=min(length(params), 256),
-        adaptive=false,
-        dt=TimeType(dt),
-        save_everystep=false
-    )
-    CUDA.synchronize()
-    warm_sol = nothing
-    GC.gc(true)
-    CUDA.reclaim()
-
-    solve_start = time()
-    sol = solve(
-        eprob,
-        GPUTsit5(),
-        DiffEqGPU.EnsembleGPUKernel(CUDA.CUDABackend());
-        trajectories=length(params),
-        adaptive=false,
-        dt=TimeType(dt),
-        save_everystep=false
-    )
-    CUDA.synchronize()
-    solve_elapsed = time() - solve_start
-
-    out = zeros(StateType, ny, nx)
-    for idx in 1:length(params)
-        j = Int(fld(idx - 1, nx)) + 1
-        i = Int(mod(idx - 1, nx)) + 1
-        out[j, i] = {output_expression}
-    end
-
-    writedlm(out_csv, out, ',')
-    open(timing_txt, "w") do io
-        write(io, string(solve_elapsed))
-    end
-    println("JULIA_SOLVE_TIME=", solve_elapsed)
-end
-
-main()
-"""
-    path.write_text(helper, encoding="utf-8")
-
-
 def run_julia_gpu_solver(cfg: BenchConfig, *, julia_cmd: str) -> tuple[np.ndarray, float]:
+    """Julia DiffEqGPU GPUTsit5 on the GQIS-compiled RHS in ``cfg.julia_time_precision``."""
     global LAST_JULIA_TOTAL_S, LAST_JULIA_PRECALC_S
+    from julia_diffeqgpu import julia_map_script, julia_model, map_arguments, run_julia_script
+
     LAST_JULIA_TOTAL_S = np.nan
     LAST_JULIA_PRECALC_S = np.nan
-    if shutil.which(julia_cmd) is None:
-        raise RuntimeError(f"Julia executable '{julia_cmd}' was not found in PATH.")
-
-    with tempfile.TemporaryDirectory() as td:
-        td_path = Path(td)
-        helper_path = td_path / JULIA_HELPER_NAME
-        out_csv = td_path / "julia_out.csv"
-        timing_txt = td_path / "julia_timing.txt"
-
-        prep_start = time.time()
-        write_julia_helper(helper_path, cfg)
-        prep_elapsed = time.time() - prep_start
-
-        cmd = [julia_cmd,
-               str(helper_path),
-               str(out_csv),
-               str(cfg.nx),
-               str(cfg.ny),
-               str(cfg.num_t),
-               repr(cfg.dt),
-               repr(float(cfg.eps_list[0])),
-               repr(float(cfg.eps_list[-1])),
-               repr(float(cfg.A_list[0])),
-               repr(float(cfg.A_list[-1])),
-               str(cfg.warmup_steps),
-               repr(float(cfg.tlist[0]) if cfg.num_t else 0.0),
-               str(timing_txt)]
-
-        process_start = time.time()
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        process_elapsed = time.time() - process_start
-        if proc.returncode != 0:
-            raise RuntimeError(f"Julia backend failed.\nstdout:\n{proc.stdout}\n"
-                               f"stderr:\n{proc.stderr}")
-
-        julia_elapsed = parse_julia_time(proc.stdout, timing_txt) or process_elapsed
-        LAST_JULIA_TOTAL_S = prep_elapsed + process_elapsed
-        LAST_JULIA_PRECALC_S = max(0.0, LAST_JULIA_TOTAL_S - julia_elapsed)
-        if cfg.timings:
-            print(f"julia_gpu timings: prep={prep_elapsed:.3f}s "
-                  f"julia_solve={julia_elapsed:.3f}s total={LAST_JULIA_TOTAL_S:.3f}s "
-                  f"precalc={LAST_JULIA_PRECALC_S:.3f}s")
-        output_dtype = np.float64 if cfg.julia_time_precision == "fp64" else np.float32
-        p_mat = np.loadtxt(out_csv, delimiter=",", dtype=output_dtype)
-
+    _, H, drive_expr, col_ops, mean_op, const_values, sweep = problem_definition(cfg)
+    mean = cfg.comparison_output == "mean"
+    prep_start = time.time()
+    model = julia_model(H, drive_expr, col_ops, mean_op, sweep, const_values=const_values,
+                        precision=cfg.julia_time_precision,
+                        average="after_warmup" if mean else None, observe=not mean)
+    source = julia_map_script(model, output_abs=cfg.problem == "four_level")
+    prep_elapsed = time.time() - prep_start
+    arguments = map_arguments(cfg.nx, cfg.ny, cfg.num_t, cfg.dt, cfg.eps_list, cfg.A_list,
+                              cfg.warmup_steps, float(cfg.tlist[0]) if cfg.num_t else 0.0)
+    values, p_mat, process_elapsed, _ = run_julia_script(
+        source, arguments, julia_cmd=julia_cmd,
+        output_dtype=np.float64 if cfg.julia_time_precision == "fp64" else np.float32)
+    julia_elapsed = float(values["SOLVE_TIME"])
+    LAST_JULIA_TOTAL_S = prep_elapsed + process_elapsed
+    LAST_JULIA_PRECALC_S = max(0.0, LAST_JULIA_TOTAL_S - julia_elapsed)
+    if cfg.timings:
+        print(f"julia_gpu timings: prep={prep_elapsed:.3f}s "
+              f"julia_solve={julia_elapsed:.3f}s total={LAST_JULIA_TOTAL_S:.3f}s "
+              f"precalc={LAST_JULIA_PRECALC_S:.3f}s")
     return p_mat, julia_elapsed
-
-
-def parse_julia_time(stdout: str, timing_path: Path) -> float | None:
-    match = re.search(r"JULIA_SOLVE_TIME=([0-9eE+\.-]+)", stdout or "")
-    if match:
-        return float(match.group(1))
-    if timing_path.exists():
-        txt = timing_path.read_text(encoding="ascii").strip()
-        return float(txt) if txt else None
-    return None
 
 
 # -----------------------------------------------------------------------------
@@ -1242,8 +931,6 @@ def _plot_accuracy_sweep(rows: list[dict], settings: dict, reference_time: float
             continue
         color = colors(index)
         label = solver_label(solver)
-        dividers = np.asarray([float(row["requested_step_count_divider"])
-                               for row in solver_rows])
         x_positions = np.asarray([
             divider_positions[float(row["requested_step_count_divider"])]
             for row in solver_rows])
@@ -1309,7 +996,7 @@ def _plot_accuracy_sweep(rows: list[dict], settings: dict, reference_time: float
     ax_error.axhline(settings["acceptable_rms"], color="0.45", linestyle="-",
                      label="RMS acceptance limit")
     ax_error.axhline(settings["acceptable_max_abs"], color="0.45", linestyle="--",
-                     label="maximum-error acceptance limit")
+                     label="maximum error acceptance limit")
     reference_divider = (float(settings["target_base_steps_per_period"])
                          / float(settings["reference_steps_per_period"]))
     matching_divider = next((value for value in requested_dividers
@@ -1327,7 +1014,7 @@ def _plot_accuracy_sweep(rows: list[dict], settings: dict, reference_time: float
         divider_xlabel += " (log2 scale)"
     ax_error.set(xlabel=divider_xlabel,
                  ylabel="RMS and maximum absolute deviation from reference",
-                 title=f"RMS and maximum-error accuracy relative to "
+                 title=f"RMS and maximum error relative to "
                        f"{solver_label(settings['reference_solver'])}")
     ax_error.set_yscale("log")
     ax_error.set_ylim(top=error_cap)
@@ -1895,7 +1582,7 @@ def user_settings() -> dict:
         "julia_cmd": "julia",  # executable name or full path
         "show_plot": True,
         "show_results_table": True,  # False makes a compact graph; all values remain in CSV
-        "table_times_only": False,  # True omits RMS and maximum-error rows
+        "table_times_only": False,  # True omits the RMS and maximum error rows
         "show_best_summary_row": False,  # compact dark-olive steps/period | time summary
         # Save a complete JSON settings manifest beside the CSV and figure. It
         # can later be passed back with --settings to reproduce this run.

@@ -6,7 +6,7 @@ valuable and remain visible in the Git history.
 
 ## Issues
 
-Search existing issues first. Bug and numerical-error reports should include a
+Search existing issues first. Reports of bugs and numerical errors should include a
 minimal reproducing model, relevant console output, the output of `gqis-check`,
 model and grid settings, and CUDA/CuPy versions. When relevant, report
 the selected solver and convergence after refining the time grid. The
@@ -18,7 +18,7 @@ implementing a substantial application programming interface (API) change or cha
 
 ## Development
 
-Fork the repository, create a branch from `main`, and install an editable
+Fork the repository, create a branch from `develop`, and install an editable
 development environment. For CUDA 12:
 
 ```bash

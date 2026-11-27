@@ -1,0 +1,126 @@
+# timestamp_local,2026-11-24T21:07:52
+# cpu,11th Gen Intel(R) Core(TM) i9-11900K @ 3.50GHz
+# gpu,NVIDIA GeForce RTX 3080
+# os,"Windows 11 Home (25H2, build 26200.9974)"
+# python,3.11.7
+# numpy,2.4.6
+# gqis,0.2.0
+# sympy,1.14.0
+# matplotlib,3.11.1
+# scipy,1.17.1
+# qutip,5.3.1
+# cupy,14.2.0
+# gpu_vram_gb,10.00
+# cuda_runtime,12.9
+# qubit_resonator physics,"{""A_max/w"": 27.8315904255, ""Ap"": 2e-05, ""Delta"": 1.0, ""eps_max/w"": 22.74020028, ""g1"": 0.03279650630894309, ""gamma1"": 0.002, ""gammaph"": 0.0, ""kappa"": 0.005, ""w/Delta"": 0.0923105326317733, ""wq1"": 5.416499999999999, ""wr2"": 7.6767}"
+# multi_qubit topology,chain
+# multi_qubit drive,single
+# multi_qubit physics,"{""A_max/w"": 10.0, ""Delta"": 1.0, ""J/Delta"": 0.1, ""eps_max/w"": 10.0, ""gamma1_per_T"": 0.05, ""gamma_phi_per_T"": 0.04, ""gap_step"": 0.05, ""w/Delta"": 1.14}"
+# nx,1024
+# ny,1024
+# simulation_periods,40
+# solver_steps_per_period,
+# calibrate_timesteps,"{""bisection_steps"": 2, ""max_atol"": 0.01, ""rms_atol"": 0.001, ""sample_stride"": 8, ""start_steps_per_period"": 32}"
+# averaging_skip_fraction,0.0
+# solvers,julia_gpu_fp32_fopt
+# precision,fp32
+# point_time_limit_s,3600
+
+system,size,hilbert_dim,ode_variables,solver,calc_s,prep_s,total_s,rhs_stage_s,steps_per_trajectory,steps_per_period,status,note,time_limit_s,measured_at
+qubit_resonator,2,4,15,gqis_dop853,0.376111115,0.73297619,1.1090873,0.68467,1810,45.25,measured,steps calibrated here (not timed); prep adjusted -0.309 s (new ODE preparation; measured 0.967 -> 0.658 s),900,2026-11-20T14:30:57
+qubit_resonator,3,6,35,gqis_dop853,0.851331787,3.52395851,4.3752903,3.4398113,1810,45.25,measured,steps calibrated at Nph=2; prep adjusted -0.917 s (new ODE preparation; measured 2.58 -> 1.67 s),900,2026-11-20T07:27:47
+qubit_resonator,4,8,63,gqis_dop853,16.2889502,14.6630506,30.9520008,9.6616527,1810,45.25,measured,steps calibrated at Nph=2; prep adjusted -2.04 s (new ODE preparation; measured 5.3 -> 3.26 s),900,2026-11-20T07:28:31
+qubit_resonator,5,10,99,gqis_dop853,92.2961537,4.9659087,97.2620621,3.8850978,1810,45.25,measured,steps calibrated at Nph=2; prep adjusted -5.11 s (new ODE preparation; measured 9.47 -> 4.35 s),900,2026-11-18T18:56:39
+qubit_resonator,6,12,143,gqis_dop853,168.848181,4.997523,173.845704,4.7037739,1810,45.25,measured,steps calibrated at Nph=2; prep adjusted -9.62 s (new ODE preparation; measured 15.3 -> 5.71 s),900,2026-11-18T19:13:06
+qubit_resonator,7,14,195,gqis_dop853,223.218097,5.5739244,228.792022,5.3791022,1810,45.25,measured,steps calibrated at Nph=2; prep adjusted -15.7 s (new ODE preparation; measured 22.9 -> 7.22 s),900,2026-11-18T19:37:10
+qubit_resonator,8,16,255,gqis_dop853,310.839967,20.6700083,331.509976,21.0750173,1810,45.25,measured,steps calibrated at Nph=2; prep adjusted -23 s (new ODE preparation; measured 32.2 -> 9.17 s),900,2026-11-18T20:14:39
+qubit_resonator,9,18,323,gqis_dop853,387.692969,6.9761098,394.669078,12.3423322,1810,45.25,measured,steps calibrated at Nph=2; prep adjusted -30.6 s (new ODE preparation; measured 41.9 -> 11.2 s),900,2026-11-18T20:53:42
+qubit_resonator,10,20,399,gqis_dop853,490.135781,21.0204281,511.156209,20.9303797,1810,45.25,measured,steps calibrated at Nph=2; prep adjusted -41.6 s (new ODE preparation; measured 55.6 -> 14.1 s),900,2026-11-20T06:31:42
+qubit_resonator,2,4,15,gqis_lserk4,0.374526978,0.73322772,1.1077547,0.68467,6089,152.225,measured,steps calibrated here (not timed); prep adjusted -0.309 s (new ODE preparation; measured 0.967 -> 0.658 s),900,2026-11-20T14:30:56
+qubit_resonator,3,6,35,gqis_lserk4,0.919223267,3.54283163,4.4620549,3.4398113,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -0.917 s (new ODE preparation; measured 2.58 -> 1.67 s),900,2026-11-20T07:27:44
+qubit_resonator,4,8,63,gqis_lserk4,1.94480737,9.7397453,11.6845527,9.6616527,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -2.04 s (new ODE preparation; measured 5.3 -> 3.26 s),900,2026-11-20T07:28:02
+qubit_resonator,5,10,99,gqis_lserk4,2.84572778,11.6453458,14.4910736,11.5053581,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -5.11 s (new ODE preparation; measured 9.47 -> 4.35 s),900,2026-11-20T07:28:52
+qubit_resonator,6,12,143,gqis_lserk4,30.7853389,4.9289819,35.7143208,4.7037739,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -9.62 s (new ODE preparation; measured 15.3 -> 5.71 s),900,2026-11-18T18:57:58
+qubit_resonator,7,14,195,gqis_lserk4,94.7623387,5.2958479,100.058187,5.3791022,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -15.7 s (new ODE preparation; measured 22.9 -> 7.22 s),900,2026-11-18T19:16:38
+qubit_resonator,8,16,255,gqis_lserk4,203.283716,5.8122163,209.095932,6.8544148,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -23 s (new ODE preparation; measured 32.2 -> 9.17 s),900,2026-11-18T19:44:27
+qubit_resonator,9,18,323,gqis_lserk4,485.138844,22.9965097,508.135353,16.393422,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -30.6 s (new ODE preparation; measured 41.9 -> 11.2 s),900,2026-11-19T20:40:30
+qubit_resonator,10,20,399,gqis_lserk4,603.509937,28.4645044,631.974442,20.9303797,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -41.6 s (new ODE preparation; measured 55.6 -> 14.1 s),900,2026-11-20T06:01:42
+qubit_resonator,2,4,15,gqis_lserk4f,0.383867889,0.73218461,1.1160525,0.68467,6089,152.225,measured,steps calibrated here (not timed); prep adjusted -0.309 s (new ODE preparation; measured 0.967 -> 0.658 s),900,2026-11-20T14:30:56
+qubit_resonator,3,6,35,gqis_lserk4f,0.949058533,3.51307537,4.4621339,3.4398113,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -0.917 s (new ODE preparation; measured 2.58 -> 1.67 s),900,2026-11-20T07:27:45
+qubit_resonator,4,8,63,gqis_lserk4f,1.75861963,9.7771131,11.5357327,9.6616527,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -2.04 s (new ODE preparation; measured 5.3 -> 3.26 s),900,2026-11-20T07:28:04
+qubit_resonator,5,10,99,gqis_lserk4f,2.71053613,11.6204162,14.3309523,11.5053581,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -5.11 s (new ODE preparation; measured 9.47 -> 4.35 s),900,2026-11-20T07:28:55
+qubit_resonator,6,12,143,gqis_lserk4f,29.8010002,4.8981618,34.699162,4.7037739,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -9.62 s (new ODE preparation; measured 15.3 -> 5.71 s),900,2026-11-18T18:58:57
+qubit_resonator,7,14,195,gqis_lserk4f,43.7122373,5.7876373,49.4998746,5.3791022,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -15.7 s (new ODE preparation; measured 22.9 -> 7.22 s),900,2026-11-18T19:18:06
+qubit_resonator,8,16,255,gqis_lserk4f,121.337448,9.3996994,130.737148,6.8544148,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -23 s (new ODE preparation; measured 32.2 -> 9.17 s),900,2026-11-18T19:48:32
+qubit_resonator,9,18,323,gqis_lserk4f,292.353893,11.4690935,303.822986,12.3423322,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -30.6 s (new ODE preparation; measured 41.9 -> 11.2 s),900,2026-11-18T20:40:52
+qubit_resonator,10,20,399,gqis_lserk4f,465.171781,21.0222773,486.194059,20.9303797,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -41.6 s (new ODE preparation; measured 55.6 -> 14.1 s),900,2026-11-20T06:09:27
+qubit_resonator,2,4,15,gqis_rk4,0.345004028,0.69994227,1.0449463,0.6367386,8611,215.275,measured,steps calibrated here (not timed); prep adjusted -0.309 s (new ODE preparation; measured 0.967 -> 0.658 s),900,2026-11-24T15:36:42
+qubit_resonator,3,6,35,gqis_rk4,0.849800171,2.14743893,2.9972391,1.9065186,8611,215.275,measured,steps calibrated at Nph=2; prep adjusted -0.917 s (new ODE preparation; measured 2.58 -> 1.67 s),900,2026-11-24T15:36:48
+qubit_resonator,4,8,63,gqis_rk4,1.70617957,4.20916513,5.9153447,3.8292724,8611,215.275,measured,steps calibrated at Nph=2; prep adjusted -2.04 s (new ODE preparation; measured 5.3 -> 3.26 s),900,2026-11-24T15:36:58
+qubit_resonator,5,10,99,gqis_rk4,17.3547266,4.9527768,22.3075034,4.3545922,8611,215.275,measured,steps calibrated at Nph=2; prep adjusted -5.11 s (new ODE preparation; measured 9.47 -> 4.35 s),900,2026-11-24T15:37:26
+qubit_resonator,6,12,143,gqis_rk4,71.9960313,6.5404897,78.536521,5.5565008,8611,215.275,measured,steps calibrated at Nph=2; prep adjusted -9.62 s (new ODE preparation; measured 15.3 -> 5.71 s),900,2026-11-24T15:38:57
+qubit_resonator,7,14,195,gqis_rk4,179.748641,11.7048499,191.453491,11.626735,8611,215.275,measured,steps calibrated at Nph=2; prep adjusted -15.7 s (new ODE preparation; measured 22.9 -> 7.22 s),900,2026-11-24T15:43:13
+qubit_resonator,8,16,255,gqis_rk4,302.470219,17.1949451,319.665164,14.5496697,8611,215.275,measured,steps calibrated at Nph=2; prep adjusted -23 s (new ODE preparation; measured 32.2 -> 9.17 s),900,2026-11-24T15:48:57
+qubit_resonator,9,18,323,gqis_rk4,614.485,29.1422837,643.627283,20.0553009,8611,215.275,measured,steps calibrated at Nph=2; prep adjusted -30.6 s (new ODE preparation; measured 41.9 -> 11.2 s),900,2026-11-24T16:00:13
+qubit_resonator,10,20,399,gqis_rk4,662.597125,29.1414346,691.73856,22.4399331,8611,215.275,measured,steps calibrated at Nph=2; prep adjusted -41.6 s (new ODE preparation; measured 55.6 -> 14.1 s),900,2026-11-24T16:12:29
+qubit_resonator,2,4,15,gqis_tsit5,0.51410022,0.73338288,1.2474831,0.68467,6089,152.225,measured,steps calibrated here (not timed); prep adjusted -0.309 s (new ODE preparation; measured 0.967 -> 0.658 s),900,2026-11-20T14:30:56
+qubit_resonator,3,6,35,gqis_tsit5,1.28535754,3.52230606,4.8076636,3.4398113,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -0.917 s (new ODE preparation; measured 2.58 -> 1.67 s),900,2026-11-20T07:27:46
+qubit_resonator,4,8,63,gqis_tsit5,5.57863818,9.7727428,15.351381,9.6616527,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -2.04 s (new ODE preparation; measured 5.3 -> 3.26 s),900,2026-11-20T07:28:10
+qubit_resonator,5,10,99,gqis_tsit5,72.9548023,4.3565053,77.3113076,3.8850978,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -5.11 s (new ODE preparation; measured 9.47 -> 4.35 s),900,2026-11-18T18:53:34
+qubit_resonator,6,12,143,gqis_tsit5,255.400094,5.0036347,260.403729,4.7037739,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -9.62 s (new ODE preparation; measured 15.3 -> 5.71 s),900,2026-11-18T19:07:28
+qubit_resonator,7,14,195,gqis_tsit5,348.502569,5.6567513,354.15932,5.3791022,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -15.7 s (new ODE preparation; measured 22.9 -> 7.22 s),900,2026-11-18T19:29:43
+qubit_resonator,8,16,255,gqis_tsit5,516.821563,6.4951262,523.316689,6.419974,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -23 s (new ODE preparation; measured 32.2 -> 9.17 s),900,2026-11-19T20:13:31
+qubit_resonator,9,18,323,gqis_tsit5,625.502813,25.1660929,650.668905,16.393422,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -30.6 s (new ODE preparation; measured 41.9 -> 11.2 s),900,2026-11-19T20:51:04
+qubit_resonator,10,20,399,gqis_tsit5,831.751813,33.5000271,865.25184,20.9303797,6089,152.225,measured,steps calibrated at Nph=2; finished past the time limit (900 s); prep adjusted -41.6 s (new ODE preparation; measured 55.6 -> 14.1 s),900,2026-11-20T06:23:32
+qubit_resonator,2,4,15,gqis_tsit5a,0.272495605,0.71014519,0.9826408,0.6569085,1294.33534,32.3583834,measured,steps calibrated here (not timed); accuracy=0.000177828; max steps 3102; rejected 18.0%; prep adjusted -0.309 s (new ODE preparation; measured 0.967 -> 0.658 s),900,2026-11-20T16:07:39
+qubit_resonator,3,6,35,gqis_tsit5a,0.551332886,3.21210231,3.7634352,3.1509269,1260.34076,31.508519,measured,steps calibrated at Nph=2; accuracy=0.000177828; max steps 3059; rejected 18.2%; prep adjusted -0.917 s (new ODE preparation; measured 2.58 -> 1.67 s),900,2026-11-20T16:07:45
+qubit_resonator,4,8,63,gqis_tsit5a,5.4231543,11.5307423,16.9538966,9.6616527,1241.68607,31.0421517,measured,"steps calibrated at Nph=2; accuracy=0.000177828; max steps 3029; rejected 18.4%; prep adjusted -2.04 s (new ODE preparation; measured 5.3 -> 3.26 s); symbolic stage set to the other solvers' 9.66 s (-2 s, run slowed by concurrent load)",900,2026-11-20T16:08:20
+qubit_resonator,5,10,99,gqis_tsit5a,27.9381484,6.9817403,34.9198887,4.3545922,1229.23429,30.7308574,measured,"steps calibrated at Nph=2; accuracy=0.000177828; max steps 2999; rejected 18.5%; prep adjusted -5.11 s (new ODE preparation; measured 9.47 -> 4.35 s); symbolic stage set to the other solvers' 4.35 s (-11.5 s, run slowed by concurrent load)",900,2026-11-20T16:09:13
+qubit_resonator,6,12,143,gqis_tsit5a,85.9629922,14.1260528,100.089045,4.7037739,1219.59529,30.4898822,measured,"steps calibrated at Nph=2; accuracy=0.000177828; max steps 2977; rejected 18.6%; prep adjusted -9.62 s (new ODE preparation; measured 15.3 -> 5.71 s); symbolic stage set to the other solvers' 4.7 s (-20.1 s, run slowed by concurrent load)",900,2026-11-20T16:11:24
+qubit_resonator,7,14,195,gqis_tsit5a,117.030633,23.8853481,140.915981,5.3791022,1211.54963,30.2887409,measured,"steps calibrated at Nph=2; accuracy=0.000177828; max steps 2952; rejected 18.6%; prep adjusted -15.7 s (new ODE preparation; measured 22.9 -> 7.22 s); symbolic stage set to the other solvers' 5.38 s (-35.5 s, run slowed by concurrent load)",900,2026-11-20T16:14:38
+qubit_resonator,8,16,255,gqis_tsit5a,151.767547,21.2385952,173.006143,6.8544148,1204.46933,30.1117333,measured,"steps calibrated at Nph=2; accuracy=0.000177828; max steps 2935; rejected 18.7%; prep adjusted -23 s (new ODE preparation; measured 32.2 -> 9.17 s); symbolic stage set to the other solvers' 6.85 s (-47.3 s, run slowed by concurrent load)",900,2026-11-20T16:18:43
+qubit_resonator,9,18,323,gqis_tsit5a,204.656266,37.4607875,242.117053,16.393422,1198.04485,29.9511213,measured,"steps calibrated at Nph=2; accuracy=0.000177828; max steps 2913; rejected 18.8%; prep adjusted -30.6 s (new ODE preparation; measured 41.9 -> 11.2 s); symbolic stage set to the other solvers' 16.4 s (-50.5 s, run slowed by concurrent load)",900,2026-11-20T16:24:08
+qubit_resonator,10,20,399,gqis_tsit5a,250.943922,41.2092667,292.153189,20.9303797,1192.12925,29.8032311,measured,"steps calibrated at Nph=2; accuracy=0.000177828; max steps 2894; rejected 18.9%; prep adjusted -41.6 s (new ODE preparation; measured 55.6 -> 14.1 s); symbolic stage set to the other solvers' 20.9 s (-55.5 s, run slowed by concurrent load)",900,2026-11-20T16:30:40
+qubit_resonator,2,4,15,julia_gpu_fp32_fopt,15.1790001,25.5738127,40.7528128,1.1640359,6089,152.225,measured,steps calibrated here (not timed); prep adjusted --0.0104 s (new ODE preparation; measured 1.34 -> 1.35 s),900,2026-11-20T14:31:37
+qubit_resonator,3,6,35,julia_gpu_fp32_fopt,48.0869999,23.4520866,71.5390865,2.1740281,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted --0.166 s (new ODE preparation; measured 2.3 -> 2.47 s),900,2026-11-19T15:01:39
+qubit_resonator,4,8,63,julia_gpu_fp32_fopt,134.601,24.8674337,159.468434,3.9962516,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted --0.402 s (new ODE preparation; measured 3.89 -> 4.29 s),900,2026-11-19T15:06:34
+qubit_resonator,5,10,99,julia_gpu_fp32_fopt,280.048,27.2480791,307.29608,5.3597441,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -0.559 s (new ODE preparation; measured 6.13 -> 5.57 s),900,2026-11-19T15:16:23
+qubit_resonator,6,12,143,julia_gpu_fp32_fopt,476.371,31.2677089,507.638709,8.1694884,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -1.88 s (new ODE preparation; measured 9.08 -> 7.2 s),900,2026-11-19T19:29:02
+qubit_resonator,7,14,195,julia_gpu_fp32_fopt,682.436,79.0354153,761.471415,26.1493654,6089,152.225,measured,steps calibrated at Nph=2; prep adjusted -3.29 s (new ODE preparation; measured 12.5 -> 9.21 s),900,2026-11-20T07:11:56
+qubit_resonator,8,16,255,julia_gpu_fp32_fopt,1030.63,42.8426303,1073.47263,11.0508778,6089,152.225,measured,steps calibrated at Nph=2; finished past the time limit; prep adjusted -5.06 s (new ODE preparation; measured 16.9 -> 11.8 s),900,2026-11-19T20:31:30
+qubit_resonator,9,18,323,julia_gpu_fp32_fopt,,,,,0,,failed,"steps calibrated at Nph=2; RuntimeError: Julia exit code 1: â”‚ If you're running under a profiler, this situation is expected. Otherwise, | â”‚ ensure that your library path environment variable (e.g., `PATH` on Windows | â”‚ or `LD_LIBRARY_PATH` on Linux) does not include CUDA library paths. | â”‚  | â”‚ In any other case, ",900,2026-11-20T05:50:25
+multi_qubit,1,2,3,gqis_dop853,0.0822496948,0.214263605,0.2965133,0.1711567,1810,45.25,measured,steps calibrated here (not timed); prep adjusted -0.0537 s (new ODE preparation; measured 0.197 -> 0.143 s),900,2026-11-20T14:32:12
+multi_qubit,2,4,15,gqis_dop853,0.324270081,0.526382419,0.8506525,0.4484031,1810,45.25,measured,steps calibrated at qubits=1; prep adjusted -0.341 s (new ODE preparation; measured 0.783 -> 0.442 s),900,2026-11-20T06:48:16
+multi_qubit,3,8,63,gqis_dop853,17.4067402,2.79176577,20.198506,2.7174868,1810,45.25,measured,steps calibrated at qubits=1; prep adjusted -2.44 s (new ODE preparation; measured 4.97 -> 2.52 s),900,2026-11-24T17:14:32
+multi_qubit,4,16,255,gqis_dop853,296.216663,11.5947425,307.811405,8.3577113,1810,45.25,measured,steps calibrated at qubits=1; prep adjusted -26.9 s (new ODE preparation; measured 33.2 -> 6.24 s),900,2026-11-19T16:15:11
+multi_qubit,5,32,1023,gqis_dop853,1657.27025,330.621301,1987.89155,196.543011,1810,45.25,measured,steps calibrated at qubits=1; prep adjusted -357 s (new ODE preparation; measured 390 -> 32.5 s),3600,2026-11-24T20:29:43
+multi_qubit,1,2,3,gqis_lserk4,0.119568382,0.215109118,0.3346775,0.1711567,7241,181.025,measured,steps calibrated here (not timed); prep adjusted -0.0537 s (new ODE preparation; measured 0.197 -> 0.143 s),900,2026-11-20T14:32:11
+multi_qubit,2,4,15,gqis_lserk4,0.426184692,0.505873108,0.9320578,0.4484031,7241,181.025,measured,steps calibrated at qubits=1; prep adjusted -0.341 s (new ODE preparation; measured 0.783 -> 0.442 s),900,2026-11-20T06:48:14
+multi_qubit,3,8,63,gqis_lserk4,2.20887549,7.30490901,9.5137845,7.2162068,7241,181.025,measured,steps calibrated at qubits=1; prep adjusted -2.44 s (new ODE preparation; measured 4.97 -> 2.52 s),900,2026-11-20T06:48:29
+multi_qubit,4,16,255,gqis_lserk4,255.716538,10.6716696,266.388208,8.3577113,7241,181.025,measured,steps calibrated at qubits=1; prep adjusted -26.9 s (new ODE preparation; measured 33.2 -> 6.24 s),900,2026-11-19T15:46:26
+multi_qubit,5,32,1023,gqis_lserk4,2544.99575,65.10647,2610.10221,64.912776,7241,181.025,measured,steps calibrated at qubits=1; prep adjusted -357 s (new ODE preparation; measured 390 -> 32.5 s),3600,2026-11-24T19:50:34
+multi_qubit,1,2,3,gqis_lserk4f,0.11564032,0.21488438,0.3305247,0.1711567,7241,181.025,measured,steps calibrated here (not timed); prep adjusted -0.0537 s (new ODE preparation; measured 0.197 -> 0.143 s),900,2026-11-20T14:32:11
+multi_qubit,2,4,15,gqis_lserk4f,0.429719269,0.508733531,0.9384528,0.4484031,7241,181.025,measured,steps calibrated at qubits=1; prep adjusted -0.341 s (new ODE preparation; measured 0.783 -> 0.442 s),900,2026-11-20T06:48:15
+multi_qubit,3,8,63,gqis_lserk4f,2.00129834,7.31378476,9.3150831,7.2162068,7241,181.025,measured,steps calibrated at qubits=1; prep adjusted -2.44 s (new ODE preparation; measured 4.97 -> 2.52 s),900,2026-11-20T06:48:31
+multi_qubit,4,16,255,gqis_lserk4f,209.329688,8.3506365,217.680325,8.3577113,7241,181.025,measured,steps calibrated at qubits=1; prep adjusted -26.9 s (new ODE preparation; measured 33.2 -> 6.24 s),900,2026-11-19T15:53:24
+multi_qubit,5,32,1023,gqis_lserk4f,2290.759,66.896713,2357.65571,66.693686,7241,181.025,measured,steps calibrated at qubits=1; prep adjusted -357 s (new ODE preparation; measured 390 -> 32.5 s),3600,2026-11-24T19:01:02
+multi_qubit,1,2,3,gqis_rk4,0.0889856033,0.210462197,0.2994478,0.1706616,10240,256,measured,steps calibrated here (not timed); prep adjusted -0.0537 s (new ODE preparation; measured 0.197 -> 0.143 s),900,2026-11-24T16:12:32
+multi_qubit,2,4,15,gqis_rk4,0.422018036,0.72881056,1.1508286,0.5673517,10240,256,measured,steps calibrated at qubits=1; prep adjusted -0.341 s (new ODE preparation; measured 0.783 -> 0.442 s),900,2026-11-24T16:12:36
+multi_qubit,3,8,63,gqis_rk4,2.17273145,3.06506455,5.237796,2.6689961,10240,256,measured,steps calibrated at qubits=1; prep adjusted -2.44 s (new ODE preparation; measured 4.97 -> 2.52 s),900,2026-11-24T16:12:45
+multi_qubit,4,16,255,gqis_rk4,390.043406,9.3266991,399.370106,6.1927434,10240,256,measured,steps calibrated at qubits=1; prep adjusted -26.9 s (new ODE preparation; measured 33.2 -> 6.24 s),900,2026-11-24T16:19:52
+multi_qubit,5,32,1023,gqis_rk4,,,,,0,,timeout,steps calibrated at qubits=1; calculation stopped after 900 s,900,2026-11-24T16:42:39
+multi_qubit,1,2,3,gqis_tsit5,0.0841594849,0.214705115,0.2988646,0.1711567,4305,107.625,measured,steps calibrated here (not timed); prep adjusted -0.0537 s (new ODE preparation; measured 0.197 -> 0.143 s),900,2026-11-20T14:32:12
+multi_qubit,2,4,15,gqis_tsit5,0.341990356,0.520833844,0.8628242,0.4484031,4305,107.625,measured,steps calibrated at qubits=1; prep adjusted -0.341 s (new ODE preparation; measured 0.783 -> 0.442 s),900,2026-11-20T06:48:15
+multi_qubit,3,8,63,gqis_tsit5,3.36533301,7.32243509,10.6877681,7.2162068,4305,107.625,measured,steps calibrated at qubits=1; prep adjusted -2.44 s (new ODE preparation; measured 4.97 -> 2.52 s),900,2026-11-20T06:48:34
+multi_qubit,4,16,255,gqis_tsit5,357.227966,4.8366701,362.064636,8.3577113,4305,107.625,measured,steps calibrated at qubits=1; prep adjusted -26.9 s (new ODE preparation; measured 33.2 -> 6.24 s),900,2026-11-19T16:05:15
+multi_qubit,5,32,1023,gqis_tsit5,1907.40088,18.374719,1925.77559,18.178591,4305,107.625,measured,steps calibrated at qubits=1; prep adjusted -357 s (new ODE preparation; measured 390 -> 32.5 s),3600,2026-11-24T21:07:50
+multi_qubit,1,2,3,gqis_tsit5a,0.181345276,0.204013924,0.3853592,0.157689,1598.10932,39.952733,measured,steps calibrated here (not timed); accuracy=3.16228e-05; max steps 3113; rejected 12.6%; prep adjusted -0.0537 s (new ODE preparation; measured 0.197 -> 0.143 s),900,2026-11-24T17:13:59
+multi_qubit,2,4,15,gqis_tsit5a,0.239456253,0.75592835,0.9953846,0.4484031,1393.03549,34.8258873,measured,"steps calibrated at qubits=1; accuracy=3.16228e-05; max steps 2570; rejected 13.2%; prep adjusted -0.341 s (new ODE preparation; measured 0.783 -> 0.442 s); symbolic stage set to the other solvers' 0.448 s (-0.262 s, run slowed by concurrent load)",900,2026-11-20T16:30:47
+multi_qubit,3,8,63,gqis_tsit5a,8.92895996,2.80684564,11.7358056,2.7174868,1269.62088,31.7405219,measured,steps calibrated at qubits=1; accuracy=3.16228e-05; max steps 2177; rejected 13.2%; prep adjusted -2.44 s (new ODE preparation; measured 4.97 -> 2.52 s),900,2026-11-24T17:14:15
+multi_qubit,4,16,255,gqis_tsit5a,146.657688,25.6761118,172.333799,8.3577113,1251.5546,31.288865,measured,"steps calibrated at qubits=1; accuracy=3.16228e-05; max steps 1970; rejected 11.9%; prep adjusted -26.9 s (new ODE preparation; measured 33.2 -> 6.24 s); symbolic stage set to the other solvers' 8.36 s (-33.4 s, run slowed by concurrent load)",900,2026-11-20T16:35:02
+multi_qubit,5,32,1023,gqis_tsit5a,880.714938,57.779164,938.494105,57.593378,1339.77004,33.494251,measured,steps calibrated at qubits=1; accuracy=3.16228e-05; max steps 2057; rejected 9.9%; prep adjusted -357 s (new ODE preparation; measured 390 -> 32.5 s),3600,2026-11-24T17:36:12
+multi_qubit,1,2,3,julia_gpu_fp32_fopt,2.99699998,25.3513406,28.3483406,0.5773313,4305,107.625,measured,steps calibrated here (not timed); prep adjusted --0.00963 s (new ODE preparation; measured 0.811 -> 0.821 s),900,2026-11-20T14:39:10
+multi_qubit,2,4,15,julia_gpu_fp32_fopt,11.776,22.3786,34.1546,0.9804012,4305,107.625,measured,steps calibrated at qubits=1; prep adjusted --0.0606 s (new ODE preparation; measured 1.17 -> 1.23 s),900,2026-11-20T14:18:09
+multi_qubit,3,8,63,julia_gpu_fp32_fopt,97.572,23.5455459,121.117546,3.1595048,4305,107.625,measured,steps calibrated at qubits=1; prep adjusted --0.249 s (new ODE preparation; measured 3.24 -> 3.49 s),900,2026-11-19T15:37:15
+multi_qubit,4,16,255,julia_gpu_fp32_fopt,754.826,132.371294,887.197294,39.0429136,4305,107.625,measured,steps calibrated at qubits=1; prep adjusted -6.32 s (new ODE preparation; measured 15.6 -> 9.29 s),900,2026-11-20T06:46:39
+multi_qubit,5,32,1023,julia_gpu_fp32_fopt,,,,,,,failed,steps calibrated at qubits=1; RuntimeError: Julia exit code 1:     @ Main C:\Users\olegi\AppData\Local\Temp\gqis_b04_julia_sc55x2jt\benchmark_04_diffeqgpu.jl:6765 |  [31] main() |     @ Main C:\Users\olegi\AppData\Local\Temp\gqis_b04_julia_sc55x2jt\benchmark_04_diffeqgpu.jl:6845 |  [32] top-level scope |     @ C:\Users\olegi\App,3600,2026-11-24T21:14:41

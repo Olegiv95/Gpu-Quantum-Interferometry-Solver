@@ -30,7 +30,7 @@ def save_map_csv(filename, eps_axis, A_axis, values):
     print(f"Saved numerical data: {path}")
 
 
-def gpu_time_evolution(A_list, eps_list, tlist, delta, w, gamma1, gamma2):
+def gpu_time_evolution(A_list, eps_list, tlist, delta, w, gamma1, gamma2, calibrate_timesteps=None, solver="rk4"):
     """Two-level GPU solver: returns map with rows=A and cols=eps."""
 
     # Symbolic model ------------------------------------------------------
@@ -59,6 +59,8 @@ def gpu_time_evolution(A_list, eps_list, tlist, delta, w, gamma1, gamma2):
                         var_arrays={eps: eps_list, A: A_list},
                         const_values={Delta: float(delta), gamma1S: float(gamma1),
                                       gamma2S: float(gamma2)},
+                        solver=solver, solver_frequency=float(w),  # solver_frequency: used by anas5 only
+                        calibrate_timesteps=calibrate_timesteps,  # None uses tlist as given.
                         timings=False)  # Display RHS-generation and computation timings when True.
     # Transfer the result to CPU memory and orient it for plotting.
     return np.abs(np.asarray(result)).T
@@ -94,7 +96,8 @@ def main() -> None:
 
     # Solve ---------------------------------------------------------------
     solve_start = time.time()  # Start measuring solving time
-    p_mat = gpu_time_evolution(A_list, eps_list, tlist, delta, w, gamma1, gamma2)
+    p_mat = gpu_time_evolution(A_list, eps_list, tlist, delta, w, gamma1, gamma2,
+                               calibrate_timesteps=settings["calibrate_timesteps"], solver=settings["solver"])
     print(f"GPU solve time: {time.time() - solve_start:.2f}s")  # Print solving time
 
     if settings["save_data"]:
@@ -134,8 +137,13 @@ def user_settings() -> dict:
         "A_max": 16.0 * w,  # maximum drive amplitude
         # Grid and time.
         "grid_size": 512,  # square grid side; total simulations = grid_size**2
-        # Increase if mesolve_2D reports non-finite output.
+        # Increase if mesolve_2D reports non-finite output; with calibration, the starting grid.
         "solver_steps_per_period": 256,
+        "solver": "rk4",  # "rk4", "lserk4", "lserk4f", "dp5", "tsit5", "anas5", "ab5", "alshina6", "dop853", "tsit5a".
+        "calibrate_timesteps": None,  # off for maximum speed: uses solver_steps_per_period as given.
+        # "calibrate_timesteps": dict(rms_atol=1e-3, max_atol=1e-2, sample_stride=8),  # automatic time step
+        # rms_atol / max_atol: allowed RMS / maximum error of the resulting values all over the map.
+        # sample_stride: test grid subsampling coefficient.
         # Optional numerical-data export. Relative names go to Examples/results/.
         # CSV contains Origin-friendly XYZ columns and is ignored by Git.
         "save_data": False,

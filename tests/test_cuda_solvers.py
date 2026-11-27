@@ -3,8 +3,8 @@ import pytest
 from gqis.cuda_solvers import available_solvers, get_solver_spec, normalize_solver_name
 
 
-EXPECTED_SOLVERS = ("rk4", "lserk4", "dp5", "ab5", "anas5", "tsit5",
-                    "alshina6", "dop853")
+EXPECTED_SOLVERS = ("rk4", "lserk4", "lserk4f", "dp5", "ab5", "anas5", "tsit5",
+                    "alshina6", "dop853", "tsit5a")
 
 
 def test_solver_names_and_aliases():
@@ -23,12 +23,13 @@ def test_each_cuda_fragment_contains_only_its_selected_solver():
                for name in EXPECTED_SOLVERS}
     for name in EXPECTED_SOLVERS:
         source = get_solver_spec(name, step_size=0.1).source
-        assert source.count(markers[name]) == 1
+        lines = [line.strip() for line in source.splitlines()]
+        assert lines.count(markers[name]) == 1
         assert "#SOLVER_CODE#" not in source
         assert "#SOLVER_UNROLL#" in source
         for other_name, marker in markers.items():
             if other_name != name:
-                assert marker not in source
+                assert marker not in lines
 
 
 def test_reported_steady_rhs_counts_include_fsal_reuse():
@@ -56,3 +57,13 @@ def test_fitted_solver_parameters_are_runtime_values():
     anas = get_solver_spec("anas5", frequency=1.14, step_size=0.01)
     assert len(anas.parameters) == 1
     assert "solver_param0" in anas.source
+
+
+def test_tsit5a_options_are_validated_and_only_accepted_by_tsit5a():
+    spec = get_solver_spec("tsit5a", step_size=0.1, adaptive_options={"step_rtol": 1e-6})
+    assert spec.parameters[:3] == (1e-6, 1e-5, 64.0)
+    assert "adaptive_steps[" not in spec.source  # count_steps is off by default
+    with pytest.raises(ValueError, match="only to solver='tsit5a'"):
+        get_solver_spec("tsit5", step_size=0.1, adaptive_options={"step_rtol": 1e-6})
+    with pytest.raises(ValueError, match="Unknown adaptive_options"):
+        get_solver_spec("tsit5a", adaptive_options={"rtol": 1e-6})
